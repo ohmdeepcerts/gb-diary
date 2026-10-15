@@ -749,7 +749,7 @@ function applyDayViewStyles() {
        table.day-table tbody td:first-child{min-height:auto!important;padding:1px 8px!important}
        table.day-table .djob-title{display:none!important}
        table.day-table .stamp-toggle{display:none!important}
-       table.day-table .row-stamps{margin-top:0!important}
+       table.day-table .row-stamps{display:none!important}
        table.day-table .eng-dot{width:6px!important;height:6px!important}`
     : '';
 }
@@ -1095,28 +1095,32 @@ function dayRow(job, engineer, dateISO) {
   const descDisp = desc.length > 65 ? desc.slice(0,65)+'…' : desc;
   const addrDisp = addr.length > 32 ? addr.slice(0,32)+'…' : addr;
 
-  // Stamps HTML — toggleable stamps get extra attributes
-  const stampsHtml = stamps.map(s => {
-    if (s.toggle) {
-      return `<span class="row-stamp ${s.cls} stamp-toggle" data-confirmed="${s.confirmed}" title="Click to ${s.confirmed?'unconfirm':'confirm'}">${esc(s.text)}</span>`;
-    }
-    return `<span class="row-stamp ${s.cls}">${esc(s.text)}</span>`;
-  }).join('');
+  // Invoice stamps inline (always visible, including compact mode)
+  const invStampsHtml = stamps
+    .filter(s => !s.toggle)
+    .map(s => `<span class="row-stamp ${s.cls}">${esc(s.text)}</span>`)
+    .join('');
+  // Toggle stamps (Confirmed/Unconfirmed) go below — hidden in compact
+  const toggleStampsHtml = stamps
+    .filter(s => s.toggle)
+    .map(s => `<span class="row-stamp ${s.cls} stamp-toggle" data-confirmed="${s.confirmed}" title="Click to ${s.confirmed?'unconfirm':'confirm'}">${esc(s.text)}</span>`)
+    .join('');
 
   const tr = document.createElement('tr');
   tr.className = rClass;
 
   const cells = [];
 
-  // Job / Type + title + stamps
+  // Job / Type + inline invoice stamps + title
   const titleDisp = title.length > 24 ? title.slice(0,24)+'…' : title;
   cells.push(`<td>
     <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
       <span class="djob-ref">${esc(refShort)}</span>
       ${jtype?`<span class="dtype-pill ${tClass}">${esc(jtype.slice(0,4).toUpperCase())}</span>`:''}
+      ${invStampsHtml}
     </div>
     ${titleDisp ? `<div class="djob-title">${esc(titleDisp)}</div>` : ''}
-    ${stampsHtml ? `<div class="row-stamps">${stampsHtml}</div>` : ''}
+    ${toggleStampsHtml ? `<div class="row-stamps">${toggleStampsHtml}</div>` : ''}
   </td>`);
 
   // Date (range mode)
