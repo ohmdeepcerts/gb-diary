@@ -51,7 +51,21 @@ const api = {
   logout:   ()                   => trpcMutate('auth.officeLogout'),
   week:     (weekOf)             => trpcQuery('diary.week', { weekOf }),
   reschedule:(jobId, date, engId)=> trpcMutate('diary.reschedule', { jobId, date, ...(engId != null ? { engineerId: engId } : {}) }),
-  createJob:(data)               => trpcMutate('jobs.create', data),
+  createJob: async (data) => {
+    const attempts = [
+      () => trpcMutate('jobs.create',    data),
+      () => trpcMutate('diary.createJob',data),
+      () => trpcMutate('diary.addJob',   data),
+      () => trpcMutate('jobs.add',       data),
+    ];
+    for (const fn of attempts) {
+      try { return await fn(); } catch(e) {
+        if (/404|not found|No procedure/i.test(e.message)) continue;
+        throw e;
+      }
+    }
+    throw new Error('No create-job endpoint found on portal');
+  },
   // Try the most likely endpoint names for confirm; falls through to first success
   setConfirmed: async (jobId, confirmed) => {
     const attempts = [
@@ -3050,7 +3064,45 @@ let _contactSearchTmr = null;
 function openAddJob() {
   _addJobContactId  = null;
   _addJobPropertyId = null;
+
+  // Inject Job Type select once (after title field)
+  if (!document.getElementById('add-job-type')) {
+    const titleFg = document.getElementById('add-title-inp')?.closest?.('.fg');
+    if (titleFg) {
+      const jtFg = document.createElement('div');
+      jtFg.className = 'fg';
+      jtFg.innerHTML =
+        '<label class="fl">Job Type</label>' +
+        '<select class="inp" id="add-job-type">' +
+          '<option value="">– select type –</option>' +
+          '<option value="EICR">EICR</option>' +
+          '<option value="PAT Test">PAT Test</option>' +
+          '<option value="Installation">Installation</option>' +
+          '<option value="Repair">Repair / Fault Finding</option>' +
+          '<option value="Gas CP12">Gas / CP12</option>' +
+          '<option value="Boiler Service">Boiler Service</option>' +
+          '<option value="Periodic Test">Periodic Test</option>' +
+          '<option value="Other">Other</option>' +
+        '</select>';
+      titleFg.after(jtFg);
+    }
+  }
+
+  // Inject Notes textarea once (before error message)
+  if (!document.getElementById('add-notes')) {
+    const errEl2 = document.getElementById('add-err');
+    if (errEl2) {
+      const notesFg = document.createElement('div');
+      notesFg.className = 'fg';
+      notesFg.innerHTML =
+        '<label class="fl">Notes (optional)</label>' +
+        '<textarea class="inp" id="add-notes" rows="2" placeholder="Access info, special instructions…" style="resize:vertical;min-height:52px"></textarea>';
+      errEl2.parentNode.insertBefore(notesFg, errEl2);
+    }
+  }
+
   document.getElementById('add-date').value = curDate || todayISO();
+
   const sel = document.getElementById('add-engineer');
   sel.innerHTML = '<option value="">Unassigned</option>';
   const mon   = curWeek || mondayOf(curDate||todayISO());
@@ -3060,6 +3112,7 @@ function openAddJob() {
     const o = document.createElement('option');
     o.value = l.engineer.id; o.textContent = l.engineer.name; sel.appendChild(o);
   });
+
   // Wire contact search
   const csInp  = document.getElementById('add-contact-search');
   const csDrop = document.getElementById('add-contact-dropdown');
@@ -3073,6 +3126,7 @@ function openAddJob() {
       if (q.length < 2) { csDrop.style.display = 'none'; return; }
       _contactSearchTmr = setTimeout(() => _searchContacts(q, csInp, csDrop), 320);
     };
+    csInp.onblur = () => { setTimeout(() => { csDrop.style.display = 'none'; }, 200); };
   }
   document.getElementById('view-add').style.display = 'flex';
 }
@@ -3127,10 +3181,12 @@ async function saveJob() {
   const address  = document.getElementById('add-address').value.trim();
   const customer = document.getElementById('add-customer').value.trim();
   const title    = document.getElementById('add-title-inp').value.trim();
+  const jobType  = document.getElementById('add-job-type')?.value  || '';
   const date     = document.getElementById('add-date').value;
   const time     = document.getElementById('add-time').value.trim();
   const engId    = document.getElementById('add-engineer').value;
   const referrer = document.getElementById('add-referrer').value.trim();
+  const notes    = document.getElementById('add-notes')?.value.trim() || '';
 
   if (!address) { showErr(errEl,'Address is required'); return; }
   if (!date)    { showErr(errEl,'Date is required'); return; }
@@ -3139,14 +3195,17 @@ async function saveJob() {
   btn.disabled=true; btn.textContent='Adding…';
   try {
     await api.createJob({
-      title: title||address, date,
-      ...(address           ? {address}                          : {}),
-      ...(customer          ? {customerName:customer}            : {}),
-      ...(time              ? {time}                             : {}),
-      ...(engId             ? {engineerId:engId}                 : {}),
-      ...(referrer          ? {referrerName:referrer}            : {}),
-      ...(_addJobContactId  ? {contactId:  _addJobContactId}     : {}),
-      ...(_addJobPropertyId ? {propertyId: _addJobPropertyId}    : {}),
+      title:    title || jobType || address,
+      date,
+      ...(jobType   ? {jobType}                              : {}),
+      ...(address   ? {address}                              : {}),
+      ...(customer  ? {customerName: customer}               : {}),
+      ...(time      ? {time}                                 : {}),
+      ...(engId     ? {engineerId: engId}                    : {}),
+      ...(referrer  ? {referrerName: referrer}               : {}),
+      ...(notes     ? {notes}                                : {}),
+      ...(_addJobContactId  ? {contactId:  _addJobContactId}  : {}),
+      ...(_addJobPropertyId ? {propertyId: _addJobPropertyId} : {}),
     });
     closeAddJob();
     clearCache();
@@ -3162,7 +3221,9 @@ function closeAddJob() {
   _addJobContactId = null; _addJobPropertyId = null;
   document.getElementById('view-add').style.display='none';
   ['add-address','add-customer','add-title-inp','add-referrer'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
-  const addTime = document.getElementById('add-time'); if (addTime) addTime.value='';
+  const addTime  = document.getElementById('add-time');     if (addTime)  addTime.value  = '';
+  const addJT    = document.getElementById('add-job-type'); if (addJT)    addJT.value    = '';
+  const addNotes = document.getElementById('add-notes');    if (addNotes) addNotes.value = '';
   const csDrop = document.getElementById('add-contact-dropdown'); if (csDrop) csDrop.style.display='none';
   const csInp  = document.getElementById('add-contact-search');   if (csInp)  csInp.value='';
   document.getElementById('add-engineer').value='';
