@@ -777,7 +777,7 @@ function renderDay(lanes, dateLabel) {
     <th style="width:130px"></th>
     <th style="width:120px">Job / Type</th>
     ${showDate ? '<th style="width:90px">Date</th>' : ''}
-    <th style="width:185px">Address</th>
+    <th style="width:220px">Address</th>
     <th>Description</th>
     <th style="width:80px">Access</th>
     <th style="width:100px">Time</th>
@@ -875,7 +875,7 @@ function renderDayRange(merged) {
   thead.innerHTML = `<tr>
     <th style="width:120px">Job / Type</th>
     <th style="width:90px">Date</th>
-    <th style="width:175px">Address</th>
+    <th style="width:220px">Address</th>
     <th>Description</th>
     <th style="width:80px">Access</th>
     <th style="width:100px">Time</th>
