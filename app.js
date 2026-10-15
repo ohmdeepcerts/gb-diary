@@ -730,34 +730,63 @@ function renderDay(lanes, dateLabel) {
   body.innerHTML = '';
   const di = dateLabel ? -1 : weekDays(mondayOf(curDate)).indexOf(curDate);
 
-  let total = 0;
-  const wrap = document.createElement('div');
-  wrap.className = 'day-table-wrap';
-  const table = document.createElement('table');
-  table.className = 'day-table';
-  const thead = document.createElement('thead');
   const showDate = !!dateLabel;
-  // 1 (eng) + 10 detail cols + 1 date? = 12 or 13 total
-  const totalCols = showDate ? 13 : 12;
-  thead.innerHTML = `<tr>
-    <th style="width:130px;position:sticky;left:0;z-index:3;background:var(--bg3)"></th>
-    <th style="width:120px">Job / Type</th>
-    ${showDate ? '<th style="width:90px">Date</th>' : ''}
-    <th style="width:185px">Address</th>
-    <th>Description</th>
-    <th style="width:80px">Access</th>
-    <th style="width:100px">Time</th>
-    <th style="width:74px;text-align:right">Amount</th>
-    <th style="width:110px">Client</th>
-    <th style="width:130px">Phone</th>
-    <th style="width:110px">Status</th>
-    <th style="width:96px"></th>
-  </tr>`;
-  table.appendChild(thead);
-  const tbody = document.createElement('tbody');
-
+  let total = 0;
   const unassignedJobs = [];
 
+  // Fixed column widths — used in EVERY table so all columns line up perfectly
+  const cols = [
+    {w:120, label:'Job / Type'},
+    ...(showDate ? [{w:90, label:'Date'}] : []),
+    {w:185, label:'Address'},
+    {w:250, label:'Description'},
+    {w:80,  label:'Access'},
+    {w:100, label:'Time'},
+    {w:74,  label:'Amount', align:'right'},
+    {w:110, label:'Client'},
+    {w:130, label:'Phone'},
+    {w:110, label:'Status'},
+    {w:96,  label:''},
+  ];
+
+  const makeColgroup = () => {
+    const cg = document.createElement('colgroup');
+    cols.forEach(c => { const col = document.createElement('col'); col.style.width = c.w + 'px'; cg.appendChild(col); });
+    return cg;
+  };
+
+  // Outer scrollable card
+  const wrap = document.createElement('div');
+  wrap.className = 'day-table-wrap';
+
+  // Inner flex-column — min-width:max-content lets tables push scroll width
+  const inner = document.createElement('div');
+  inner.style.cssText = 'display:flex; flex-direction:column; min-width:max-content';
+
+  // Sticky column header row
+  const hdrRow = document.createElement('div');
+  hdrRow.style.cssText = 'display:flex; position:sticky; top:0; z-index:10; background:var(--bg3); border-bottom:2px solid var(--border)';
+  const corner = document.createElement('div');
+  corner.style.cssText = 'width:130px; flex-shrink:0; position:sticky; left:0; z-index:11; background:var(--bg3); border-right:1px solid var(--border)';
+  const hdrTbl = document.createElement('table');
+  hdrTbl.className = 'day-table';
+  hdrTbl.style.cssText = 'width:auto; min-width:0; border:none; border-radius:0; box-shadow:none';
+  hdrTbl.appendChild(makeColgroup());
+  const hdrTr = document.createElement('tr');
+  cols.forEach(c => {
+    const th = document.createElement('th');
+    th.style.cssText = `width:${c.w}px${c.align ? ';text-align:'+c.align : ''}`;
+    th.textContent = c.label;
+    hdrTr.appendChild(th);
+  });
+  const hdrThead = document.createElement('thead');
+  hdrThead.appendChild(hdrTr);
+  hdrTbl.appendChild(hdrThead);
+  hdrRow.appendChild(corner);
+  hdrRow.appendChild(hdrTbl);
+  inner.appendChild(hdrRow);
+
+  // Per-engineer sections
   lanes.forEach(lane => {
     const dayData = di >= 0 ? (lane.days[di]||{jobs:[]}) : {jobs:[]};
     if (!dayData.jobs.length) return;
@@ -770,51 +799,50 @@ function renderDay(lanes, dateLabel) {
     }
 
     const ecolor = engColor(eng.id);
-    const jobCount = dayData.jobs.length;
 
-    // Engineer name row — left 130px cell shows name+dot, rest of row is empty
-    const gtr = document.createElement('tr');
-    gtr.className = 'dgroup';
-    gtr.innerHTML = `
-      <td class="eng-hdr" style="border-bottom:none;border-top:2px solid var(--border)">
-        <span class="eng-dot" style="background:${ecolor}"></span>
-        <span>${esc(eng.name||'?')}</span>
-      </td>
-      <td colspan="${totalCols - 1}" style="border-top:2px solid var(--border);padding:2px 8px;font-size:11px;opacity:0.55">${jobCount} job${jobCount!==1?'s':''}</td>`;
+    // Section: eng-hdr on LEFT, jobs table on RIGHT — same as Week view
+    const section = document.createElement('div');
+    section.style.cssText = 'display:flex; border-bottom:1px solid var(--border)';
 
-    gtr.addEventListener('dragover', e => { if (_dragPoolJob) { e.preventDefault(); gtr.classList.add('dgroup-droptarget'); }});
-    gtr.addEventListener('dragleave', () => gtr.classList.remove('dgroup-droptarget'));
-    gtr.addEventListener('drop', async e => {
-      e.preventDefault();
-      gtr.classList.remove('dgroup-droptarget');
+    const engHdr = document.createElement('div');
+    engHdr.className = 'eng-hdr';
+    engHdr.style.cssText = 'width:130px; flex-shrink:0; align-self:stretch; position:sticky; left:0; z-index:5; border-bottom:none; flex-direction:column; justify-content:center; gap:4px';
+    engHdr.innerHTML = `<span class="eng-dot" style="background:${ecolor}"></span><span>${esc(eng.name||'?')}</span>`;
+
+    engHdr.addEventListener('dragover', e => { if (_dragPoolJob) { e.preventDefault(); engHdr.style.outline='2px dashed var(--red)'; }});
+    engHdr.addEventListener('dragleave', () => engHdr.style.outline='');
+    engHdr.addEventListener('drop', async e => {
+      e.preventDefault(); engHdr.style.outline='';
       if (!_dragPoolJob) return;
-      const job = _dragPoolJob;
-      _dragPoolJob = null;
-      try {
-        setStatus('Assigning…');
-        await api.reschedule(job.id, job._date || curDate, eng.id);
-        setStatus(`Assigned to ${eng.name} · ${now()}`);
-        clearCache();
-        await loadDay(true);
-      } catch(er) { setStatus(`Failed: ${er.message}`, false); }
+      const job = _dragPoolJob; _dragPoolJob = null;
+      try { setStatus('Assigning…'); await api.reschedule(job.id, job._date || curDate, eng.id); setStatus(`Assigned to ${eng.name} · ${now()}`); clearCache(); await loadDay(true); }
+      catch(er) { setStatus(`Failed: ${er.message}`, false); }
     });
 
-    tbody.appendChild(gtr);
+    section.appendChild(engHdr);
+
+    // Jobs table — colgroup keeps columns aligned with header table above
+    const tbl = document.createElement('table');
+    tbl.className = 'day-table';
+    tbl.style.cssText = 'width:auto; min-width:0; border:none; border-radius:0; box-shadow:none';
+    tbl.appendChild(makeColgroup());
+    const tbody = document.createElement('tbody');
 
     dayData.jobs.forEach(job => {
       const tr = dayRow(job, eng, showDate ? (job._date || curDate) : null);
-      // Prepend empty cell for the engineer column so job cells align correctly
-      const engTd = document.createElement('td');
-      engTd.style.cssText = 'padding:0;border-right:1px solid var(--border);background:var(--bg2)';
-      tr.insertBefore(engTd, tr.firstChild);
       const searchText = buildSearchText(job, eng);
-      _dayRowMeta.push({ tr, gtr, engId, searchText, status: jobStatus(job) });
+      _dayRowMeta.push({ tr, gtr: section, engId, searchText, status: jobStatus(job) });
       tbody.appendChild(tr);
       total++;
     });
+
+    tbl.appendChild(tbody);
+    section.appendChild(tbl);
+    inner.appendChild(section);
   });
 
-  // Build body layout
+  wrap.appendChild(inner);
+
   const tableArea = document.createElement('div');
   tableArea.className = 'day-table-area';
 
@@ -823,8 +851,6 @@ function renderDay(lanes, dateLabel) {
   } else if (!total) {
     tableArea.innerHTML = '<div class="loading-row" style="flex-direction:column;gap:8px"><div style="font-size:36px">📋</div><div>No assigned jobs — drag from the pool →</div></div>';
   } else {
-    table.appendChild(tbody);
-    wrap.appendChild(table);
     tableArea.appendChild(wrap);
   }
 
