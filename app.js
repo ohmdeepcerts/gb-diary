@@ -742,6 +742,7 @@ function renderDay(lanes, dateLabel) {
   wrap.className = 'day-table-wrap';
   const table = document.createElement('table');
   table.className = 'day-table';
+  table.style.width = '100%';
 
   const thead = document.createElement('thead');
   thead.innerHTML = `<tr>
