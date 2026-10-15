@@ -815,7 +815,7 @@ function renderDay(lanes, dateLabel) {
     gtr.appendChild(nameTd);
 
     const sepTd = document.createElement('td');
-    sepTd.colSpan = jobCols;
+    sepTd.colSpan = jobCols - 1;
     sepTd.style.cssText = 'height:3px;padding:0;background:var(--border)';
     gtr.appendChild(sepTd);
 
@@ -904,7 +904,7 @@ function renderDayRange(merged) {
 
     const gtr = document.createElement('tr');
     gtr.className = 'dgroup';
-    gtr.innerHTML = `<td colspan="12">
+    gtr.innerHTML = `<td colspan="11">
       <span style="display:inline-flex;align-items:center;gap:6px">
         <i class="deng-dot" style="background:${ecolor}"></i>
         ${esc(engineer.name||'?')}
