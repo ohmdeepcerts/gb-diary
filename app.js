@@ -572,6 +572,8 @@ let _updateDayEngCells = null; // set by renderDay, called by applyDayFilter
 let _dbgLogged      = false;
 let _dragPoolJob    = null;  // job being dragged from unassigned panel
 let _poolOpen       = true;  // panel visible
+let _dayCompact     = (() => { try { return localStorage.getItem('gbDayCompact') === '1'; } catch(e) { return false; } })();
+let _dayHideHeader  = (() => { try { return localStorage.getItem('gbDayHideHeader') === '1'; } catch(e) { return false; } })();
 
 // ── Reviewer helper — reads from portal's "Tag someone" feature ───────────────
 function jobReviewer(job) {
@@ -726,6 +728,18 @@ function applyDayFilter() {
   if (_updateDayEngCells) _updateDayEngCells();
 }
 
+function applyDayViewStyles() {
+  let s = document.getElementById('_day_compact_css');
+  if (!s) { s = document.createElement('style'); s.id = '_day_compact_css'; document.head.appendChild(s); }
+  s.textContent = _dayCompact
+    ? `table.day-table tbody td{height:auto!important;padding:1px 6px!important;font-size:11px!important}
+       table.day-table tbody td:first-child{min-height:auto!important;padding:1px 8px!important}
+       table.day-table .djob-title{display:none!important}
+       table.day-table .row-stamps{display:none!important}
+       table.day-table .eng-dot{width:6px!important;height:6px!important}`
+    : '';
+}
+
 function renderDay(lanes, dateLabel) {
   _dayRowMeta = [];
   _updateDayEngCells = null;
@@ -823,7 +837,42 @@ function renderDay(lanes, dateLabel) {
     tableArea.innerHTML = '<div class="loading-row" style="flex-direction:column;gap:8px"><div style="font-size:36px">📋</div><div>No assigned jobs — drag from the pool →</div></div>';
   } else {
     wrap.appendChild(table);
+
+    // Control strip: compact toggle + header toggle
+    const ctrlBar = document.createElement('div');
+    ctrlBar.style.cssText = 'display:flex;gap:6px;padding:0 2px 6px;align-items:center;';
+    const mkCtrlBtn = (label, active) => {
+      const b = document.createElement('button');
+      b.style.cssText = `font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border);cursor:pointer;background:${active?'var(--red)':'var(--bg3)'};color:${active?'#fff':'var(--text)'}`;
+      b.textContent = label;
+      return b;
+    };
+    const cBtn = mkCtrlBtn(_dayCompact ? '⊞ Normal rows' : '⊟ Compact rows', _dayCompact);
+    cBtn.onclick = () => {
+      _dayCompact = !_dayCompact;
+      try { localStorage.setItem('gbDayCompact', _dayCompact ? '1' : '0'); } catch(e) {}
+      applyDayViewStyles();
+      cBtn.textContent = _dayCompact ? '⊞ Normal rows' : '⊟ Compact rows';
+      cBtn.style.background = _dayCompact ? 'var(--red)' : 'var(--bg3)';
+      cBtn.style.color = _dayCompact ? '#fff' : 'var(--text)';
+    };
+    const hBtn = mkCtrlBtn(_dayHideHeader ? 'Show header' : 'Hide header', _dayHideHeader);
+    hBtn.onclick = () => {
+      _dayHideHeader = !_dayHideHeader;
+      try { localStorage.setItem('gbDayHideHeader', _dayHideHeader ? '1' : '0'); } catch(e) {}
+      table.querySelector('thead').style.display = _dayHideHeader ? 'none' : '';
+      hBtn.textContent = _dayHideHeader ? 'Show header' : 'Hide header';
+      hBtn.style.background = _dayHideHeader ? 'var(--red)' : 'var(--bg3)';
+      hBtn.style.color = _dayHideHeader ? '#fff' : 'var(--text)';
+    };
+    ctrlBar.appendChild(cBtn);
+    ctrlBar.appendChild(hBtn);
+    tableArea.appendChild(ctrlBar);
     tableArea.appendChild(wrap);
+
+    // Apply persisted view states
+    applyDayViewStyles();
+    if (_dayHideHeader) table.querySelector('thead').style.display = 'none';
   }
 
   body.innerHTML = '';
@@ -922,7 +971,40 @@ function renderDayRange(merged) {
   } else {
     table.appendChild(tbody);
     fakeWrap.appendChild(table);
+
+    const ctrlBar2 = document.createElement('div');
+    ctrlBar2.style.cssText = 'display:flex;gap:6px;padding:0 2px 6px;align-items:center;';
+    const mkCtrlBtn2 = (label, active) => {
+      const b = document.createElement('button');
+      b.style.cssText = `font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border);cursor:pointer;background:${active?'var(--red)':'var(--bg3)'};color:${active?'#fff':'var(--text)'}`;
+      b.textContent = label;
+      return b;
+    };
+    const cBtn2 = mkCtrlBtn2(_dayCompact ? '⊞ Normal rows' : '⊟ Compact rows', _dayCompact);
+    cBtn2.onclick = () => {
+      _dayCompact = !_dayCompact;
+      try { localStorage.setItem('gbDayCompact', _dayCompact ? '1' : '0'); } catch(e) {}
+      applyDayViewStyles();
+      cBtn2.textContent = _dayCompact ? '⊞ Normal rows' : '⊟ Compact rows';
+      cBtn2.style.background = _dayCompact ? 'var(--red)' : 'var(--bg3)';
+      cBtn2.style.color = _dayCompact ? '#fff' : 'var(--text)';
+    };
+    const hBtn2 = mkCtrlBtn2(_dayHideHeader ? 'Show header' : 'Hide header', _dayHideHeader);
+    hBtn2.onclick = () => {
+      _dayHideHeader = !_dayHideHeader;
+      try { localStorage.setItem('gbDayHideHeader', _dayHideHeader ? '1' : '0'); } catch(e) {}
+      table.querySelector('thead').style.display = _dayHideHeader ? 'none' : '';
+      hBtn2.textContent = _dayHideHeader ? 'Show header' : 'Hide header';
+      hBtn2.style.background = _dayHideHeader ? 'var(--red)' : 'var(--bg3)';
+      hBtn2.style.color = _dayHideHeader ? '#fff' : 'var(--text)';
+    };
+    ctrlBar2.appendChild(cBtn2);
+    ctrlBar2.appendChild(hBtn2);
+    tableArea.appendChild(ctrlBar2);
     tableArea.appendChild(fakeWrap);
+
+    applyDayViewStyles();
+    if (_dayHideHeader) table.querySelector('thead').style.display = 'none';
   }
 
   body.innerHTML = '';
