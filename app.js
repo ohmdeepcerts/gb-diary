@@ -799,12 +799,11 @@ function renderDay(lanes, dateLabel) {
       } catch(er) { setStatus(`Failed: ${er.message}`, false); }
     });
 
-    tbody.appendChild(gtr);
-
+    // Group header hidden — engineer shown inline in ENGINEER column of each row
     dayData.jobs.forEach(job => {
       const tr = dayRow(job, eng, showDate ? (job._date || curDate) : null);
       const searchText = buildSearchText(job, eng);
-      _dayRowMeta.push({ tr, gtr, engId, searchText, status: jobStatus(job) });
+      _dayRowMeta.push({ tr, gtr: null, engId, searchText, status: jobStatus(job) });
       tbody.appendChild(tr);
       total++;
     });
@@ -900,12 +899,11 @@ function renderDayRange(merged) {
       } catch(er) { setStatus(`Failed: ${er.message}`, false); }
     });
 
-    tbody.appendChild(gtr);
-
+    // Group header hidden — engineer shown inline in ENGINEER column of each row
     jobs.forEach(({ job, date }) => {
       job._date = date;
       const tr = dayRow(job, engineer, date);
-      _dayRowMeta.push({ tr, gtr, engId, searchText: buildSearchText(job, engineer), status: jobStatus(job) });
+      _dayRowMeta.push({ tr, gtr: null, engId, searchText: buildSearchText(job, engineer), status: jobStatus(job) });
       tbody.appendChild(tr);
       total++;
     });
