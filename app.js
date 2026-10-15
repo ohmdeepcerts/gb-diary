@@ -1047,6 +1047,7 @@ function renderDay(lanes, dateLabel) {
   const table = document.createElement('table');
   table.className = 'day-table';
   table.style.width = '100%';
+  table.style.minWidth = '1330px';
 
   const thead = document.createElement('thead');
   thead.innerHTML = `<tr>
@@ -1120,6 +1121,7 @@ function renderDay(lanes, dateLabel) {
 
   const tableArea = document.createElement('div');
   tableArea.className = 'day-table-area';
+  tableArea.style.overflowX = 'auto';
 
   if (!total && !unassignedJobs.length) {
     tableArea.innerHTML = '<div class="loading-row"><div style="font-size:36px">📅</div>No jobs scheduled for this day</div>';
@@ -1147,6 +1149,7 @@ function renderDayRange(merged) {
   fakeWrap.className = 'day-table-wrap';
   const table = document.createElement('table');
   table.className = 'day-table';
+  table.style.minWidth = '1270px';
   const thead = document.createElement('thead');
   thead.innerHTML = `<tr>
     <th style="width:120px">Job / Type</th>
@@ -1219,6 +1222,7 @@ function renderDayRange(merged) {
 
   const tableArea = document.createElement('div');
   tableArea.className = 'day-table-area';
+  tableArea.style.overflowX = 'auto';
 
   if (!total && !unassignedJobs.length) {
     tableArea.innerHTML = '<div class="loading-row"><div style="font-size:36px">📅</div>No jobs in this date range</div>';
