@@ -731,7 +731,8 @@ function renderDay(lanes, dateLabel) {
   const di = dateLabel ? -1 : weekDays(mondayOf(curDate)).indexOf(curDate);
 
   const showDate = !!dateLabel;
-  const totalCols = showDate ? 12 : 11;
+  // jobCols = the columns that dayRow() produces (11 without date, 12 with date)
+  const jobCols = showDate ? 12 : 11;
   let total = 0;
   const unassignedJobs = [];
 
@@ -740,8 +741,10 @@ function renderDay(lanes, dateLabel) {
   const table = document.createElement('table');
   table.className = 'day-table';
 
+  // thead: engineer column first (130px), then all job detail columns
   const thead = document.createElement('thead');
   thead.innerHTML = `<tr>
+    <th style="width:130px"></th>
     <th style="width:120px">Job / Type</th>
     ${showDate ? '<th style="width:90px">Date</th>' : ''}
     <th style="width:185px">Address</th>
@@ -771,15 +774,19 @@ function renderDay(lanes, dateLabel) {
 
     const ecolor = engColor(eng.id);
 
-    // Engineer name row — ONLY the name + dot, spans all columns, jobs come AFTER this row
+    // Engineer group header row: name in LEFT column, rest is a subtle band
     const gtr = document.createElement('tr');
     gtr.className = 'dgroup';
-    gtr.innerHTML = `<td colspan="${totalCols}" style="padding:0;border-top:2px solid var(--border)">
-      <div class="eng-hdr" style="border:none;border-radius:0;position:sticky;left:0;display:inline-flex;width:auto;min-width:100%">
-        <span class="eng-dot" style="background:${ecolor}"></span>
-        <span>${esc(eng.name||'?')}</span>
-      </div>
-    </td>`;
+
+    const engTd = document.createElement('td');
+    engTd.style.cssText = 'padding:6px 10px;background:var(--bg2);border-top:2px solid var(--border);position:sticky;left:0;z-index:5';
+    engTd.innerHTML = `<div class="eng-hdr" style="border:none;border-radius:0;padding:0;display:flex;align-items:center;gap:6px"><span class="eng-dot" style="background:${ecolor}"></span><span>${esc(eng.name||'?')}</span></div>`;
+    gtr.appendChild(engTd);
+
+    const bandTd = document.createElement('td');
+    bandTd.colSpan = jobCols;
+    bandTd.style.cssText = 'background:var(--bg2);border-top:2px solid var(--border)';
+    gtr.appendChild(bandTd);
 
     gtr.addEventListener('dragover', e => { if (_dragPoolJob) { e.preventDefault(); gtr.classList.add('dgroup-droptarget'); }});
     gtr.addEventListener('dragleave', () => gtr.classList.remove('dgroup-droptarget'));
@@ -793,9 +800,12 @@ function renderDay(lanes, dateLabel) {
 
     tbody.appendChild(gtr);
 
-    // Job rows — start AFTER the engineer name row
     dayData.jobs.forEach(job => {
       const tr = dayRow(job, eng, showDate ? (job._date || curDate) : null);
+      // Prepend empty engineer column cell to align with header
+      const emptyTd = document.createElement('td');
+      emptyTd.style.cssText = `border-left:3px solid ${ecolor};padding:0`;
+      tr.insertBefore(emptyTd, tr.firstChild);
       const searchText = buildSearchText(job, eng);
       _dayRowMeta.push({ tr, gtr, engId, searchText, status: jobStatus(job) });
       tbody.appendChild(tr);
