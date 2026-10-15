@@ -574,38 +574,194 @@ let _dragPoolJob    = null;  // job being dragged from unassigned panel
 let _poolOpen       = true;  // panel visible
 let _dayCompact     = (() => { try { return localStorage.getItem('gbDayCompact') === '1'; } catch(e) { return false; } })();
 
-const HIGHLIGHT_COLORS = ['#ffd5d5','#ffe4c0','#fff9c0','#d5f5e3','#d5eaf5','#ead5f5','#f5d5ea','#c0eeff','#e8e8e8','#ffffff'];
+const DEFAULT_COLOR_TEMPLATES = [
+  { id:'ct1', name:'Red',    bg:'#ffd5d5', text:'#7a0000' },
+  { id:'ct2', name:'Orange', bg:'#ffe4c0', text:'#7a3a00' },
+  { id:'ct3', name:'Yellow', bg:'#fff9c0', text:'#6b5a00' },
+  { id:'ct4', name:'Green',  bg:'#d5f5e3', text:'#0a5c2e' },
+  { id:'ct5', name:'Blue',   bg:'#d5eaf5', text:'#0a3d5c' },
+  { id:'ct6', name:'Purple', bg:'#ead5f5', text:'#4a0a7a' },
+];
+function getColorTemplates() {
+  try { const s = localStorage.getItem('gbColorTemplates'); return s ? JSON.parse(s) : DEFAULT_COLOR_TEMPLATES; }
+  catch(e) { return DEFAULT_COLOR_TEMPLATES; }
+}
+function saveColorTemplates(t) { try { localStorage.setItem('gbColorTemplates', JSON.stringify(t)); } catch(e) {} }
 function getRowColors() { try { return JSON.parse(localStorage.getItem('gbRowColors')||'{}'); } catch(e) { return {}; } }
-function setRowColor(jobId, color) {
+function getRowColorEntry(jobId) {
+  const v = getRowColors()[String(jobId)];
+  if (!v) return null;
+  return typeof v === 'string' ? { bg: v, text: '' } : v; // back-compat
+}
+function setRowColor(jobId, bg, text) {
   const c = getRowColors();
-  if (color) c[String(jobId)] = color; else delete c[String(jobId)];
+  if (bg || text) c[String(jobId)] = { bg: bg||'', text: text||'' }; else delete c[String(jobId)];
   try { localStorage.setItem('gbRowColors', JSON.stringify(c)); } catch(e) {}
 }
+function applyRowColor(tr, anchor, jobId, bg, text) {
+  tr.style.background = bg || '';
+  tr.style.color      = text || '';
+  anchor.style.background = bg || '';
+  anchor.textContent  = bg ? '' : '🎨';
+  setRowColor(jobId, bg, text);
+}
+
 function showRowColorPicker(anchor, jobId, tr) {
   document.getElementById('_rcp')?.remove();
+  const saved = getRowColorEntry(jobId);
+  const curBg   = saved?.bg   || '#ffffff';
+  const curText = saved?.text || '#111111';
+  const tpls = getColorTemplates();
+
   const p = document.createElement('div');
   p.id = '_rcp';
-  p.style.cssText = 'position:fixed;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px;display:flex;gap:5px;flex-wrap:wrap;width:152px;box-shadow:0 4px 16px rgba(0,0,0,.2)';
+  p.style.cssText = 'position:fixed;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px;min-width:190px;box-shadow:0 4px 20px rgba(0,0,0,.22)';
   const rect = anchor.getBoundingClientRect();
-  p.style.left = Math.min(rect.left, window.innerWidth - 164) + 'px';
-  p.style.top  = Math.min(rect.bottom + 4, window.innerHeight - 64) + 'px';
-  [...HIGHLIGHT_COLORS, ''].forEach(val => {
-    const sw = document.createElement('button');
-    sw.style.cssText = `width:24px;height:24px;border-radius:4px;border:2px solid ${val?'rgba(0,0,0,.15)':'var(--border)'};cursor:pointer;background:${val||'var(--bg3)'};font-size:10px;padding:0;flex-shrink:0`;
-    sw.textContent = val ? '' : '✕';
-    sw.title = val || 'Clear colour';
-    sw.addEventListener('click', e => {
-      e.stopPropagation();
-      tr.style.background = val;
-      anchor.style.background = val || '';
-      anchor.textContent = val ? '' : '🎨';
-      setRowColor(jobId, val);
-      p.remove();
-    });
-    p.appendChild(sw);
+  p.style.left = Math.min(rect.left, window.innerWidth - 210) + 'px';
+  p.style.top  = Math.min(rect.bottom + 4, window.innerHeight - 260) + 'px';
+
+  p.innerHTML = `
+    <div style="font-size:10px;font-weight:700;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Row colour</div>
+    <div id="_rcp_tpls" style="display:flex;flex-direction:column;gap:3px;margin-bottom:8px"></div>
+    <div style="border-top:1px solid var(--border);padding-top:8px">
+      <div style="font-size:10px;font-weight:700;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Custom</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+        <span style="font-size:10px;width:30px;color:var(--text2)">BG</span>
+        <input type="color" id="_rcp_bg" value="${curBg}" style="width:32px;height:22px;padding:1px;border-radius:3px;border:1px solid var(--border);cursor:pointer">
+        <input id="_rcp_bg_hex" value="${curBg}" maxlength="7" style="width:68px;padding:2px 5px;border-radius:3px;border:1px solid var(--border);background:var(--bg1);color:var(--text);font-size:11px;font-family:monospace">
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+        <span style="font-size:10px;width:30px;color:var(--text2)">Text</span>
+        <input type="color" id="_rcp_tc" value="${curText}" style="width:32px;height:22px;padding:1px;border-radius:3px;border:1px solid var(--border);cursor:pointer">
+        <input id="_rcp_tc_hex" value="${curText}" maxlength="7" style="width:68px;padding:2px 5px;border-radius:3px;border:1px solid var(--border);background:var(--bg1);color:var(--text);font-size:11px;font-family:monospace">
+      </div>
+      <div style="display:flex;gap:5px">
+        <button id="_rcp_apply" style="flex:1;padding:4px;border-radius:4px;border:none;background:var(--accent,#3b82f6);color:#fff;font-size:11px;cursor:pointer;font-weight:600">Apply</button>
+        <button id="_rcp_clear" style="padding:4px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);font-size:11px;cursor:pointer">Clear</button>
+      </div>
+    </div>
+  `;
+
+  const tplsDiv = p.querySelector('#_rcp_tpls');
+  tpls.forEach(t => {
+    const chip = document.createElement('button');
+    chip.style.cssText = `display:block;width:100%;text-align:left;padding:3px 8px;border-radius:5px;border:1px solid rgba(0,0,0,.1);cursor:pointer;background:${t.bg};color:${t.text};font-size:11px;font-weight:500`;
+    chip.textContent = t.name;
+    chip.addEventListener('click', e => { e.stopPropagation(); applyRowColor(tr, anchor, jobId, t.bg, t.text); p.remove(); });
+    tplsDiv.appendChild(chip);
   });
+
+  const rcpBg = p.querySelector('#_rcp_bg'), rcpBgHex = p.querySelector('#_rcp_bg_hex');
+  const rcpTc = p.querySelector('#_rcp_tc'), rcpTcHex = p.querySelector('#_rcp_tc_hex');
+  rcpBg.oninput = () => rcpBgHex.value = rcpBg.value;
+  rcpBgHex.oninput = () => { if (/^#[0-9a-f]{6}$/i.test(rcpBgHex.value)) rcpBg.value = rcpBgHex.value; };
+  rcpTc.oninput = () => rcpTcHex.value = rcpTc.value;
+  rcpTcHex.oninput = () => { if (/^#[0-9a-f]{6}$/i.test(rcpTcHex.value)) rcpTc.value = rcpTcHex.value; };
+  p.querySelector('#_rcp_apply').addEventListener('click', e => { e.stopPropagation(); applyRowColor(tr, anchor, jobId, rcpBg.value, rcpTc.value); p.remove(); });
+  p.querySelector('#_rcp_clear').addEventListener('click', e => { e.stopPropagation(); applyRowColor(tr, anchor, jobId, '', ''); p.remove(); });
+
   document.body.appendChild(p);
   setTimeout(() => document.addEventListener('click', () => p.remove(), {once:true}), 0);
+}
+
+function openSettingsModal() {
+  document.getElementById('_settings_modal')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = '_settings_modal';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center';
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  const modal = document.createElement('div');
+  modal.style.cssText = 'background:var(--bg1);border:1px solid var(--border);border-radius:12px;width:500px;max-width:96vw;max-height:88vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.3)';
+
+  function renderModal() {
+    const tpls = getColorTemplates();
+    modal.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg1);z-index:1">
+        <span style="font-size:15px;font-weight:700">⚙ Settings</span>
+        <button id="_sm_x" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text);line-height:1">✕</button>
+      </div>
+      <div style="padding:20px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px">Row Colour Templates</div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:14px">Named presets for the 🎨 row paint button. Set background and text colour for each.</div>
+        <div id="_sm_list" style="display:flex;flex-direction:column;gap:6px"></div>
+        <div id="_sm_form"></div>
+        <button id="_sm_add" style="margin-top:12px;width:100%;padding:8px;border-radius:6px;border:1px dashed var(--border);background:none;cursor:pointer;font-size:12px;color:var(--text2)">+ Add template</button>
+      </div>
+    `;
+    modal.querySelector('#_sm_x').onclick = () => overlay.remove();
+
+    const list = modal.querySelector('#_sm_list');
+    tpls.forEach((t, i) => {
+      const row = document.createElement('div');
+      row.style.cssText = `display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:7px;background:${t.bg};color:${t.text};border:1px solid rgba(0,0,0,.1)`;
+      row.innerHTML = `
+        <span style="flex:1;font-size:12px;font-weight:600">${esc(t.name)}</span>
+        <span style="font-size:10px;opacity:.65;font-family:monospace">${t.bg} / ${t.text}</span>
+        <button class="_sm_edit_btn" data-i="${i}" style="font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid rgba(0,0,0,.2);background:rgba(255,255,255,.35);cursor:pointer">Edit</button>
+        <button class="_sm_del_btn" data-i="${i}" style="font-size:11px;padding:2px 6px;border-radius:4px;border:1px solid rgba(0,0,0,.2);background:rgba(255,255,255,.35);cursor:pointer">✕</button>
+      `;
+      list.appendChild(row);
+    });
+
+    list.querySelectorAll('._sm_del_btn').forEach(b => b.onclick = () => {
+      const t2 = getColorTemplates(); t2.splice(+b.dataset.i, 1); saveColorTemplates(t2); renderModal();
+    });
+    list.querySelectorAll('._sm_edit_btn').forEach(b => b.onclick = () => showForm(+b.dataset.i));
+    modal.querySelector('#_sm_add').onclick = () => showForm(-1);
+  }
+
+  function showForm(idx) {
+    const tpls = getColorTemplates();
+    const t = idx >= 0 ? { ...tpls[idx] } : { id: Date.now()+'', name:'', bg:'#ffffff', text:'#111111' };
+    const form = modal.querySelector('#_sm_form');
+    form.innerHTML = `
+      <div style="margin-top:14px;padding:14px;background:var(--bg2);border-radius:8px;border:1px solid var(--border)">
+        <div style="font-size:12px;font-weight:700;margin-bottom:10px">${idx>=0?'Edit template':'New template'}</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <label style="font-size:11px;width:70px;color:var(--text2)">Name</label>
+            <input id="_ef_name" value="${esc(t.name)}" placeholder="e.g. Important" style="flex:1;padding:5px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg1);color:var(--text);font-size:12px">
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <label style="font-size:11px;width:70px;color:var(--text2)">Background</label>
+            <input type="color" id="_ef_bg" value="${t.bg}" style="width:38px;height:28px;padding:1px;border-radius:4px;border:1px solid var(--border);cursor:pointer">
+            <input id="_ef_bg_h" value="${t.bg}" maxlength="7" style="width:76px;padding:5px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg1);color:var(--text);font-size:12px;font-family:monospace">
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <label style="font-size:11px;width:70px;color:var(--text2)">Text colour</label>
+            <input type="color" id="_ef_tc" value="${t.text}" style="width:38px;height:28px;padding:1px;border-radius:4px;border:1px solid var(--border);cursor:pointer">
+            <input id="_ef_tc_h" value="${t.text}" maxlength="7" style="width:76px;padding:5px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg1);color:var(--text);font-size:12px;font-family:monospace">
+          </div>
+          <div id="_ef_prev" style="padding:7px 12px;border-radius:6px;font-size:13px;font-weight:600;background:${t.bg};color:${t.text}">Preview text</div>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:12px;justify-content:flex-end">
+          <button id="_ef_cancel" style="padding:5px 14px;border-radius:5px;border:1px solid var(--border);background:var(--bg3);cursor:pointer;font-size:12px">Cancel</button>
+          <button id="_ef_save" style="padding:5px 14px;border-radius:5px;border:none;background:var(--accent,#3b82f6);color:#fff;cursor:pointer;font-size:12px;font-weight:600">Save</button>
+        </div>
+      </div>
+    `;
+    const efBg=form.querySelector('#_ef_bg'), efBgH=form.querySelector('#_ef_bg_h');
+    const efTc=form.querySelector('#_ef_tc'), efTcH=form.querySelector('#_ef_tc_h');
+    const efName=form.querySelector('#_ef_name'), prev=form.querySelector('#_ef_prev');
+    const sync = () => { prev.style.background=efBg.value; prev.style.color=efTc.value; prev.textContent='Preview: '+(efName.value||'Name'); };
+    efBg.oninput = () => { efBgH.value=efBg.value; sync(); };
+    efBgH.oninput = () => { if(/^#[0-9a-f]{6}$/i.test(efBgH.value)){efBg.value=efBgH.value; sync();} };
+    efTc.oninput = () => { efTcH.value=efTc.value; sync(); };
+    efTcH.oninput = () => { if(/^#[0-9a-f]{6}$/i.test(efTcH.value)){efTc.value=efTcH.value; sync();} };
+    efName.oninput = sync;
+    form.querySelector('#_ef_cancel').onclick = () => { form.innerHTML=''; };
+    form.querySelector('#_ef_save').onclick = () => {
+      const t2 = getColorTemplates();
+      const saved = { id:t.id, name:efName.value.trim()||'Unnamed', bg:efBg.value, text:efTc.value };
+      if (idx>=0) t2[idx]=saved; else t2.push(saved);
+      saveColorTemplates(t2); renderModal();
+    };
+  }
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  renderModal();
 }
 
 // ── Reviewer helper — reads from portal's "Tag someone" feature ───────────────
@@ -723,7 +879,7 @@ function renderStatusTabs() {
     });
   });
 
-  // Compact rows toggle — right-aligned in the status tab row
+  // Right-side controls
   const cBtn = document.createElement('button');
   cBtn.style.cssText = `margin-left:auto;font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border);cursor:pointer;flex-shrink:0;background:${_dayCompact?'var(--red)':'var(--bg3)'};color:${_dayCompact?'#fff':'var(--text)'}`;
   cBtn.textContent = _dayCompact ? '⊞ Normal rows' : '⊟ Compact rows';
@@ -736,6 +892,13 @@ function renderStatusTabs() {
     cBtn.style.color = _dayCompact ? '#fff' : 'var(--text)';
   };
   bar.appendChild(cBtn);
+
+  const gBtn = document.createElement('button');
+  gBtn.title = 'Settings';
+  gBtn.style.cssText = 'font-size:14px;padding:3px 7px;border-radius:4px;border:1px solid var(--border);cursor:pointer;flex-shrink:0;background:var(--bg3);color:var(--text)';
+  gBtn.textContent = '⚙';
+  gBtn.onclick = openSettingsModal;
+  bar.appendChild(gBtn);
 }
 
 function applyDayFilter() {
@@ -1192,11 +1355,13 @@ function dayRow(job, engineer, dateISO) {
   const _waCell = _waRaw
     ? `<button class="day-wa-btn" data-wa="https://wa.me/${_waRaw}" title="WhatsApp ${esc(phone)}">💬</button>`
     : '';
-  const _rowColor = getRowColors()[String(job.id)] || '';
-  cells.push(`<td><div class="day-act-wrap"><button class="day-act-btn" title="Open in portal">↗</button>${_waCell}<button class="day-paint-btn" title="Highlight row colour" style="background:${_rowColor||''};border:1px solid var(--border);width:18px;height:18px;border-radius:3px;cursor:pointer;font-size:10px;padding:0;flex-shrink:0">${_rowColor?'':'🎨'}</button></div></td>`);
+  const _rowEntry = getRowColorEntry(String(job.id));
+  const _rowBg = _rowEntry?.bg || '';
+  cells.push(`<td><div class="day-act-wrap"><button class="day-act-btn" title="Open in portal">↗</button>${_waCell}<button class="day-paint-btn" title="Highlight row colour" style="background:${_rowBg||''};border:1px solid var(--border);width:18px;height:18px;border-radius:3px;cursor:pointer;font-size:10px;padding:0;flex-shrink:0">${_rowBg?'':'🎨'}</button></div></td>`);
 
   tr.innerHTML = cells.join('');
-  if (_rowColor) tr.style.background = _rowColor;
+  if (_rowBg) tr.style.background = _rowBg;
+  if (_rowEntry?.text) tr.style.color = _rowEntry.text;
 
   // Paint button listener
   const paintBtn = tr.querySelector('.day-paint-btn');
