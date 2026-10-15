@@ -703,7 +703,7 @@ function applyDayFilter() {
     // Count for tab badges before applying status filter
     if (show) statusCount[status] = (statusCount[status] || 0) + 1;
     if (dayStatusFilter && status !== dayStatusFilter) show = false;
-    tr.style.display = show ? '' : 'none';
+    tr.style.visibility = show ? '' : 'collapse';
     if (show) { visible++; if (gtr) gtrVisible.set(gtr, true); }
     else if (gtr && !gtrVisible.has(gtr)) gtrVisible.set(gtr, false);
   });
@@ -761,7 +761,6 @@ function renderDay(lanes, dateLabel) {
   table.appendChild(thead);
 
   const tbody = document.createElement('tbody');
-  const groupMeta = []; // for _updateDayEngCells
 
   lanes.forEach(lane => {
     const dayData = di >= 0 ? (lane.days[di]||{jobs:[]}) : {jobs:[]};
@@ -776,14 +775,25 @@ function renderDay(lanes, dateLabel) {
 
     const ecolor = engColor(eng.id);
 
-    // Thin separator row — used by applyDayFilter to show/hide the whole group
+    // Group header — engineer name cell spans this row + all N job rows via rowspan
     const gtr = document.createElement('tr');
     gtr.className = 'dgroup';
-    gtr.innerHTML = `<td colspan="${jobCols + 1}" style="height:3px;padding:0;background:var(--border)"></td>`;
-    gtr.addEventListener('dragover', e => { if (_dragPoolJob) { e.preventDefault(); gtr.classList.add('dgroup-droptarget'); }});
-    gtr.addEventListener('dragleave', () => gtr.classList.remove('dgroup-droptarget'));
-    gtr.addEventListener('drop', async e => {
-      e.preventDefault(); gtr.classList.remove('dgroup-droptarget');
+
+    const nameTd = document.createElement('td');
+    nameTd.rowSpan = dayData.jobs.length + 1;
+    nameTd.style.cssText = `width:130px;padding:0;vertical-align:top;background:var(--bg2);border-left:3px solid ${ecolor}`;
+    nameTd.innerHTML = `<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;white-space:nowrap"><span class="eng-dot" style="background:${ecolor};flex-shrink:0"></span><span style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis">${esc(eng.name||'?')}</span></div>`;
+    gtr.appendChild(nameTd);
+
+    const sepTd = document.createElement('td');
+    sepTd.colSpan = jobCols;
+    sepTd.style.cssText = 'height:3px;padding:0;background:var(--border)';
+    gtr.appendChild(sepTd);
+
+    nameTd.addEventListener('dragover', e => { if (_dragPoolJob) { e.preventDefault(); nameTd.style.outline = `2px dashed ${ecolor}`; }});
+    nameTd.addEventListener('dragleave', () => nameTd.style.outline = '');
+    nameTd.addEventListener('drop', async e => {
+      e.preventDefault(); nameTd.style.outline = '';
       if (!_dragPoolJob) return;
       const job2 = _dragPoolJob; _dragPoolJob = null;
       try { setStatus('Assigning…'); await api.reschedule(job2.id, job2._date || curDate, eng.id); setStatus(`Assigned to ${eng.name} · ${now()}`); clearCache(); await loadDay(true); }
@@ -791,49 +801,15 @@ function renderDay(lanes, dateLabel) {
     });
     tbody.appendChild(gtr);
 
-    const groupRows = [];
-
-    dayData.jobs.forEach((job, jobIdx) => {
+    dayData.jobs.forEach(job => {
       const tr = dayRow(job, eng, showDate ? (job._date || curDate) : null);
-
-      // LEFT COLUMN cell — first row shows name, continuation rows are empty (one-block visual)
-      const engTd = document.createElement('td');
-      const isFirst = jobIdx === 0;
-      engTd.style.cssText = `padding:0;vertical-align:top;background:var(--bg2);border-left:3px solid ${ecolor}${isFirst ? ';border-top:none' : ';border-top:none'}`;
-      if (isFirst) {
-        engTd.innerHTML = `<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;white-space:nowrap"><span class="eng-dot" style="background:${ecolor};flex-shrink:0"></span><span style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis">${esc(eng.name||'?')}</span></div>`;
-      }
-      tr._engTd = engTd;
-      tr.insertBefore(engTd, tr.firstChild);
-
+      // No first cell — nameTd rowspan covers column 1 for all job rows
       const searchText = buildSearchText(job, eng);
       _dayRowMeta.push({ tr, gtr, engId, searchText, status: jobStatus(job) });
       tbody.appendChild(tr);
-      groupRows.push(tr);
       total++;
     });
-
-    groupMeta.push({ gtr, rows: groupRows, eng, ecolor });
   });
-
-  // Called by applyDayFilter after each filter change — keeps engineer name
-  // on the first VISIBLE row so the "one box" visual stays correct after filtering
-  _updateDayEngCells = () => {
-    groupMeta.forEach(({ gtr, rows, eng, ecolor }) => {
-      if (gtr.style.display === 'none') return;
-      let foundFirst = false;
-      rows.forEach(tr => {
-        const engTd = tr._engTd;
-        if (!engTd || tr.style.display === 'none') return;
-        if (!foundFirst) {
-          foundFirst = true;
-          engTd.innerHTML = `<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;white-space:nowrap"><span class="eng-dot" style="background:${ecolor};flex-shrink:0"></span><span style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis">${esc(eng.name||'?')}</span></div>`;
-        } else {
-          engTd.innerHTML = '';
-        }
-      });
-    });
-  };
 
   table.appendChild(tbody);
 
