@@ -744,7 +744,6 @@ function renderDay(lanes, dateLabel) {
     <th>Description</th>
     <th style="width:80px">Access</th>
     <th style="width:100px">Time</th>
-    <th style="width:120px">Engineer</th>
     <th style="width:74px;text-align:right">Amount</th>
     <th style="width:110px">Client</th>
     <th style="width:130px">Phone</th>
@@ -772,7 +771,7 @@ function renderDay(lanes, dateLabel) {
 
     const gtr = document.createElement('tr');
     gtr.className = 'dgroup';
-    gtr.innerHTML = `<td colspan="${showDate?13:12}">
+    gtr.innerHTML = `<td colspan="${showDate?12:11}">
       <span style="display:inline-flex;align-items:center;gap:6px">
         <i class="deng-dot" style="background:${ecolor}"></i>
         ${esc(eng.name||'?')}
@@ -799,11 +798,12 @@ function renderDay(lanes, dateLabel) {
       } catch(er) { setStatus(`Failed: ${er.message}`, false); }
     });
 
-    // Group header hidden — engineer shown inline in ENGINEER column of each row
+    tbody.appendChild(gtr);
+
     dayData.jobs.forEach(job => {
       const tr = dayRow(job, eng, showDate ? (job._date || curDate) : null);
       const searchText = buildSearchText(job, eng);
-      _dayRowMeta.push({ tr, gtr: null, engId, searchText, status: jobStatus(job) });
+      _dayRowMeta.push({ tr, gtr, engId, searchText, status: jobStatus(job) });
       tbody.appendChild(tr);
       total++;
     });
@@ -847,7 +847,6 @@ function renderDayRange(merged) {
     <th>Description</th>
     <th style="width:80px">Access</th>
     <th style="width:100px">Time</th>
-    <th style="width:120px">Engineer</th>
     <th style="width:74px;text-align:right">Amount</th>
     <th style="width:100px">Client</th>
     <th style="width:120px">Phone</th>
@@ -873,7 +872,7 @@ function renderDayRange(merged) {
 
     const gtr = document.createElement('tr');
     gtr.className = 'dgroup';
-    gtr.innerHTML = `<td colspan="13">
+    gtr.innerHTML = `<td colspan="12">
       <span style="display:inline-flex;align-items:center;gap:6px">
         <i class="deng-dot" style="background:${ecolor}"></i>
         ${esc(engineer.name||'?')}
@@ -899,11 +898,12 @@ function renderDayRange(merged) {
       } catch(er) { setStatus(`Failed: ${er.message}`, false); }
     });
 
-    // Group header hidden — engineer shown inline in ENGINEER column of each row
+    tbody.appendChild(gtr);
+
     jobs.forEach(({ job, date }) => {
       job._date = date;
       const tr = dayRow(job, engineer, date);
-      _dayRowMeta.push({ tr, gtr: null, engId, searchText: buildSearchText(job, engineer), status: jobStatus(job) });
+      _dayRowMeta.push({ tr, gtr, engId, searchText: buildSearchText(job, engineer), status: jobStatus(job) });
       tbody.appendChild(tr);
       total++;
     });
@@ -1100,9 +1100,6 @@ function dayRow(job, engineer, dateISO) {
 
   // Time
   cells.push(`<td style="font-weight:600">${esc(time||'—')}</td>`);
-
-  // Engineer
-  cells.push(`<td><span style="display:inline-flex;align-items:center;gap:5px"><i class="deng-dot" style="background:${eColor}"></i>${esc(engName)}</span></td>`);
 
   // Amount — click to edit inline
   cells.push(`<td class="amt-td" data-raw="${rawAmount ?? ''}" title="Click to edit amount" style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;cursor:pointer;position:relative">
