@@ -772,18 +772,16 @@ function renderDay(lanes, dateLabel) {
     const ecolor = engColor(eng.id);
     const jobCount = dayData.jobs.length;
 
-    // Engineer name row — left cell styled like .eng-hdr, rest empty
+    // Engineer name row — left 130px cell shows name+dot, rest of row is empty
     const gtr = document.createElement('tr');
     gtr.className = 'dgroup';
     gtr.innerHTML = `
-      <td class="eng-hdr" style="border-bottom:none;border-top:2px solid var(--border);z-index:2" rowspan="${jobCount + 1}">
+      <td class="eng-hdr" style="border-bottom:none;border-top:2px solid var(--border)">
         <span class="eng-dot" style="background:${ecolor}"></span>
         <span>${esc(eng.name||'?')}</span>
-        <span style="font-weight:400;font-size:10px;opacity:0.6;display:block;margin-top:2px">${jobCount} job${jobCount!==1?'s':''}</span>
       </td>
-      <td colspan="${totalCols - 1}" style="border-top:2px solid var(--border);padding:0"></td>`;
+      <td colspan="${totalCols - 1}" style="border-top:2px solid var(--border);padding:2px 8px;font-size:11px;opacity:0.55">${jobCount} job${jobCount!==1?'s':''}</td>`;
 
-    // Drop pool-job onto this engineer's header row
     gtr.addEventListener('dragover', e => { if (_dragPoolJob) { e.preventDefault(); gtr.classList.add('dgroup-droptarget'); }});
     gtr.addEventListener('dragleave', () => gtr.classList.remove('dgroup-droptarget'));
     gtr.addEventListener('drop', async e => {
@@ -805,6 +803,10 @@ function renderDay(lanes, dateLabel) {
 
     dayData.jobs.forEach(job => {
       const tr = dayRow(job, eng, showDate ? (job._date || curDate) : null);
+      // Prepend empty cell for the engineer column so job cells align correctly
+      const engTd = document.createElement('td');
+      engTd.style.cssText = 'padding:0;border-right:1px solid var(--border);background:var(--bg2)';
+      tr.insertBefore(engTd, tr.firstChild);
       const searchText = buildSearchText(job, eng);
       _dayRowMeta.push({ tr, gtr, engId, searchText, status: jobStatus(job) });
       tbody.appendChild(tr);
