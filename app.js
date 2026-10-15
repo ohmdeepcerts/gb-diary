@@ -774,19 +774,10 @@ function renderDay(lanes, dateLabel) {
 
     const ecolor = engColor(eng.id);
 
-    // Engineer group header row: name in LEFT column, rest is a subtle band
+    // Thin group separator — used by applyDayFilter to show/hide the whole section
     const gtr = document.createElement('tr');
     gtr.className = 'dgroup';
-
-    const engTd = document.createElement('td');
-    engTd.style.cssText = 'padding:6px 10px;background:var(--bg2);border-top:2px solid var(--border);position:sticky;left:0;z-index:5';
-    engTd.innerHTML = `<div class="eng-hdr" style="border:none;border-radius:0;padding:0;display:flex;align-items:center;gap:6px"><span class="eng-dot" style="background:${ecolor}"></span><span>${esc(eng.name||'?')}</span></div>`;
-    gtr.appendChild(engTd);
-
-    const bandTd = document.createElement('td');
-    bandTd.colSpan = jobCols;
-    bandTd.style.cssText = 'background:var(--bg2);border-top:2px solid var(--border)';
-    gtr.appendChild(bandTd);
+    gtr.innerHTML = `<td colspan="${jobCols + 1}" style="height:3px;padding:0;background:var(--border)"></td>`;
 
     gtr.addEventListener('dragover', e => { if (_dragPoolJob) { e.preventDefault(); gtr.classList.add('dgroup-droptarget'); }});
     gtr.addEventListener('dragleave', () => gtr.classList.remove('dgroup-droptarget'));
@@ -802,10 +793,11 @@ function renderDay(lanes, dateLabel) {
 
     dayData.jobs.forEach(job => {
       const tr = dayRow(job, eng, showDate ? (job._date || curDate) : null);
-      // Prepend empty engineer column cell to align with header
-      const emptyTd = document.createElement('td');
-      emptyTd.style.cssText = `border-left:3px solid ${ecolor};padding:0`;
-      tr.insertBefore(emptyTd, tr.firstChild);
+      // Engineer name in the LEFT COLUMN of every job row — same as Week view
+      const engTd = document.createElement('td');
+      engTd.style.cssText = 'padding:4px 8px;vertical-align:middle;border-left:3px solid ' + ecolor;
+      engTd.innerHTML = `<div style="display:flex;align-items:center;gap:6px"><span class="eng-dot" style="background:${ecolor};flex-shrink:0"></span><span style="font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(eng.name||'?')}</span></div>`;
+      tr.insertBefore(engTd, tr.firstChild);
       const searchText = buildSearchText(job, eng);
       _dayRowMeta.push({ tr, gtr, engId, searchText, status: jobStatus(job) });
       tbody.appendChild(tr);
