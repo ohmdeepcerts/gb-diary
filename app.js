@@ -749,6 +749,9 @@ function renderDay(lanes, dateLabel) {
     {w:96,  label:''},
   ];
 
+  // Total px width of all job columns — must be explicit for table-layout:fixed to work
+  const tblWidth = cols.reduce((s, c) => s + c.w, 0) + 'px';
+
   const makeColgroup = () => {
     const cg = document.createElement('colgroup');
     cols.forEach(c => { const col = document.createElement('col'); col.style.width = c.w + 'px'; cg.appendChild(col); });
@@ -759,9 +762,9 @@ function renderDay(lanes, dateLabel) {
   const wrap = document.createElement('div');
   wrap.className = 'day-table-wrap';
 
-  // Inner flex-column — min-width:max-content lets tables push scroll width
+  // Inner flex-column — width driven by tblWidth so all sections align
   const inner = document.createElement('div');
-  inner.style.cssText = 'display:flex; flex-direction:column; min-width:max-content';
+  inner.style.cssText = 'display:flex; flex-direction:column';
 
   // Sticky column header row
   const hdrRow = document.createElement('div');
@@ -770,7 +773,7 @@ function renderDay(lanes, dateLabel) {
   corner.style.cssText = 'width:130px; flex-shrink:0; position:sticky; left:0; z-index:11; background:var(--bg3); border-right:1px solid var(--border)';
   const hdrTbl = document.createElement('table');
   hdrTbl.className = 'day-table';
-  hdrTbl.style.cssText = 'width:auto; min-width:0; border:none; border-radius:0; box-shadow:none';
+  hdrTbl.style.cssText = `width:${tblWidth}; min-width:0; border:none; border-radius:0; box-shadow:none`;
   hdrTbl.appendChild(makeColgroup());
   const hdrTr = document.createElement('tr');
   cols.forEach(c => {
@@ -824,7 +827,7 @@ function renderDay(lanes, dateLabel) {
     // Jobs table — colgroup keeps columns aligned with header table above
     const tbl = document.createElement('table');
     tbl.className = 'day-table';
-    tbl.style.cssText = 'width:auto; min-width:0; border:none; border-radius:0; box-shadow:none';
+    tbl.style.cssText = `width:${tblWidth}; min-width:0; border:none; border-radius:0; box-shadow:none`;
     tbl.appendChild(makeColgroup());
     const tbody = document.createElement('tbody');
 
