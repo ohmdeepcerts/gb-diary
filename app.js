@@ -574,6 +574,40 @@ let _dragPoolJob    = null;  // job being dragged from unassigned panel
 let _poolOpen       = true;  // panel visible
 let _dayCompact     = (() => { try { return localStorage.getItem('gbDayCompact') === '1'; } catch(e) { return false; } })();
 
+const HIGHLIGHT_COLORS = ['#ffd5d5','#ffe4c0','#fff9c0','#d5f5e3','#d5eaf5','#ead5f5','#f5d5ea','#c0eeff','#e8e8e8','#ffffff'];
+function getRowColors() { try { return JSON.parse(localStorage.getItem('gbRowColors')||'{}'); } catch(e) { return {}; } }
+function setRowColor(jobId, color) {
+  const c = getRowColors();
+  if (color) c[String(jobId)] = color; else delete c[String(jobId)];
+  try { localStorage.setItem('gbRowColors', JSON.stringify(c)); } catch(e) {}
+}
+function showRowColorPicker(anchor, jobId, tr) {
+  document.getElementById('_rcp')?.remove();
+  const p = document.createElement('div');
+  p.id = '_rcp';
+  p.style.cssText = 'position:fixed;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px;display:flex;gap:5px;flex-wrap:wrap;width:152px;box-shadow:0 4px 16px rgba(0,0,0,.2)';
+  const rect = anchor.getBoundingClientRect();
+  p.style.left = Math.min(rect.left, window.innerWidth - 164) + 'px';
+  p.style.top  = Math.min(rect.bottom + 4, window.innerHeight - 64) + 'px';
+  [...HIGHLIGHT_COLORS, ''].forEach(val => {
+    const sw = document.createElement('button');
+    sw.style.cssText = `width:24px;height:24px;border-radius:4px;border:2px solid ${val?'rgba(0,0,0,.15)':'var(--border)'};cursor:pointer;background:${val||'var(--bg3)'};font-size:10px;padding:0;flex-shrink:0`;
+    sw.textContent = val ? '' : '✕';
+    sw.title = val || 'Clear colour';
+    sw.addEventListener('click', e => {
+      e.stopPropagation();
+      tr.style.background = val;
+      anchor.style.background = val || '';
+      anchor.textContent = val ? '' : '🎨';
+      setRowColor(jobId, val);
+      p.remove();
+    });
+    p.appendChild(sw);
+  });
+  document.body.appendChild(p);
+  setTimeout(() => document.addEventListener('click', () => p.remove(), {once:true}), 0);
+}
+
 // ── Reviewer helper — reads from portal's "Tag someone" feature ───────────────
 function jobReviewer(job) {
   return job.comments_check?.user_name || '';
@@ -1153,14 +1187,20 @@ function dayRow(job, engineer, dateISO) {
   const invLine = inv ? `<div style="font-size:9px;color:var(--text3);margin-top:2px">${inv.ref ? esc(inv.ref) : '📄 Invoice'}</div>` : '';
   cells.push(`<td><span class="jbadge badge-${st}" style="border-left:3px solid ${color}">${esc(label)}</span>${invLine}</td>`);
 
-  // Action — portal + WhatsApp quick-dial
+  // Action — portal + WhatsApp quick-dial + row colour picker
   const _waRaw = (phone||'').replace(/\D/g,'').replace(/^0/,'44');
   const _waCell = _waRaw
     ? `<button class="day-wa-btn" data-wa="https://wa.me/${_waRaw}" title="WhatsApp ${esc(phone)}">💬</button>`
     : '';
-  cells.push(`<td><div class="day-act-wrap"><button class="day-act-btn" title="Open in portal">↗</button>${_waCell}</div></td>`);
+  const _rowColor = getRowColors()[String(job.id)] || '';
+  cells.push(`<td><div class="day-act-wrap"><button class="day-act-btn" title="Open in portal">↗</button>${_waCell}<button class="day-paint-btn" title="Highlight row colour" style="background:${_rowColor||''};border:1px solid var(--border);width:18px;height:18px;border-radius:3px;cursor:pointer;font-size:10px;padding:0;flex-shrink:0">${_rowColor?'':'🎨'}</button></div></td>`);
 
   tr.innerHTML = cells.join('');
+  if (_rowColor) tr.style.background = _rowColor;
+
+  // Paint button listener
+  const paintBtn = tr.querySelector('.day-paint-btn');
+  if (paintBtn) paintBtn.addEventListener('click', e => { e.stopPropagation(); showRowColorPicker(paintBtn, job.id, tr); });
 
   makeCopyCell(tr.querySelector('.addr-td'), addr || '—');
   makeCopyCell(tr.querySelector('.desc-td'), desc);
