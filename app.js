@@ -762,9 +762,10 @@ function renderDay(lanes, dateLabel) {
   const wrap = document.createElement('div');
   wrap.className = 'day-table-wrap';
 
-  // Inner flex-column — width driven by tblWidth so all sections align
+  // min-width:max-content forces the container to expand to full table width
+  // so the jobs table sits BESIDE the eng-hdr, not below it
   const inner = document.createElement('div');
-  inner.style.cssText = 'display:flex; flex-direction:column';
+  inner.style.cssText = 'display:flex; flex-direction:column; min-width:max-content';
 
   // Sticky column header row
   const hdrRow = document.createElement('div');
