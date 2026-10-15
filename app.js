@@ -68,6 +68,11 @@ const api = {
   updateAmount: async (jobId, amount) => {
     return trpcMutate('jobs.update', { id: jobId, price: amount });
   },
+  updateNotes: async (jobId, job, value) => {
+    const payload = { id: jobId, notes: value };
+    if (job.title || job.job_title) payload.title = value;
+    return trpcMutate('jobs.update', payload);
+  },
   getJob: (jobId) => trpcQuery('jobs.get', { id: jobId }),
   setStatus: (jobId, statusKey, extra = {}) => {
     const STATUS_API = {
@@ -662,6 +667,81 @@ function showRowColorPicker(anchor, jobId, tr) {
 
   document.body.appendChild(p);
   setTimeout(() => document.addEventListener('click', () => p.remove(), {once:true}), 0);
+}
+
+function showDescEditor(anchor, job, currentDesc) {
+  document.getElementById('_desc_pop')?.remove();
+  const pop = document.createElement('div');
+  pop.id = '_desc_pop';
+  pop.style.cssText = 'position:fixed;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;width:320px;box-shadow:0 4px 20px rgba(0,0,0,.22)';
+  const rect = anchor.getBoundingClientRect();
+  pop.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 336)) + 'px';
+  const topBelow = rect.bottom + 6;
+  pop.style.top  = (topBelow + 230 > window.innerHeight ? rect.top - 236 : topBelow) + 'px';
+
+  const lbl = document.createElement('div');
+  lbl.style.cssText = 'font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px';
+  lbl.textContent = 'Edit description · ' + (job.job_no || job.reference || job.id || '');
+
+  const ta = document.createElement('textarea');
+  ta.value = currentDesc;
+  ta.style.cssText = 'width:100%;height:110px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg1);color:var(--text);font-size:12px;resize:vertical;box-sizing:border-box;font-family:inherit;display:block';
+
+  const hint = document.createElement('div');
+  hint.style.cssText = 'font-size:10px;color:var(--text2);margin:4px 0 8px';
+  hint.textContent = 'Ctrl+Enter to save · Esc to cancel';
+
+  const btns = document.createElement('div');
+  btns.style.cssText = 'display:flex;gap:6px;justify-content:flex-end';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.cssText = 'padding:4px 12px;border-radius:5px;border:1px solid var(--border);background:var(--bg3);cursor:pointer;font-size:12px';
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = 'Save';
+  saveBtn.style.cssText = 'padding:4px 12px;border-radius:5px;border:none;background:var(--accent,#3b82f6);color:#fff;cursor:pointer;font-size:12px;font-weight:600';
+  btns.append(cancelBtn, saveBtn);
+  pop.append(lbl, ta, hint, btns);
+  document.body.appendChild(pop);
+  ta.focus();
+
+  let _saving = false;
+  const close = () => pop.remove();
+
+  const save = async () => {
+    if (_saving) return;
+    const newVal = ta.value.trim();
+    _saving = true;
+    saveBtn.textContent = '…'; saveBtn.disabled = true;
+    try {
+      await api.updateNotes(job.id, job, newVal);
+      const newDisp = newVal.length > 65 ? newVal.slice(0,65)+'…' : (newVal || '—');
+      // Update cell text in-place (preserve copy button)
+      const copyBtn = anchor.querySelector('.copy-btn');
+      Array.from(anchor.childNodes).forEach(n => { if (n !== copyBtn) n.remove(); });
+      anchor.insertBefore(document.createTextNode(newDisp), copyBtn || null);
+      anchor.title = newVal + ' (click to edit)';
+      clearCache();
+      setStatus('Description updated · ' + now());
+      pop.remove();
+    } catch(ex) {
+      _saving = false;
+      saveBtn.textContent = 'Save'; saveBtn.disabled = false;
+      setStatus('Failed: ' + (ex.message||'unknown'), false);
+    }
+  };
+
+  cancelBtn.addEventListener('mousedown', e => { e.preventDefault(); close(); });
+  saveBtn.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); save(); });
+  ta.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); save(); }
+  });
+
+  setTimeout(() => {
+    document.addEventListener('mousedown', function onOut(e) {
+      if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener('mousedown', onOut); }
+    });
+  }, 0);
 }
 
 function openSettingsModal() {
@@ -1325,8 +1405,8 @@ function dayRow(job, engineer, dateISO) {
   // Address
   cells.push(`<td class="addr-td" title="${esc(addr)}">${esc(addrDisp||'—')}</td>`);
 
-  // Description
-  cells.push(`<td class="desc-td" title="${esc(desc)}">${esc(descDisp)}</td>`);
+  // Description — click to edit
+  cells.push(`<td class="desc-td" title="${esc(desc)} (click to edit)" style="cursor:pointer">${esc(descDisp)}<span class="desc-edit-icon" style="opacity:0;margin-left:4px;font-size:10px;transition:opacity .15s">✎</span></td>`);
 
   // Access
   cells.push(`<td title="${esc(access)}">${esc((access||'—').length>14?(access||'—').slice(0,14)+'…':(access||'—'))}</td>`);
@@ -1368,8 +1448,19 @@ function dayRow(job, engineer, dateISO) {
   if (paintBtn) paintBtn.addEventListener('click', e => { e.stopPropagation(); showRowColorPicker(paintBtn, job.id, tr); });
 
   makeCopyCell(tr.querySelector('.addr-td'), addr || '—');
-  makeCopyCell(tr.querySelector('.desc-td'), desc);
   makeCopyCell(tr.querySelector('.cust-td'), cust || '—');
+
+  // Description — click to open floating editor
+  const descTd = tr.querySelector('.desc-td');
+  if (descTd) {
+    descTd.addEventListener('mouseenter', () => { const ic = descTd.querySelector('.desc-edit-icon'); if(ic) ic.style.opacity='0.5'; });
+    descTd.addEventListener('mouseleave', () => { const ic = descTd.querySelector('.desc-edit-icon'); if(ic) ic.style.opacity='0'; });
+    descTd.addEventListener('click', e => {
+      if (e.target.classList.contains('copy-btn')) return;
+      e.stopPropagation();
+      showDescEditor(descTd, job, desc === '—' ? '' : desc);
+    });
+  }
 
   // Inline amount editor
   const amtTd = tr.querySelector('.amt-td');
