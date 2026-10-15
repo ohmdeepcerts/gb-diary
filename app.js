@@ -748,7 +748,8 @@ function applyDayViewStyles() {
     ? `table.day-table tbody td{height:auto!important;padding:1px 6px!important;font-size:11px!important}
        table.day-table tbody td:first-child{min-height:auto!important;padding:1px 8px!important}
        table.day-table .djob-title{display:none!important}
-       table.day-table .row-stamps{display:none!important}
+       table.day-table .stamp-toggle{display:none!important}
+       table.day-table .row-stamps{margin-top:0!important}
        table.day-table .eng-dot{width:6px!important;height:6px!important}`
     : '';
 }
