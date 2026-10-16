@@ -4811,7 +4811,7 @@ function _buildInvBodyHTML() {
       <div class="inv-detail-actions">
         ${status!=='paid'&&status!=='void'&&status!=='draft'?`<button class="inv-act-btn primary" data-rpay="${inv.id}" data-rbal="${balance}" data-rno="${esc(inv.invoiceNo||'')}">₤ Record Payment</button>`:''}
         ${status==='draft'?`<button class="inv-act-btn" data-issue="${inv.id}">Issue Invoice</button>`:''}
-        ${inv.pdfPath?`<a class="inv-act-btn" href="https://gbelectricals.co.uk${esc(inv.pdfPath)}" target="_blank" rel="noopener">↓ PDF</a>`:''}
+        ${inv.pdfPath?`<a class="inv-act-btn" href="https://gb-proxy.gbmandeep.workers.dev${esc(inv.pdfPath)}" target="_blank" rel="noopener">↓ PDF</a>`:''}
       </div>
     `;
 
