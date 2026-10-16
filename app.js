@@ -4823,20 +4823,20 @@ function _buildInvBodyHTML() {
       </div>
     `;
 
+    const descVal = esc(inv.description || inv.notes || inv.title || '—');
     return `
       <tr class="inv-row st-${status}" data-idx="${idx}">
         <td style="font-weight:700;font-size:11px;white-space:nowrap">${esc(inv.invoiceNo||'—')}</td>
-        <td style="font-size:11px">${esc(inv.jobNo||'—')}</td>
-        <td>${esc(inv.contactName||'—')}</td>
-        <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(inv.siteAddress||'—')}</td>
+        <td style="font-size:11px;white-space:nowrap">${esc(inv.jobNo||'—')}</td>
+        <td style="font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(inv.siteAddress||'—')}</td>
+        <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">${descVal}</td>
         <td style="white-space:nowrap">${inv.dueAt?new Date(inv.dueAt).toLocaleDateString('en-GB'):'—'}${aging.pill?`<span class="inv-age ${aging.pillCls}" style="margin-left:4px">${aging.pill}</span>`:''}
         </td>
-        <td style="text-align:right;font-weight:700">${_invFmt(inv.total)}</td>
         <td style="text-align:right;font-weight:700;color:${balance<=0?'#16a34a':'inherit'}">${_invFmt(balance)}</td>
         <td>${_invStatusBadge(status)}</td>
       </tr>
       <tr class="inv-detail-row" data-detail="${idx}">
-        <td class="inv-detail-cell" colspan="8">${detailHTML}</td>
+        <td class="inv-detail-cell" colspan="7">${detailHTML}</td>
       </tr>
     `;
   }).join('');
@@ -4855,10 +4855,9 @@ function _buildInvBodyHTML() {
         <thead><tr>
           <th>Invoice #</th>
           <th>Job #</th>
-          <th>Contact</th>
-          <th>Site</th>
+          <th>Address</th>
+          <th>Description</th>
           <th class="sortable" data-sort="dueAt">Due${_invSortBy==='dueAt'?(_invSortDir==='asc'?' ↑':' ↓'):''}</th>
-          <th class="sortable" data-sort="total" style="text-align:right">Total${_invSortBy==='total'?(_invSortDir==='asc'?' ↑':' ↓'):''}</th>
           <th style="text-align:right">Balance</th>
           <th>Status</th>
         </tr></thead>
