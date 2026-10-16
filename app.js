@@ -1653,12 +1653,13 @@ function dayRow(job, engineer, dateISO) {
     setTimeout(() => { _trDragged = false; }, 100);
   });
 
-  // Within-engineer reorder — only fires when dragging a row in the same lane
+  // Row drag-and-drop: within-engineer reorder, cross-engineer reassign, pool assign
   tr.addEventListener('dragover', e => {
-    const sameEng = dragJob && String(dragEng) === String(engineer?.id || '') && dragJob !== String(job.id);
-    if (!sameEng) return;
-    e.preventDefault();
-    e.stopPropagation();
+    const sameEng  = dragJob && String(dragEng) === String(engineer?.id || '') && dragJob !== String(job.id);
+    const crossEng = dragJob && String(dragEng) !== String(engineer?.id || '');
+    const fromPool = !!_dragPoolJob;
+    if (!sameEng && !crossEng && !fromPool) return;
+    e.preventDefault(); e.stopPropagation();
     const rect = tr.getBoundingClientRect();
     const insertBefore = e.clientY < rect.top + rect.height / 2;
     tr.classList.toggle('drow-insert-before', insertBefore);
@@ -1668,27 +1669,50 @@ function dayRow(job, engineer, dateISO) {
     tr.classList.remove('drow-insert-before', 'drow-insert-after');
   });
   tr.addEventListener('drop', async e => {
-    const sameEng = dragJob && String(dragEng) === String(engineer?.id || '') && dragJob !== String(job.id);
-    if (!sameEng) return;
-    e.preventDefault();
-    e.stopPropagation();
+    const sameEng  = dragJob && String(dragEng) === String(engineer?.id || '') && dragJob !== String(job.id);
+    const crossEng = dragJob && String(dragEng) !== String(engineer?.id || '');
+    const fromPool = !!_dragPoolJob;
+    if (!sameEng && !crossEng && !fromPool) return;
+    e.preventDefault(); e.stopPropagation();
     const insertBefore = tr.classList.contains('drow-insert-before');
     tr.classList.remove('drow-insert-before', 'drow-insert-after');
 
-    const tbody = tr.closest('tbody');
-    const draggedRow = tbody?.querySelector(`tr[data-job-id="${CSS.escape(String(dragJob))}"]`);
-    if (draggedRow && draggedRow !== tr) {
-      if (insertBefore) tbody.insertBefore(draggedRow, tr);
-      else              tr.after(draggedRow);
+    if (sameEng) {
+      // Within-engineer reorder
+      const tbody = tr.closest('tbody');
+      const draggedRow = tbody?.querySelector(`tr[data-job-id="${CSS.escape(String(dragJob))}"]`);
+      if (draggedRow && draggedRow !== tr) {
+        if (insertBefore) tbody.insertBefore(draggedRow, tr);
+        else              tr.after(draggedRow);
+      }
+      const engId = String(engineer?.id || '');
+      const orderedRows = [...tbody.querySelectorAll(`tr[data-eng-id="${CSS.escape(engId)}"]`)];
+      orderedRows.forEach((r, i) => {
+        trpcMutate('jobs.update', { id: r.dataset.jobId, sortOrder: i }).catch(() => {});
+      });
+      setStatus('Order saved ✓');
+    } else if (crossEng) {
+      // Cross-engineer reassign
+      const jid = dragJob; const fromDate = dragDate2 || curDate;
+      dragJob = null; dragDate2 = null; dragEng = null;
+      try {
+        setStatus('Reassigning…');
+        await api.reschedule(jid, fromDate, engineer?.id);
+        setStatus(`Moved to ${engineer?.name || 'engineer'} ✓`);
+        clearCache();
+        if (dayFrom && dayTo && dayFrom !== dayTo) await loadDayRange(true); else await loadDay(true);
+      } catch(er) { setStatus(`Failed: ${er.message}`, false); }
+    } else if (fromPool) {
+      // Pool (unassigned) → engineer row
+      const poolJob = _dragPoolJob; _dragPoolJob = null;
+      try {
+        setStatus('Assigning…');
+        await api.reschedule(poolJob.id, poolJob._date || curDate, engineer?.id);
+        setStatus(`Assigned to ${engineer?.name || 'engineer'} ✓`);
+        clearCache();
+        if (dayFrom && dayTo && dayFrom !== dayTo) await loadDayRange(true); else await loadDay(true);
+      } catch(er) { setStatus(`Failed: ${er.message}`, false); }
     }
-
-    // Save new sort_order for all rows in this engineer's lane
-    const engId = String(engineer?.id || '');
-    const orderedRows = [...tbody.querySelectorAll(`tr[data-eng-id="${CSS.escape(engId)}"]`)];
-    orderedRows.forEach((r, i) => {
-      trpcMutate('jobs.update', { id: r.dataset.jobId, sortOrder: i }).catch(() => {});
-    });
-    setStatus('Order saved ✓');
   });
 
   tr.addEventListener('click', () => { if (_trDragged) return; openJobDetail(job.id); });
