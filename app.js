@@ -4926,9 +4926,12 @@ function _wireInvControls() {
 
   async function _invGetPdfUrl(invoiceId) {
     const res = await trpcQuery('invoices.pdf', { invoiceId });
-    const url = res?.url;
-    if (!url) throw new Error('No PDF URL returned');
-    return 'https://gbelectricals.co.uk' + url;
+    const relUrl = res?.url;
+    if (!relUrl) throw new Error('No PDF URL returned');
+    return {
+      viewUrl:  'https://gbelectricals.co.uk' + relUrl,
+      fetchUrl: 'https://gb-proxy.gbmandeep.workers.dev' + relUrl,
+    };
   }
 
   // View PDF in new tab
@@ -4938,8 +4941,8 @@ function _wireInvControls() {
       const orig = btn.textContent;
       btn.disabled = true; btn.textContent = '…';
       try {
-        const fullUrl = await _invGetPdfUrl(btn.dataset.vpdf);
-        window.open(fullUrl, '_blank', 'noopener');
+        const { viewUrl } = await _invGetPdfUrl(btn.dataset.vpdf);
+        window.open(viewUrl, '_blank', 'noopener');
       } catch(err) {
         alert('Could not load PDF: ' + (err?.message || err));
       } finally {
@@ -4948,15 +4951,15 @@ function _wireInvControls() {
     });
   });
 
-  // Download PDF as file
+  // Download PDF as file (fetch through proxy to avoid CORS)
   document.querySelectorAll('[data-dlpdf]').forEach(btn => {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
       const orig = btn.textContent;
       btn.disabled = true; btn.textContent = '⬇ Fetching…';
       try {
-        const fullUrl = await _invGetPdfUrl(btn.dataset.dlpdf);
-        const r = await fetch(fullUrl);
+        const { fetchUrl } = await _invGetPdfUrl(btn.dataset.dlpdf);
+        const r = await fetch(fetchUrl, { credentials: 'include' });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const blob = await r.blob();
         const blobUrl = URL.createObjectURL(blob);
@@ -4975,25 +4978,22 @@ function _wireInvControls() {
     });
   });
 
-  // Copy PDF to clipboard (actual blob; falls back to URL if browser blocks)
+  // Copy PDF to clipboard (fetch through proxy; try blob then fall back to URL)
   document.querySelectorAll('[data-copypdf]').forEach(btn => {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
       const orig = btn.textContent;
       btn.disabled = true; btn.textContent = '📋 Fetching…';
       try {
-        const fullUrl = await _invGetPdfUrl(btn.dataset.copypdf);
-        const r = await fetch(fullUrl);
+        const { fetchUrl, viewUrl } = await _invGetPdfUrl(btn.dataset.copypdf);
+        const r = await fetch(fetchUrl, { credentials: 'include' });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const blob = await r.blob();
-        let copied = false;
         try {
           await navigator.clipboard.write([new ClipboardItem({ 'application/pdf': blob })]);
-          copied = true;
           btn.textContent = '✓ PDF copied!';
         } catch {
-          // Browser doesn't support PDF in clipboard — copy URL instead
-          await navigator.clipboard.writeText(fullUrl);
+          await navigator.clipboard.writeText(viewUrl);
           btn.textContent = '✓ Link copied';
         }
         setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 2500);
