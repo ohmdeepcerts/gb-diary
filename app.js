@@ -4709,8 +4709,11 @@ async function _loadInvoices(resetPage = false) {
   _invItems  = list?.invoices || list?.items || [];
   _invTotal  = list?.total ?? _invItems.length;
 
-  // Fetch line-item descriptions for all visible invoices (cached)
-  await Promise.all(_invItems.map(async inv => {
+  // Render immediately — descriptions fill in the background
+  _renderInvoicePage();
+
+  // Fetch line-item descriptions in background (non-blocking), update cells as they arrive
+  _invItems.forEach(async inv => {
     if (_invDescCache[inv.id] !== undefined) return;
     try {
       const detail = await trpcQuery('invoices.get', { invoiceId: inv.id });
@@ -4720,9 +4723,10 @@ async function _loadInvoices(resetPage = false) {
     } catch(e) {
       _invDescCache[inv.id] = { desc: inv.notes || '', lineItems: [] };
     }
-  }));
-
-  _renderInvoicePage();
+    // Update the description cell in the DOM directly
+    const cell = document.querySelector(`[data-desc-id="${inv.id}"]`);
+    if (cell) cell.textContent = _invDescCache[inv.id].desc || '—';
+  });
 }
 
 function _renderInvoicePage() {
@@ -4884,7 +4888,7 @@ function _buildInvBodyHTML() {
         <td style="font-weight:700;font-size:11px;white-space:nowrap">${esc(inv.invoiceNo||'—')}</td>
         <td style="font-size:11px;white-space:nowrap">${esc(inv.jobNo||'—')}</td>
         <td style="font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(inv.siteAddress||'—')}</td>
-        <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">${descVal}</td>
+        <td data-desc-id="${inv.id}" style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">${descVal}</td>
         <td style="white-space:nowrap">${inv.dueAt?new Date(inv.dueAt).toLocaleDateString('en-GB'):'—'}${aging.pill?`<span class="inv-age ${aging.pillCls}" style="margin-left:4px">${aging.pill}</span>`:''}
         </td>
         <td style="text-align:right;font-weight:700;color:${balance<=0?'#16a34a':'inherit'}">${_invFmt(balance)}</td>
