@@ -4638,7 +4638,11 @@ function _injectInvoiceCSS() {
 
 // ── INVOICE HELPERS ────────────────────────────────────────────────────────────
 
-function _invFmt(pence) {
+function _invFmt(pounds) {
+  if (pounds == null) return '—';
+  return '£' + (pounds).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+function _invFmtPence(pence) {
   if (pence == null) return '—';
   return '£' + (pence / 100).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2});
 }
@@ -4748,7 +4752,7 @@ function _buildInvTopHTML() {
   return `
     <div class="inv-cards">
       <div class="inv-card danger">
-        <div class="inv-card-val">${_invFmt(t.owedPence)}</div>
+        <div class="inv-card-val">${_invFmtPence(t.owedPence)}</div>
         <div class="inv-card-lbl">Total owed</div>
       </div>
       <div class="inv-card warn">
@@ -4955,7 +4959,7 @@ function _openRecordPayment(invoiceId, balance, invoiceNo) {
     <div class="inv-modal">
       <h3>Record Payment — ${esc(invoiceNo)}</h3>
       <label>Amount (£)</label>
-      <input id="rp-amount" type="number" min="0.01" step="0.01" value="${(balance/100).toFixed(2)}">
+      <input id="rp-amount" type="number" min="0.01" step="0.01" value="${(+balance||0).toFixed(2)}">
       <label>Method</label>
       <select id="rp-method">
         <option value="bank">Bank Transfer</option>
@@ -4987,7 +4991,7 @@ function _openRecordPayment(invoiceId, balance, invoiceNo) {
     try {
       await trpcMutate('invoices.recordPayment', {
         invoiceId, method, receivedAt: dateVal,
-        amount: Math.round(amt * 100),
+        amount: amt,
       });
       modal.remove();
       await _loadInvoices(false);
