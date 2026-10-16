@@ -3118,7 +3118,7 @@ function _injectAddJobCSS() {
     #view-add .add-box{width:100%!important;max-width:1020px!important;background:transparent!important;border:none!important;box-shadow:none!important;padding:0!important;gap:12px!important;display:flex;flex-direction:column}
     .aj-hdr{font-size:14px;font-weight:700;color:var(--text1)}
     .aj-hdr span{font-size:11px;font-weight:400;opacity:.5;margin-left:6px}
-    .aj-cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+    .aj-cards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;align-items:start}
     .aj-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column}
     .aj-ch{padding:10px 16px;border-bottom:1px solid var(--border);background:var(--bg3);display:flex;align-items:center;gap:8px;border-radius:12px 12px 0 0}
     .aj-chi{font-size:15px;line-height:1}
@@ -3163,7 +3163,12 @@ function _injectAddJobCSS() {
     .aj-pclookup{flex-shrink:0;width:34px;height:34px;border-radius:7px;border:1px solid var(--border);background:var(--bg3);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;align-self:flex-end}
     .aj-pclookup:hover{background:var(--bg4)}
     .aj-footer{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding-top:4px}
-    @media(max-width:700px){.aj-cards{grid-template-columns:1fr}#view-add{padding:8px 4px!important}}
+    .aj-coming{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:220px;opacity:.45}
+    .aj-coming-icon{font-size:36px}
+    .aj-coming-txt{font-size:13px;font-weight:600;color:var(--text2)}
+    .aj-coming-sub{font-size:11px;color:var(--text3);text-align:center}
+    @media(max-width:900px){.aj-cards{grid-template-columns:1fr 1fr}}
+    @media(max-width:600px){.aj-cards{grid-template-columns:1fr}#view-add{padding:8px 4px!important}}
   `;
   document.head.appendChild(s);
 }
@@ -3225,7 +3230,11 @@ async function openAddJob() {
   const certTypes = (opts.certTypes && opts.certTypes.length) ? opts.certTypes : FALLBACK_CERTS;
 
   const ctypes    = opts.contactTypes || ['Landlord','Tenant','Owner','Letting Agent','Commercial','Other'];
-  const ctypeOpts = ctypes.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+  const ctypeOpts = ctypes.map(t => {
+    const val = typeof t === 'string' ? t : (t.id || t.name || '');
+    const lbl = typeof t === 'string' ? t : (t.name || t.id || '');
+    return `<option value="${esc(val)}">${esc(lbl)}</option>`;
+  }).join('');
 
   const today = curDate || todayISO();
 
@@ -3233,54 +3242,6 @@ async function openAddJob() {
   box.innerHTML = `
     <div class="aj-hdr">Add Job<span>— saves directly to portal</span></div>
     <div class="aj-cards">
-
-      <div class="aj-card">
-        <div class="aj-ch"><span class="aj-chi">👤</span><span class="aj-cht">Client Details</span></div>
-        <div class="aj-cb">
-          <div class="aj-fg">
-            <div class="aj-fl">Search by name, phone or email</div>
-            <div class="aj-drop-wrap">
-              <input class="inp" id="aj-cs-inp" type="text" placeholder="Type to find existing client…" autocomplete="off">
-              <div class="aj-drop" id="aj-cs-drop" style="display:none"></div>
-            </div>
-          </div>
-          <div id="aj-sel" style="display:none" class="aj-sel-wrap">
-            <div>
-              <div class="aj-sel-nm" id="aj-sel-nm"></div>
-              <div class="aj-sel-sb" id="aj-sel-sb"></div>
-            </div>
-            <button class="aj-sel-cl" id="aj-sel-cl" type="button">✕ Clear</button>
-          </div>
-          <div class="aj-div">or add new client</div>
-          <div class="aj-new">
-            <div class="aj-new-lbl">New client</div>
-            <div class="aj-row">
-              <div class="aj-fg">
-                <div class="aj-fl">Full Name <span class="aj-req">*</span></div>
-                <input class="inp" id="aj-new-name" placeholder="Client name">
-              </div>
-              <div class="aj-fg">
-                <div class="aj-fl">Phone</div>
-                <input class="inp" id="aj-new-phone" type="tel" placeholder="07…">
-              </div>
-            </div>
-            <div class="aj-row">
-              <div class="aj-fg">
-                <div class="aj-fl">Email</div>
-                <input class="inp" id="aj-new-email" type="email" placeholder="email@…">
-              </div>
-              <div class="aj-fg">
-                <div class="aj-fl">Type</div>
-                <select class="inp" id="aj-new-type">${ctypeOpts}</select>
-              </div>
-            </div>
-            <div class="aj-fg">
-              <div class="aj-fl">Company (optional)</div>
-              <input class="inp" id="aj-new-co" placeholder="Letting agent, company…">
-            </div>
-          </div>
-        </div>
-      </div>
 
       <div class="aj-card">
         <div class="aj-ch"><span class="aj-chi">🔧</span><span class="aj-cht">Job Details</span></div>
@@ -3350,6 +3311,64 @@ async function openAddJob() {
           </div>
         </div>
       </div>
+
+      <div class="aj-card">
+        <div class="aj-ch"><span class="aj-chi">👤</span><span class="aj-cht">Client Details</span></div>
+        <div class="aj-cb">
+          <div class="aj-fg">
+            <div class="aj-fl">Search by name, phone or email</div>
+            <div class="aj-drop-wrap">
+              <input class="inp" id="aj-cs-inp" type="text" placeholder="Type to find existing client…" autocomplete="off">
+              <div class="aj-drop" id="aj-cs-drop" style="display:none"></div>
+            </div>
+          </div>
+          <div id="aj-sel" style="display:none" class="aj-sel-wrap">
+            <div>
+              <div class="aj-sel-nm" id="aj-sel-nm"></div>
+              <div class="aj-sel-sb" id="aj-sel-sb"></div>
+            </div>
+            <button class="aj-sel-cl" id="aj-sel-cl" type="button">✕ Clear</button>
+          </div>
+          <div class="aj-div">or add new client</div>
+          <div class="aj-new">
+            <div class="aj-new-lbl">New client</div>
+            <div class="aj-row">
+              <div class="aj-fg">
+                <div class="aj-fl">Full Name <span class="aj-req">*</span></div>
+                <input class="inp" id="aj-new-name" placeholder="Client name">
+              </div>
+              <div class="aj-fg">
+                <div class="aj-fl">Phone</div>
+                <input class="inp" id="aj-new-phone" type="tel" placeholder="07…">
+              </div>
+            </div>
+            <div class="aj-row">
+              <div class="aj-fg">
+                <div class="aj-fl">Email</div>
+                <input class="inp" id="aj-new-email" type="email" placeholder="email@…">
+              </div>
+              <div class="aj-fg">
+                <div class="aj-fl">Type</div>
+                <select class="inp" id="aj-new-type">${ctypeOpts}</select>
+              </div>
+            </div>
+            <div class="aj-fg">
+              <div class="aj-fl">Company (optional)</div>
+              <input class="inp" id="aj-new-co" placeholder="Letting agent, company…">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="aj-card">
+        <div class="aj-ch"><span class="aj-chi">🔜</span><span class="aj-cht">Coming Soon</span></div>
+        <div class="aj-cb aj-coming">
+          <div class="aj-coming-icon">🚧</div>
+          <div class="aj-coming-txt">More options coming soon</div>
+          <div class="aj-coming-sub">This panel will unlock<br>additional features.</div>
+        </div>
+      </div>
+
     </div>
     <div class="err-msg" id="aj-err" style="display:none"></div>
     <div class="aj-footer">
