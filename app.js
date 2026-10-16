@@ -1044,7 +1044,11 @@ function applyDayViewStyles() {
     : '') +
     `\ntable.day-table tbody tr.day-row-dragging{opacity:.35;outline:2px dashed var(--red);}
      table.day-table tbody tr[draggable]{cursor:grab;}
-     table.day-table tbody tr[draggable]:active{cursor:grabbing;}`;
+     table.day-table tbody tr[draggable]:active{cursor:grabbing;}
+     table.day-table tbody tr.row-cancelled{opacity:.55;font-style:italic;}
+     table.day-table tbody tr.row-cancelled td{text-decoration:line-through;text-decoration-color:rgba(107,114,128,.7);text-decoration-thickness:1.5px;}
+     table.day-table tbody tr.row-cancelled td:last-child,
+     table.day-table tbody tr.row-cancelled td:nth-last-child(2){text-decoration:none;}`;
 }
 
 function renderDay(lanes, dateLabel) {
@@ -1424,7 +1428,7 @@ function dayRow(job, engineer, dateISO) {
     .join('');
 
   const tr = document.createElement('tr');
-  tr.className = rClass;
+  tr.className = [rClass, st === 'cancelled' ? 'row-cancelled' : ''].filter(Boolean).join(' ');
 
   const cells = [];
 
