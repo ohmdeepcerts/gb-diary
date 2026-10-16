@@ -1048,7 +1048,9 @@ function applyDayViewStyles() {
      table.day-table tbody tr.row-cancelled{opacity:.55;font-style:italic;}
      table.day-table tbody tr.row-cancelled td{text-decoration:line-through;text-decoration-color:rgba(107,114,128,.7);text-decoration-thickness:1.5px;}
      table.day-table tbody tr.row-cancelled td:last-child,
-     table.day-table tbody tr.row-cancelled td:nth-last-child(2){text-decoration:none;}`;
+     table.day-table tbody tr.row-cancelled td:nth-last-child(2){text-decoration:none;}
+     table.day-table tbody tr.drow-insert-before td{box-shadow:0 -3px 0 var(--red);}
+     table.day-table tbody tr.drow-insert-after td{box-shadow:0 3px 0 var(--red);}`;
 }
 
 function renderDay(lanes, dateLabel) {
@@ -1622,6 +1624,9 @@ function dayRow(job, engineer, dateISO) {
       window.open(_dayWaBtn.dataset.wa, '_blank');
     });
   }
+  tr.dataset.jobId = String(job.id);
+  tr.dataset.engId = String(engineer?.id || '');
+
   let _trDragged = false;
   tr.draggable = true;
   tr.addEventListener('dragstart', e => {
@@ -1635,9 +1640,52 @@ function dayRow(job, engineer, dateISO) {
   });
   tr.addEventListener('dragend', () => {
     tr.classList.remove('day-row-dragging');
+    // clean up any lingering drop indicators
+    tr.closest('tbody')?.querySelectorAll('.drow-insert-before,.drow-insert-after').forEach(r => {
+      r.classList.remove('drow-insert-before','drow-insert-after');
+    });
     dragJob = null; dragDate2 = null; dragEng = null;
     setTimeout(() => { _trDragged = false; }, 100);
   });
+
+  // Within-engineer reorder — only fires when dragging a row in the same lane
+  tr.addEventListener('dragover', e => {
+    const sameEng = dragJob && String(dragEng) === String(engineer?.id || '') && dragJob !== String(job.id);
+    if (!sameEng) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = tr.getBoundingClientRect();
+    const insertBefore = e.clientY < rect.top + rect.height / 2;
+    tr.classList.toggle('drow-insert-before', insertBefore);
+    tr.classList.toggle('drow-insert-after',  !insertBefore);
+  });
+  tr.addEventListener('dragleave', () => {
+    tr.classList.remove('drow-insert-before', 'drow-insert-after');
+  });
+  tr.addEventListener('drop', async e => {
+    const sameEng = dragJob && String(dragEng) === String(engineer?.id || '') && dragJob !== String(job.id);
+    if (!sameEng) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const insertBefore = tr.classList.contains('drow-insert-before');
+    tr.classList.remove('drow-insert-before', 'drow-insert-after');
+
+    const tbody = tr.closest('tbody');
+    const draggedRow = tbody?.querySelector(`tr[data-job-id="${CSS.escape(String(dragJob))}"]`);
+    if (draggedRow && draggedRow !== tr) {
+      if (insertBefore) tbody.insertBefore(draggedRow, tr);
+      else              tr.after(draggedRow);
+    }
+
+    // Save new sort_order for all rows in this engineer's lane
+    const engId = String(engineer?.id || '');
+    const orderedRows = [...tbody.querySelectorAll(`tr[data-eng-id="${CSS.escape(engId)}"]`)];
+    orderedRows.forEach((r, i) => {
+      trpcMutate('jobs.update', { id: r.dataset.jobId, sortOrder: i }).catch(() => {});
+    });
+    setStatus('Order saved ✓');
+  });
+
   tr.addEventListener('click', () => { if (_trDragged) return; openJobDetail(job.id); });
   return tr;
 }
