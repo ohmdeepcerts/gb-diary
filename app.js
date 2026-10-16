@@ -3734,25 +3734,39 @@ function _fmtDate(iso) {
 }
 
 function _certExpiryRows(jobs) {
-  const EXPIRY_DAYS = { 'CP12': 365, 'Gas Certificate': 365, 'Gas': 365, 'EICR': 1825, 'PAT': 365, 'EL': 1825, 'Electrical': 1825 };
+  // slug → { label, days } mapping for the portal's cert_type_ids
+  const CERT_MAP = {
+    gas_safety_cp12:           { label: 'CP12 Gas Safety',   days: 365  },
+    cp12:                      { label: 'CP12 Gas Safety',   days: 365  },
+    gas:                       { label: 'Gas Safety',        days: 365  },
+    eicr:                      { label: 'EICR',              days: 1825 },
+    electrical_installation:   { label: 'EL Install',        days: 1825 },
+    pat_testing:               { label: 'PAT Test',          days: 365  },
+    pat:                       { label: 'PAT Test',          days: 365  },
+    fire_alarm:                { label: 'Fire Alarm',        days: 365  },
+    emergency_lighting:        { label: 'Emergency Lighting',days: 365  },
+  };
   const seen = {};
   jobs.forEach(j => {
-    const certNames = (j.certTypes || j.certTypeIds || []).map(c => typeof c === 'string' ? c : (c.name || c.label || ''));
-    const d = j.scheduledDate || j.date || '';
+    const slugs = j.cert_type_ids || j.certTypeIds || j.certTypes || [];
+    const d = j.scheduled_date || j.scheduledDate || j.date || '';
     if (!d) return;
-    certNames.forEach(name => {
-      const key = Object.keys(EXPIRY_DAYS).find(k => name.toUpperCase().includes(k.toUpperCase()));
-      if (key && (!seen[key] || d > seen[key].date)) seen[key] = { date: d, name };
+    slugs.forEach(raw => {
+      const slug = (typeof raw === 'string' ? raw : raw?.id || raw?.key || '').toLowerCase();
+      const match = CERT_MAP[slug] || Object.entries(CERT_MAP).find(([k]) => slug.includes(k) || k.includes(slug))?.[1];
+      if (match && (!seen[match.label] || d > seen[match.label].date)) {
+        seen[match.label] = { date: d, days: match.days };
+      }
     });
   });
-  return Object.entries(seen).map(([key, { date, name }]) => {
-    const expDate = new Date(new Date(date).getTime() + EXPIRY_DAYS[key] * 86400000).toISOString().slice(0, 10);
+  return Object.entries(seen).map(([label, { date, days }]) => {
+    const expDate = new Date(new Date(date).getTime() + days * 86400000).toISOString().slice(0, 10);
     const exp = _daysFromNowStr(expDate);
     return {
       icon: '📜',
-      label: `${name || key} Expiry`,
+      label: `${label} Expiry`,
       value: `<span class="${exp.cls}">${exp.text}</span>`,
-      sub: `Issued: ${_fmtDate(date)} · Due: ${_fmtDate(expDate)}`
+      sub: `Last done: ${_fmtDate(date)} · Expires: ${_fmtDate(expDate)}`
     };
   });
 }
@@ -3772,27 +3786,19 @@ async function loadInsights(type, id) {
 }
 
 async function _loadPropertyInsights(propertyId, panel) {
-  const [jobsRes, jobsRes2] = await Promise.allSettled([
-    trpcQuery('jobs.list', { propertyId, pageSize: 30 }),
-    trpcQuery('jobs.list', { property_id: propertyId, limit: 30 }),
-  ]);
-  const raw = (jobsRes.status === 'fulfilled' ? jobsRes.value : null)
-           || (jobsRes2.status === 'fulfilled' ? jobsRes2.value : null);
-  const jobs = raw?.items || (Array.isArray(raw) ? raw : []);
+  // Scan up to 6 pages (300 most recent jobs) for this property — jobs newest-first
+  const pages = await Promise.allSettled(
+    [0, 50, 100, 150, 200, 250].map(offset => trpcQuery('jobs.list', { pageSize: 50, offset }))
+  );
+  const allJobs = pages.flatMap(p => p.value?.jobs || []);
+  const jobs = allJobs.filter(j => j.property_id === propertyId);
 
-  const sorted = jobs.slice().sort((a, b) => {
-    const da = a.scheduledDate || a.date || '';
-    const db = b.scheduledDate || b.date || '';
-    return db.localeCompare(da);
-  });
-
-  const lastJob = sorted[0];
-  const outstanding = jobs.filter(j => {
-    const s = (j.status || '').toLowerCase();
-    return s === 'invoiced' || s === 'outstanding';
-  });
-  const outAmt = outstanding.reduce((s, j) => s + Number(j.price || j.amount || 0), 0);
+  // jobs are already newest-first from the API
+  const lastJob = jobs[0] || null;
   const totalJobs = jobs.length;
+
+  const outstanding = jobs.filter(j => (j.status || '').toLowerCase() === 'invoiced');
+  const outAmt = outstanding.reduce((s, j) => s + Number(j.price || 0), 0);
 
   const rows = [];
 
@@ -3800,15 +3806,15 @@ async function _loadPropertyInsights(propertyId, panel) {
     icon: '🗓',
     label: 'Last Visit',
     value: lastJob
-      ? `${_fmtDate(lastJob.scheduledDate || lastJob.date)} <span class="aj-ins-muted">(${_daysAgoStr(lastJob.scheduledDate || lastJob.date)})</span>`
-      : 'No previous visits',
-    sub: lastJob ? esc(lastJob.title || lastJob.description || '') : ''
+      ? `${_fmtDate(lastJob.scheduled_date)} <span class="aj-ins-muted">(${_daysAgoStr(lastJob.scheduled_date)})</span>`
+      : 'No previous visits on record',
+    sub: lastJob ? esc(lastJob.title || '') : ''
   });
 
   rows.push({
     icon: totalJobs ? '📋' : '🆕',
     label: 'Total Jobs Here',
-    value: totalJobs ? `${totalJobs} job${totalJobs !== 1 ? 's' : ''}` : 'First job',
+    value: totalJobs ? `${totalJobs} job${totalJobs !== 1 ? 's' : ''} found` : 'First job at this address',
     sub: ''
   });
 
@@ -3816,14 +3822,13 @@ async function _loadPropertyInsights(propertyId, panel) {
     icon: outstanding.length ? '💳' : '✅',
     label: 'Outstanding Balance',
     value: outstanding.length
-      ? `<span class="aj-ins-warn">£${outAmt.toFixed(2)} <span class="aj-ins-muted">(${outstanding.length} unpaid)</span></span>`
+      ? `<span class="aj-ins-warn">£${outAmt.toFixed(2)} <span class="aj-ins-muted">(${outstanding.length} unpaid invoice${outstanding.length !== 1 ? 's' : ''})</span></span>`
       : '<span class="aj-ins-ok">All clear ✓</span>',
     sub: ''
   });
 
-  const certRows = _certExpiryRows(sorted.slice(0, 10));
+  const certRows = _certExpiryRows(jobs);
   certRows.forEach(r => rows.push(r));
-
   if (!certRows.length) {
     rows.push({ icon: '📜', label: 'Certificates', value: '<span class="aj-ins-muted">No cert history found</span>', sub: '' });
   }
@@ -3832,41 +3837,29 @@ async function _loadPropertyInsights(propertyId, panel) {
 }
 
 async function _loadContactInsights(contactId, panel) {
-  const [propsRes, jobsRes, jobsRes2] = await Promise.allSettled([
+  // Run all in parallel: properties, invoices (proper financial data), recent job pages
+  const [propsRes, invRes, ...jobPages] = await Promise.allSettled([
     trpcQuery('properties.list', { contactId, pageSize: 50 }),
-    trpcQuery('jobs.list', { contactId, pageSize: 30 }),
-    trpcQuery('jobs.list', { contact_id: contactId, limit: 30 }),
+    trpcQuery('invoices.list',   { contactId, pageSize: 50 }),
+    trpcQuery('jobs.list', { pageSize: 50, offset:   0 }),
+    trpcQuery('jobs.list', { pageSize: 50, offset:  50 }),
+    trpcQuery('jobs.list', { pageSize: 50, offset: 100 }),
   ]);
 
-  const propsRaw = propsRes.status === 'fulfilled' ? propsRes.value : null;
-  const propList = propsRaw?.items || (Array.isArray(propsRaw) ? propsRaw : []);
+  const propList = propsRes.value?.items || [];
+  const invoices = invRes.value?.items  || [];
 
-  const jobsRaw = (jobsRes.status === 'fulfilled' ? jobsRes.value : null)
-               || (jobsRes2.status === 'fulfilled' ? jobsRes2.value : null);
-  const jobs = jobsRaw?.items || (Array.isArray(jobsRaw) ? jobsRaw : []);
+  // Filter jobs by contact_id (API doesn't filter server-side)
+  const allFetched = jobPages.flatMap(p => p.value?.jobs || []);
+  const contactJobs = allFetched.filter(j => j.contact_id === contactId);
+  const lastJob = contactJobs[0] || null; // newest-first from API
 
-  const sorted = jobs.slice().sort((a, b) => {
-    const da = a.scheduledDate || a.date || '';
-    const db = b.scheduledDate || b.date || '';
-    return db.localeCompare(da);
-  });
-
-  const lastJob = sorted[0];
-  const outstanding = jobs.filter(j => {
-    const s = (j.status || '').toLowerCase();
-    return s === 'invoiced' || s === 'outstanding';
-  });
-  const outAmt = outstanding.reduce((s, j) => s + Number(j.price || j.amount || 0), 0);
-
-  const paidJobs = jobs.filter(j => {
-    const s = (j.status || '').toLowerCase();
-    return s === 'paid' || s === 'closed';
-  }).sort((a, b) => {
-    const da = a.updatedAt || a.updated_at || a.closedAt || '';
-    const db = b.updatedAt || b.updated_at || b.closedAt || '';
-    return db.localeCompare(da);
-  });
-  const lastPaidJob = paidJobs[0];
+  // Invoice-based financials — accurate from the dedicated invoices endpoint
+  const unpaidInvs = invoices.filter(i => !i.settled && Number(i.balance || 0) > 0);
+  const unpaidAmt  = unpaidInvs.reduce((s, i) => s + Number(i.balance || 0), 0);
+  const paidInvs   = invoices.filter(i => i.paidAt).sort((a, b) => b.paidAt.localeCompare(a.paidAt));
+  const lastPaidAt = paidInvs[0]?.paidAt || null;
+  const totalInvAmt = invoices.reduce((s, i) => s + Number(i.total || 0), 0);
 
   const rows = [];
 
@@ -3881,34 +3874,38 @@ async function _loadContactInsights(contactId, panel) {
     icon: '🗓',
     label: 'Last Job',
     value: lastJob
-      ? `${_fmtDate(lastJob.scheduledDate || lastJob.date)} <span class="aj-ins-muted">(${_daysAgoStr(lastJob.scheduledDate || lastJob.date)})</span>`
-      : 'No previous jobs',
+      ? `${_fmtDate(lastJob.scheduled_date)} <span class="aj-ins-muted">(${_daysAgoStr(lastJob.scheduled_date)})</span>`
+      : '<span class="aj-ins-muted">Not in recent 150 jobs</span>',
     sub: lastJob ? esc(lastJob.title || '') : ''
   });
 
   rows.push({
-    icon: outstanding.length ? '💳' : '✅',
+    icon: unpaidInvs.length ? '⚠️' : '✅',
     label: 'Unpaid Invoices',
-    value: outstanding.length
-      ? `<span class="aj-ins-warn">£${outAmt.toFixed(2)} <span class="aj-ins-muted">(${outstanding.length} invoice${outstanding.length !== 1 ? 's' : ''})</span></span>`
+    value: unpaidInvs.length
+      ? `<span class="aj-ins-warn">£${unpaidAmt.toFixed(2)} owed <span class="aj-ins-muted">(${unpaidInvs.length} invoice${unpaidInvs.length !== 1 ? 's' : ''})</span></span>`
       : '<span class="aj-ins-ok">No outstanding balance ✓</span>',
-    sub: ''
+    sub: unpaidInvs.length
+      ? unpaidInvs.slice(0,2).map(i => `${i.invoiceNo || ''} ${i.effectiveStatus || ''} £${Number(i.balance||0).toFixed(0)}`).join(' · ')
+      : ''
   });
 
   rows.push({
-    icon: lastPaidJob ? '💚' : '❓',
+    icon: lastPaidAt ? '💚' : '❓',
     label: 'Last Payment',
-    value: lastPaidJob
-      ? `${_fmtDate(lastPaidJob.updatedAt || lastPaidJob.updated_at || lastPaidJob.scheduledDate)} <span class="aj-ins-muted">(${_daysAgoStr(lastPaidJob.updatedAt || lastPaidJob.updated_at || lastPaidJob.scheduledDate)})</span>`
-      : '<span class="aj-ins-muted">No payment on record</span>',
-    sub: lastPaidJob ? esc(lastPaidJob.title || '') : ''
+    value: lastPaidAt
+      ? `${_fmtDate(lastPaidAt)} <span class="aj-ins-muted">(${_daysAgoStr(lastPaidAt)})</span>`
+      : '<span class="aj-ins-muted">No payments recorded</span>',
+    sub: invoices.length ? `${invoices.length} invoice${invoices.length !== 1 ? 's' : ''} total · £${totalInvAmt.toFixed(2)} billed` : ''
   });
 
   rows.push({
     icon: '📊',
-    label: 'Total Jobs',
-    value: `${jobs.length} job${jobs.length !== 1 ? 's' : ''} on record`,
-    sub: ''
+    label: 'Recent Jobs',
+    value: `${contactJobs.length} found in last 150 jobs`,
+    sub: contactJobs.length
+      ? [...new Set(contactJobs.map(j => j.status || '').filter(Boolean))].join(' · ')
+      : ''
   });
 
   _insRenderRows(panel, rows);
