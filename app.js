@@ -4815,7 +4815,7 @@ function _buildInvBodyHTML() {
       <div class="inv-detail-actions">
         ${status!=='paid'&&status!=='void'&&status!=='draft'?`<button class="inv-act-btn primary" data-rpay="${inv.id}" data-rbal="${balance}" data-rno="${esc(inv.invoiceNo||'')}">₤ Record Payment</button>`:''}
         ${status==='draft'?`<button class="inv-act-btn" data-issue="${inv.id}">Issue Invoice</button>`:''}
-        ${inv.pdfPath?`<a class="inv-act-btn" href="https://gb-proxy.gbmandeep.workers.dev${esc(inv.pdfPath)}" target="_blank" rel="noopener">↓ PDF</a>`:''}
+        ${inv.pdfPath?`<button class="inv-act-btn" data-pdf="${inv.id}">↓ PDF</button>`:''}
       </div>
     `;
 
@@ -4917,6 +4917,24 @@ function _wireInvControls() {
       if (e.target.closest('.inv-act-btn, a')) return;
       const detRow = document.querySelector(`.inv-detail-row[data-detail="${row.dataset.idx}"]`);
       if (detRow) detRow.classList.toggle('open');
+    });
+  });
+
+  document.querySelectorAll('[data-pdf]').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        const res = await trpcQuery('invoices.pdf', { invoiceId: btn.dataset.pdf });
+        const url = res?.url;
+        if (!url) throw new Error('No URL returned');
+        window.open('https://gbelectricals.co.uk' + url, '_blank', 'noopener');
+      } catch(err) {
+        alert('Could not load PDF: ' + (err?.message || err));
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
     });
   });
 
