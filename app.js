@@ -4603,6 +4603,15 @@ function _injectInvoiceCSS() {
     .inv-modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
     .inv-modal-btns button{padding:7px 16px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-weight:600;cursor:pointer}
     .inv-modal-btns .primary{background:var(--accent);border-color:var(--accent);color:#fff}
+    .inv-chase-section{margin-top:12px;border-top:1px solid var(--border);padding-top:10px}
+    .inv-chase-header{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}
+    .inv-chase-note{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:6px}
+    .inv-chase-meta{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:4px}
+    .inv-chase-meta strong{color:var(--text);font-weight:600}
+    .inv-chase-text{font-size:12px;line-height:1.45;white-space:pre-wrap}
+    .inv-chase-form{display:flex;gap:8px;margin-top:8px;align-items:flex-start}
+    .inv-chase-input{flex:1;padding:7px 9px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:12px;font-family:inherit;resize:vertical;min-height:52px}
+    .inv-chase-input:focus{outline:none;border-color:var(--accent)}
     .stmt-search-wrap{padding:14px 12px 6px}
     .stmt-search-wrap .inp{width:100%;box-sizing:border-box}
     .stmt-contact-drop{background:var(--surface);border:1px solid var(--border);border-radius:6px;max-height:200px;overflow-y:auto;margin-top:4px}
@@ -4853,13 +4862,25 @@ function _buildInvBodyHTML() {
           <button class="inv-act-btn" data-copypdf="${inv.id}">📋 Copy PDF</button>
         `:''}
       </div>
+      ${inv.jobId ? `
+        <div class="inv-chase-section">
+          <div class="inv-chase-header">💬 Chase Notes</div>
+          <div class="inv-chase-thread" data-chasejob="${inv.jobId}">
+            <div style="color:var(--muted);font-size:11px">Click to expand and load notes…</div>
+          </div>
+          <div class="inv-chase-form">
+            <textarea class="inv-chase-input" placeholder="e.g. Called SAMIR — said will pay by Friday 17th Oct…" rows="2"></textarea>
+            <button class="inv-act-btn primary inv-chase-submit" data-chasejobid="${inv.jobId}">Add Note</button>
+          </div>
+        </div>
+      ` : ''}
     `;
 
     const cached  = _invDescCache[inv.id];
     const descVal = esc(cached?.desc || inv.notes || '—');
     const lineItems = cached?.lineItems || [];
     return `
-      <tr class="inv-row st-${status}" data-idx="${idx}">
+      <tr class="inv-row st-${status}" data-idx="${idx}" data-jobid="${esc(inv.jobId||'')}"  data-jobno="${esc(inv.jobNo||'')}"  data-cname="${esc(inv.contactName||'')}"  data-invno="${esc(inv.invoiceNo||'')}"  >
         <td style="font-weight:700;font-size:11px;white-space:nowrap">${esc(inv.invoiceNo||'—')}</td>
         <td style="font-size:11px;white-space:nowrap">${esc(inv.jobNo||'—')}</td>
         <td style="font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(inv.siteAddress||'—')}</td>
@@ -4900,6 +4921,31 @@ function _buildInvBodyHTML() {
     </div>
     ${pager}
   `;
+}
+
+async function _loadChaseNotes(jobId, el) {
+  el.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:4px 0">Loading notes…</div>';
+  try {
+    const data = await trpcQuery('jobs.get', {id: jobId});
+    const notes = (data?.events || [])
+      .filter(e => e.event_type === 'note')
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    if (!notes.length) {
+      el.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:4px 0">No chase notes yet — add the first one below.</div>';
+      return;
+    }
+    el.innerHTML = notes.map(n => `
+      <div class="inv-chase-note">
+        <div class="inv-chase-meta">
+          <strong>${esc(n.actor_name || 'Unknown')}</strong>
+          <span>${new Date(n.created_at).toLocaleString('en-GB', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
+        </div>
+        <div class="inv-chase-text">${esc(n.message || '')}</div>
+      </div>
+    `).join('');
+  } catch(err) {
+    el.innerHTML = `<div style="color:var(--red);font-size:11px">Failed to load notes: ${esc(err?.message||String(err))}</div>`;
+  }
 }
 
 function _wireInvControls() {
@@ -4950,10 +4996,39 @@ function _wireInvControls() {
   });
 
   document.querySelectorAll('.inv-row').forEach(row => {
-    row.addEventListener('click', e => {
-      if (e.target.closest('.inv-act-btn, a')) return;
+    row.addEventListener('click', async e => {
+      if (e.target.closest('.inv-act-btn, a, .inv-chase-form')) return;
       const detRow = document.querySelector(`.inv-detail-row[data-detail="${row.dataset.idx}"]`);
-      if (detRow) detRow.classList.toggle('open');
+      if (!detRow) return;
+      const wasOpen = detRow.classList.contains('open');
+      detRow.classList.toggle('open');
+      if (!wasOpen) {
+        const jobId = row.dataset.jobid;
+        const threadEl = detRow.querySelector('[data-chasejob]');
+        if (jobId && threadEl) _loadChaseNotes(jobId, threadEl);
+      }
+    });
+  });
+
+  document.querySelectorAll('.inv-chase-submit').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const jobId = btn.dataset.chasejobid;
+      const form = btn.closest('.inv-chase-section');
+      const textarea = form?.querySelector('.inv-chase-input');
+      const text = textarea?.value?.trim();
+      if (!text) return;
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        await trpcMutate('jobs.addNote', {id: jobId, text});
+        textarea.value = '';
+        const threadEl = form.querySelector('[data-chasejob]');
+        if (threadEl) await _loadChaseNotes(jobId, threadEl);
+      } catch(err) {
+        alert('Failed to save note: ' + (err?.message || err));
+      } finally {
+        btn.disabled = false; btn.textContent = 'Add Note';
+      }
     });
   });
 
