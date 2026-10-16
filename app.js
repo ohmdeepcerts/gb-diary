@@ -3843,42 +3843,57 @@ async function _loadPropertyInsights(propertyId, panel) {
 }
 
 async function _loadContactInsights(contactId, panel) {
-  // Run all in parallel: properties, invoices (proper financial data), recent job pages
-  const [propsRes, invRes, ...jobPages] = await Promise.allSettled([
-    trpcQuery('properties.list', { contactId, pageSize: 50 }),
-    trpcQuery('invoices.list',   { contactId, pageSize: 50 }),
+  // Step 1: find all agents under this contact (works if it's an agency; returns [] otherwise)
+  const agentsRes = await trpcQuery('directory.contacts.list', { agencyId: contactId, pageSize: 50 }).catch(() => null);
+  const agents    = (agentsRes?.items || []).slice(0, 9); // cap at 9 to keep API calls reasonable
+  const isAgency  = agents.length > 0;
+  const allIds    = [contactId, ...agents.map(a => a.id)];
+  const idSet     = new Set(allIds);
+
+  // Step 2: fetch properties + invoices for every ID, plus 3 job pages — all in parallel
+  const allFetches = await Promise.allSettled([
+    ...allIds.map(id => trpcQuery('properties.list', { contactId: id, pageSize: 50 })),
+    ...allIds.map(id => trpcQuery('invoices.list',   { contactId: id, pageSize: 50 })),
     trpcQuery('jobs.list', { pageSize: 50, offset:   0 }),
     trpcQuery('jobs.list', { pageSize: 50, offset:  50 }),
     trpcQuery('jobs.list', { pageSize: 50, offset: 100 }),
   ]);
 
-  const propList = propsRes.value?.items || [];
-  const invoices = invRes.value?.items  || [];
+  const n          = allIds.length;
+  const propList   = allFetches.slice(0, n).flatMap(r => r.value?.items || []);
+  const invoices   = allFetches.slice(n, n * 2).flatMap(r => r.value?.items || []);
+  const contactJobs= allFetches.slice(n * 2).flatMap(p => p.value?.jobs || []).filter(j => idSet.has(j.contact_id));
+  const lastJob    = contactJobs[0] || null;
 
-  // Filter jobs by contact_id (API doesn't filter server-side)
-  const allFetched = jobPages.flatMap(p => p.value?.jobs || []);
-  const contactJobs = allFetched.filter(j => j.contact_id === contactId);
-  const lastJob = contactJobs[0] || null; // newest-first from API
-
-  // Invoice-based financials — accurate from the dedicated invoices endpoint
-  const unpaidInvs = invoices.filter(i => !i.settled && Number(i.balance || 0) > 0);
-  const unpaidAmt  = unpaidInvs.reduce((s, i) => s + Number(i.balance || 0), 0);
-  const paidInvs   = invoices.filter(i => i.paidAt).sort((a, b) => b.paidAt.localeCompare(a.paidAt));
-  const lastPaidAt = paidInvs[0]?.paidAt || null;
+  // Invoice-based financials
+  const unpaidInvs  = invoices.filter(i => !i.settled && Number(i.balance || 0) > 0);
+  const unpaidAmt   = unpaidInvs.reduce((s, i) => s + Number(i.balance || 0), 0);
+  const paidInvs    = invoices.filter(i => i.paidAt).sort((a, b) => b.paidAt.localeCompare(a.paidAt));
+  const lastPaidAt  = paidInvs[0]?.paidAt || null;
   const totalInvAmt = invoices.reduce((s, i) => s + Number(i.total || 0), 0);
 
   const rows = [];
 
+  // Agency context row
+  if (isAgency) {
+    rows.push({
+      icon: '🏢',
+      label: 'Agency Group',
+      value: `${agents.length} agent${agents.length !== 1 ? 's' : ''} under this agency`,
+      sub: agents.map(a => esc(a.name)).join(' · ')
+    });
+  }
+
   rows.push({
     icon: '🏠',
-    label: 'Properties',
+    label: isAgency ? 'Properties (all agents)' : 'Properties',
     value: propList.length ? `${propList.length} propert${propList.length !== 1 ? 'ies' : 'y'}` : 'No properties on file',
     sub: propList.slice(0, 2).map(p => esc(p.address || '')).join(' · ')
   });
 
   rows.push({
     icon: '🗓',
-    label: 'Last Job',
+    label: isAgency ? 'Last Job (any agent)' : 'Last Job',
     value: lastJob
       ? `${_fmtDate(lastJob.scheduled_date)} <span class="aj-ins-muted">(${_daysAgoStr(lastJob.scheduled_date)})</span>`
       : '<span class="aj-ins-muted">Not in recent 150 jobs</span>',
@@ -3887,12 +3902,12 @@ async function _loadContactInsights(contactId, panel) {
 
   rows.push({
     icon: unpaidInvs.length ? '⚠️' : '✅',
-    label: 'Unpaid Invoices',
+    label: isAgency ? 'Unpaid Invoices (group)' : 'Unpaid Invoices',
     value: unpaidInvs.length
       ? `<span class="aj-ins-warn">£${unpaidAmt.toFixed(2)} owed <span class="aj-ins-muted">(${unpaidInvs.length} invoice${unpaidInvs.length !== 1 ? 's' : ''})</span></span>`
       : '<span class="aj-ins-ok">No outstanding balance ✓</span>',
     sub: unpaidInvs.length
-      ? unpaidInvs.slice(0,2).map(i => `${i.invoiceNo || ''} ${i.effectiveStatus || ''} £${Number(i.balance||0).toFixed(0)}`).join(' · ')
+      ? unpaidInvs.slice(0, 2).map(i => `${i.invoiceNo || ''} ${i.effectiveStatus || ''} £${Number(i.balance||0).toFixed(0)}`).join(' · ')
       : ''
   });
 
@@ -3907,7 +3922,7 @@ async function _loadContactInsights(contactId, panel) {
 
   rows.push({
     icon: '📊',
-    label: 'Recent Jobs',
+    label: isAgency ? 'Recent Jobs (group)' : 'Recent Jobs',
     value: `${contactJobs.length} found in last 150 jobs`,
     sub: contactJobs.length
       ? [...new Set(contactJobs.map(j => j.status || '').filter(Boolean))].join(' · ')
