@@ -4815,7 +4815,11 @@ function _buildInvBodyHTML() {
       <div class="inv-detail-actions">
         ${status!=='paid'&&status!=='void'&&status!=='draft'?`<button class="inv-act-btn primary" data-rpay="${inv.id}" data-rbal="${balance}" data-rno="${esc(inv.invoiceNo||'')}">₤ Record Payment</button>`:''}
         ${status==='draft'?`<button class="inv-act-btn" data-issue="${inv.id}">Issue Invoice</button>`:''}
-        ${inv.pdfPath?`<button class="inv-act-btn" data-pdf="${inv.id}">↓ PDF</button>`:''}
+        ${inv.pdfPath?`
+          <button class="inv-act-btn" data-vpdf="${inv.id}">👁 View PDF</button>
+          <button class="inv-act-btn" data-dlpdf="${inv.id}" data-dlno="${esc(inv.invoiceNo||inv.id)}">⬇ Download</button>
+          <button class="inv-act-btn" data-copypdf="${inv.id}">📋 Copy PDF</button>
+        `:''}
       </div>
     `;
 
@@ -4920,19 +4924,82 @@ function _wireInvControls() {
     });
   });
 
-  document.querySelectorAll('[data-pdf]').forEach(btn => {
+  async function _invGetPdfUrl(invoiceId) {
+    const res = await trpcQuery('invoices.pdf', { invoiceId });
+    const url = res?.url;
+    if (!url) throw new Error('No PDF URL returned');
+    return 'https://gbelectricals.co.uk' + url;
+  }
+
+  // View PDF in new tab
+  document.querySelectorAll('[data-vpdf]').forEach(btn => {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
       const orig = btn.textContent;
       btn.disabled = true; btn.textContent = '…';
       try {
-        const res = await trpcQuery('invoices.pdf', { invoiceId: btn.dataset.pdf });
-        const url = res?.url;
-        if (!url) throw new Error('No URL returned');
-        window.open('https://gbelectricals.co.uk' + url, '_blank', 'noopener');
+        const fullUrl = await _invGetPdfUrl(btn.dataset.vpdf);
+        window.open(fullUrl, '_blank', 'noopener');
       } catch(err) {
         alert('Could not load PDF: ' + (err?.message || err));
       } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    });
+  });
+
+  // Download PDF as file
+  document.querySelectorAll('[data-dlpdf]').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = '⬇ Fetching…';
+      try {
+        const fullUrl = await _invGetPdfUrl(btn.dataset.dlpdf);
+        const r = await fetch(fullUrl);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const blob = await r.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = (btn.dataset.dlno || 'invoice') + '.pdf';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      } catch(err) {
+        alert('Download failed: ' + (err?.message || err));
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    });
+  });
+
+  // Copy PDF to clipboard (actual blob; falls back to URL if browser blocks)
+  document.querySelectorAll('[data-copypdf]').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = '📋 Fetching…';
+      try {
+        const fullUrl = await _invGetPdfUrl(btn.dataset.copypdf);
+        const r = await fetch(fullUrl);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const blob = await r.blob();
+        let copied = false;
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'application/pdf': blob })]);
+          copied = true;
+          btn.textContent = '✓ PDF copied!';
+        } catch {
+          // Browser doesn't support PDF in clipboard — copy URL instead
+          await navigator.clipboard.writeText(fullUrl);
+          btn.textContent = '✓ Link copied';
+        }
+        setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 2500);
+        return;
+      } catch(err) {
+        alert('Copy failed: ' + (err?.message || err));
         btn.disabled = false; btn.textContent = orig;
       }
     });
