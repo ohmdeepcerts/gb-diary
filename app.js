@@ -3100,6 +3100,8 @@ let _addJobContactId  = null;
 let _addJobPropertyId = null;
 let _contactSearchTmr = null;
 let _jobOptions       = null;
+let _addJobCertTypes  = new Set();   // checked cert type IDs
+let _addJobEngineers  = [];          // [{id, name}] multi-engineer
 
 async function _loadJobOptions() {
   if (_jobOptions) return _jobOptions;
@@ -3112,155 +3114,274 @@ function _injectAddJobCSS() {
   const s = document.createElement('style');
   s.id = '_add_job2_css';
   s.textContent = `
-    #view-add .add-box{width:860px!important;max-width:97vw!important;padding:20px 24px!important;gap:12px!important}
-    .add-cols{display:flex;gap:18px}
-    .add-col{flex:1;display:flex;flex-direction:column;gap:9px;min-width:0}
-    .add-col-hdr{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);border-bottom:1px solid var(--border);padding-bottom:5px;margin-bottom:2px}
-    .btn-pc-lookup{flex-shrink:0;width:32px;height:34px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center}
-    .btn-pc-lookup:hover{background:var(--bg4)}
-    .contact-drop-section-hdr{font-size:10px;font-weight:700;text-transform:uppercase;padding:4px 10px 2px;color:var(--text3);letter-spacing:.05em;background:var(--bg3);border-bottom:1px solid var(--border)}
-    .contact-drop-badge{font-size:9px;font-weight:600;padding:1px 5px;border-radius:8px;background:var(--bg4);color:var(--text2);text-transform:capitalize;vertical-align:middle;margin-left:4px}
-    .add-actions2{display:flex;gap:8px;justify-content:flex-end;padding-top:8px;border-top:1px solid var(--border)}
-    @media(max-width:680px){.add-cols{flex-direction:column}#view-add .add-box{width:95vw!important}}
+    #view-add{align-items:flex-start!important;padding:16px 10px!important;overflow-y:auto!important}
+    #view-add .add-box{width:100%!important;max-width:1020px!important;background:transparent!important;border:none!important;box-shadow:none!important;padding:0!important;gap:12px!important;display:flex;flex-direction:column}
+    .aj-hdr{font-size:14px;font-weight:700;color:var(--text1)}
+    .aj-hdr span{font-size:11px;font-weight:400;opacity:.5;margin-left:6px}
+    .aj-cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+    .aj-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column}
+    .aj-ch{padding:10px 16px;border-bottom:1px solid var(--border);background:var(--bg3);display:flex;align-items:center;gap:8px;border-radius:12px 12px 0 0}
+    .aj-chi{font-size:15px;line-height:1}
+    .aj-cht{font-size:12px;font-weight:700;color:var(--text1);text-transform:uppercase;letter-spacing:.04em}
+    .aj-cb{padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+    .aj-row{display:flex;gap:8px;align-items:flex-end}
+    .aj-fg{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
+    .aj-fl{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em}
+    .aj-req{color:var(--red)}
+    .aj-sel-wrap{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .aj-sel-nm{font-size:12.5px;font-weight:600;color:var(--text1)}
+    .aj-sel-sb{font-size:11px;color:var(--text2)}
+    .aj-sel-cl{font-size:11px;color:var(--text3);cursor:pointer;border:none;background:none;text-decoration:underline;padding:0;flex-shrink:0}
+    .aj-sel-cl:hover{color:var(--text1)}
+    .aj-div{font-size:10px;color:var(--text3);display:flex;align-items:center;gap:6px}
+    .aj-div::before,.aj-div::after{content:'';flex:1;height:1px;background:var(--border)}
+    .aj-new{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+    .aj-new-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)}
+    .aj-sec{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)}
+    .aj-cert-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+    .aj-cert{display:flex;align-items:center;gap:5px;padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);cursor:pointer;user-select:none;transition:border-color .1s}
+    .aj-cert:hover{border-color:var(--red)}
+    .aj-cert.on{border-color:var(--red);background:var(--bg4)}
+    .aj-cert.on .aj-ct{font-weight:600;color:var(--text1)}
+    .aj-cbx{width:13px;height:13px;border-radius:3px;border:1.5px solid var(--text3);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:9px;color:transparent;transition:all .1s}
+    .aj-cert.on .aj-cbx{background:var(--red);border-color:var(--red);color:#fff}
+    .aj-ct{font-size:11px;color:var(--text2);line-height:1.2}
+    .aj-chips{display:flex;flex-wrap:wrap;gap:4px;min-height:0}
+    .aj-chip{display:inline-flex;align-items:center;gap:4px;background:var(--bg4);border:1px solid var(--border);border-radius:20px;padding:3px 8px 3px 6px;font-size:11px;color:var(--text2)}
+    .aj-chip-x{background:none;border:none;cursor:pointer;color:var(--text3);padding:0 1px;font-size:13px;line-height:1;display:flex;align-items:center}
+    .aj-chip-x:hover{color:var(--text1)}
+    .aj-drop-wrap{position:relative}
+    .aj-drop{position:absolute;left:0;right:0;top:100%;z-index:200;background:var(--bg2);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-top:2px;max-height:180px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.15)}
+    .aj-dh{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:5px 10px 3px;color:var(--text3);background:var(--bg3);border-bottom:1px solid var(--border)}
+    .aj-di{padding:7px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12.5px;color:var(--text1)}
+    .aj-di:last-child{border-bottom:none}
+    .aj-di:hover{background:var(--bg3)}
+    .aj-di-nm{font-weight:600}
+    .aj-di-sb{font-size:11px;color:var(--text2);margin-top:1px}
+    .aj-badge{font-size:9px;padding:1px 5px;border-radius:7px;background:var(--bg4);color:var(--text2);margin-left:4px;font-weight:600}
+    .aj-dn{font-size:12px;color:var(--text3);padding:8px 10px;text-align:center}
+    .aj-pclookup{flex-shrink:0;width:34px;height:34px;border-radius:7px;border:1px solid var(--border);background:var(--bg3);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;align-self:flex-end}
+    .aj-pclookup:hover{background:var(--bg4)}
+    .aj-footer{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding-top:4px}
+    @media(max-width:700px){.aj-cards{grid-template-columns:1fr}#view-add{padding:8px 4px!important}}
   `;
   document.head.appendChild(s);
+}
+
+function _renderEngChips() {
+  const el = document.getElementById('aj-eng-chips');
+  if (!el) return;
+  if (!_addJobEngineers.length) { el.innerHTML = ''; return; }
+  el.innerHTML = _addJobEngineers.map(e =>
+    `<span class="aj-chip">${esc(e.name)}<button class="aj-chip-x" data-id="${esc(String(e.id))}" type="button">×</button></span>`
+  ).join('');
+  el.querySelectorAll('.aj-chip-x').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _addJobEngineers = _addJobEngineers.filter(e => String(e.id) !== btn.dataset.id);
+      _renderEngChips();
+    });
+  });
 }
 
 async function openAddJob() {
   _addJobContactId  = null;
   _addJobPropertyId = null;
+  _addJobCertTypes  = new Set();
+  _addJobEngineers  = [];
   _injectAddJobCSS();
 
   const opts = await _loadJobOptions();
 
-  const mon   = curWeek || mondayOf(curDate || todayISO());
-  const lanes = cache[mon] || [];
-  const seenEng = new Set();
-  const engOptions = ['<option value="">Unassigned</option>'];
-  lanes.forEach(l => {
-    if (!l.engineer || seenEng.has(l.engineer.id)) return;
-    seenEng.add(l.engineer.id);
-    engOptions.push(`<option value="${esc(String(l.engineer.id))}">${esc(l.engineer.name)}</option>`);
+  // Collect engineers from all cached weeks
+  const engMap = new Map();
+  Object.values(cache).forEach(lanes => {
+    (Array.isArray(lanes) ? lanes : []).forEach(l => {
+      if (l.engineer?.id) {
+        const nm = l.engineer.name || [l.engineer.firstName, l.engineer.lastName].filter(Boolean).join(' ');
+        if (nm) engMap.set(String(l.engineer.id), nm.trim());
+      }
+    });
   });
+  const allEngineers = [...engMap.entries()].map(([id, name]) => ({id, name}));
 
-  const trades = opts.trades || ['Electrical','Gas','Fire Safety','Testing & Inspection','General Maintenance','EV Charging'];
+  const trades    = opts.trades    || ['Electrical','Gas','Fire Safety','Testing & Inspection','General Maintenance','EV Charging'];
   const tradeOpts = ['<option value="">– trade –</option>',
     ...trades.map(t => `<option value="${esc(t)}">${esc(t)}</option>`)].join('');
 
-  const certTypes = opts.certTypes || [];
-  const certOpts = ['<option value="">– job type –</option>',
-    ...certTypes.map(ct => `<option value="${esc(ct.id)}">${esc(ct.name)}</option>`),
-    '<option value="general">General / Ad-hoc</option>',
-    '<option value="repair">Repair / Fault Finding</option>'].join('');
-
-  const slots = opts.timeslots || ['9-11','11-1','1-3','3-5'];
-  const slotOpts = ['<option value="">Any time</option>',
-    '<option value="AM">Morning (AM)</option>',
-    '<option value="PM">Afternoon (PM)</option>',
+  const slots    = opts.timeslots || ['9-11','11-1','1-3','3-5'];
+  const slotOpts = ['<option value="">Any time</option>','<option value="AM">Morning (AM)</option>','<option value="PM">Afternoon (PM)</option>',
     ...slots.map(s => `<option value="${esc(s)}">${esc(s)}</option>`)].join('');
 
-  const prioOpts = `
-    <option value="normal">Normal</option>
-    <option value="urgent">Urgent</option>
-    <option value="certificate">Certificate</option>
-    <option value="repair">Repair</option>
-    <option value="emergency">Emergency</option>
-    <option value="low">Low</option>`;
+  const prioOpts = '<option value="normal">Normal</option><option value="urgent">Urgent</option><option value="certificate">Certificate</option><option value="repair">Repair</option><option value="emergency">Emergency</option><option value="low">Low</option>';
+
+  const FALLBACK_CERTS = [
+    {id:'gas-safety',name:'Gas Safety (CP12)'},{id:'eicr',name:'EICR'},
+    {id:'pat',name:'PAT Testing'},{id:'fire-alarm',name:'Fire Alarm'},
+    {id:'emergency-lighting',name:'Emergency Lighting'},{id:'epc',name:'EPC'},
+    {id:'legionella',name:'Legionella Risk Assessment'},{id:'fire-extinguisher',name:'Fire Extinguisher Service'},
+    {id:'smoke-alarm',name:'Domestic Smoke Alarm (BS 5839-6)'},{id:'fire-risk',name:'Fire Risk Assessment'},
+    {id:'deic',name:'D.EIC'},
+  ];
+  const certTypes = (opts.certTypes && opts.certTypes.length) ? opts.certTypes : FALLBACK_CERTS;
+
+  const ctypes    = opts.contactTypes || ['Landlord','Tenant','Owner','Letting Agent','Commercial','Other'];
+  const ctypeOpts = ctypes.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
 
   const today = curDate || todayISO();
 
   const box = document.querySelector('#view-add .add-box');
   box.innerHTML = `
-    <div class="add-ttl">Add Job <span style="font-size:11px;font-weight:400;opacity:.55">— saves directly to portal</span></div>
-    <div class="add-cols">
-      <div class="add-col">
-        <div class="add-col-hdr">📍 Client &amp; Property</div>
-        <div class="fg">
-          <label class="fl">Search by name, phone, email or address</label>
-          <div class="contact-search-wrap">
-            <input class="inp" type="text" id="add-contact-search" placeholder="Type name, 07…, email or address…" autocomplete="off">
-            <div class="contact-dropdown" id="add-contact-dropdown" style="display:none"></div>
+    <div class="aj-hdr">Add Job<span>— saves directly to portal</span></div>
+    <div class="aj-cards">
+
+      <div class="aj-card">
+        <div class="aj-ch"><span class="aj-chi">👤</span><span class="aj-cht">Client Details</span></div>
+        <div class="aj-cb">
+          <div class="aj-fg">
+            <div class="aj-fl">Search by name, phone or email</div>
+            <div class="aj-drop-wrap">
+              <input class="inp" id="aj-cs-inp" type="text" placeholder="Type to find existing client…" autocomplete="off">
+              <div class="aj-drop" id="aj-cs-drop" style="display:none"></div>
+            </div>
           </div>
-        </div>
-        <div class="fg">
-          <label class="fl">Address</label>
-          <div style="display:flex;gap:5px;align-items:center">
-            <input class="inp" type="text" id="add-address" placeholder="Street, Town" style="flex:1">
-            <input class="inp" type="text" id="add-postcode" placeholder="Postcode" style="width:88px">
-            <button class="btn-pc-lookup" id="add-pc-lookup" title="Look up postcode online">🔍</button>
+          <div id="aj-sel" style="display:none" class="aj-sel-wrap">
+            <div>
+              <div class="aj-sel-nm" id="aj-sel-nm"></div>
+              <div class="aj-sel-sb" id="aj-sel-sb"></div>
+            </div>
+            <button class="aj-sel-cl" id="aj-sel-cl" type="button">✕ Clear</button>
           </div>
-        </div>
-        <div class="fg">
-          <label class="fl">Client / Tenant Name</label>
-          <input class="inp" type="text" id="add-customer" placeholder="Who's at the property?">
-        </div>
-        <div class="fg">
-          <label class="fl">Referrer / Agency / Landlord</label>
-          <input class="inp" type="text" id="add-referrer" placeholder="Company or person who referred">
-        </div>
-        <div class="fg">
-          <label class="fl">Access Notes</label>
-          <textarea class="inp" id="add-access" rows="2" placeholder="Key safe code, gate code, call before…" style="resize:vertical;min-height:46px"></textarea>
+          <div class="aj-div">or add new client</div>
+          <div class="aj-new">
+            <div class="aj-new-lbl">New client</div>
+            <div class="aj-row">
+              <div class="aj-fg">
+                <div class="aj-fl">Full Name <span class="aj-req">*</span></div>
+                <input class="inp" id="aj-new-name" placeholder="Client name">
+              </div>
+              <div class="aj-fg">
+                <div class="aj-fl">Phone</div>
+                <input class="inp" id="aj-new-phone" type="tel" placeholder="07…">
+              </div>
+            </div>
+            <div class="aj-row">
+              <div class="aj-fg">
+                <div class="aj-fl">Email</div>
+                <input class="inp" id="aj-new-email" type="email" placeholder="email@…">
+              </div>
+              <div class="aj-fg">
+                <div class="aj-fl">Type</div>
+                <select class="inp" id="aj-new-type">${ctypeOpts}</select>
+              </div>
+            </div>
+            <div class="aj-fg">
+              <div class="aj-fl">Company (optional)</div>
+              <input class="inp" id="aj-new-co" placeholder="Letting agent, company…">
+            </div>
+          </div>
         </div>
       </div>
-      <div class="add-col">
-        <div class="add-col-hdr">🔧 Job Details</div>
-        <div style="display:flex;gap:8px">
-          <div class="fg" style="flex:1">
-            <label class="fl">Trade</label>
-            <select class="inp" id="add-trade">${tradeOpts}</select>
+
+      <div class="aj-card">
+        <div class="aj-ch"><span class="aj-chi">🔧</span><span class="aj-cht">Job Details</span></div>
+        <div class="aj-cb">
+          <div class="aj-row">
+            <div class="aj-fg" style="flex:2">
+              <div class="aj-fl">Address</div>
+              <input class="inp" id="aj-addr" placeholder="Street, Town">
+            </div>
+            <div class="aj-fg" style="flex:1">
+              <div class="aj-fl">Postcode</div>
+              <input class="inp" id="aj-pc" placeholder="SW1A 1AA">
+            </div>
+            <button class="aj-pclookup" id="aj-pc-btn" type="button" title="Look up postcode">🔍</button>
           </div>
-          <div class="fg" style="flex:1">
-            <label class="fl">Priority</label>
-            <select class="inp" id="add-priority">${prioOpts}</select>
+          <div class="aj-row">
+            <div class="aj-fg">
+              <div class="aj-fl">Trade</div>
+              <select class="inp" id="aj-trade">${tradeOpts}</select>
+            </div>
+            <div class="aj-fg">
+              <div class="aj-fl">Priority</div>
+              <select class="inp" id="aj-prio">${prioOpts}</select>
+            </div>
           </div>
-        </div>
-        <div class="fg">
-          <label class="fl">Job Type / Certificate</label>
-          <select class="inp" id="add-job-type">${certOpts}</select>
-        </div>
-        <div class="fg">
-          <label class="fl">Description / Title</label>
-          <input class="inp" type="text" id="add-title-inp" placeholder="e.g. Replace consumer unit, EICR inspection">
-        </div>
-        <div style="display:flex;gap:8px">
-          <div class="fg" style="flex:1">
-            <label class="fl">Date</label>
-            <input class="inp" type="date" id="add-date" value="${esc(today)}">
+          <div class="aj-fg">
+            <div class="aj-fl">Job Title <span class="aj-req">*</span></div>
+            <input class="inp" id="aj-title" placeholder="e.g. EICR Inspection, Boiler service">
           </div>
-          <div class="fg" style="flex:1">
-            <label class="fl">Time slot</label>
-            <select class="inp" id="add-time">${slotOpts}</select>
+          <div class="aj-fg">
+            <div class="aj-fl">Description / Invoice line</div>
+            <textarea class="inp" id="aj-desc" rows="2" placeholder="Details for this job…" style="resize:vertical;min-height:44px"></textarea>
           </div>
-        </div>
-        <div class="fg">
-          <label class="fl">Engineer</label>
-          <select class="inp" id="add-engineer">${engOptions.join('')}</select>
-        </div>
-        <div class="fg">
-          <label class="fl">Notes</label>
-          <textarea class="inp" id="add-notes" rows="2" placeholder="Internal notes…" style="resize:vertical;min-height:46px"></textarea>
+          <div class="aj-sec">Certificate types (tick all that apply)</div>
+          <div class="aj-cert-grid" id="aj-cert-grid"></div>
+          <div class="aj-row">
+            <div class="aj-fg">
+              <div class="aj-fl">Date <span class="aj-req">*</span></div>
+              <input class="inp" type="date" id="aj-date" value="${esc(today)}">
+            </div>
+            <div class="aj-fg">
+              <div class="aj-fl">Timeslot</div>
+              <select class="inp" id="aj-time">${slotOpts}</select>
+            </div>
+          </div>
+          <div class="aj-row">
+            <div class="aj-fg" style="flex:1">
+              <div class="aj-fl">Amount (£)</div>
+              <input class="inp" type="number" id="aj-amount" placeholder="0.00" step="0.01" min="0">
+            </div>
+            <div class="aj-fg" style="flex:2">
+              <div class="aj-fl">Access Notes</div>
+              <input class="inp" id="aj-access" placeholder="Key safe code, gate…">
+            </div>
+          </div>
+          <div class="aj-fg">
+            <div class="aj-fl">Engineer(s)</div>
+            <div id="aj-eng-chips" class="aj-chips"></div>
+            <div class="aj-drop-wrap">
+              <input class="inp" id="aj-eng-inp" placeholder="Type to search engineer…" autocomplete="off">
+              <div class="aj-drop" id="aj-eng-drop" style="display:none"></div>
+            </div>
+          </div>
+          <div class="aj-fg">
+            <div class="aj-fl">Notes</div>
+            <textarea class="inp" id="aj-notes" rows="2" placeholder="Internal notes…" style="resize:vertical;min-height:44px"></textarea>
+          </div>
         </div>
       </div>
     </div>
-    <div class="err-msg" id="add-err" style="display:none"></div>
-    <div class="add-actions2">
-      <button class="btn" id="btn-add-cancel">Cancel</button>
-      <button class="btn-primary" id="btn-add-save">Add to Portal</button>
+    <div class="err-msg" id="aj-err" style="display:none"></div>
+    <div class="aj-footer">
+      <button class="btn" id="btn-add-cancel" type="button">Cancel</button>
+      <button class="btn-primary" id="btn-add-save" type="button">Add to Portal</button>
     </div>
   `;
+
+  // Cert type checkboxes
+  const cgEl = document.getElementById('aj-cert-grid');
+  cgEl.innerHTML = certTypes.map(ct =>
+    `<div class="aj-cert" data-id="${esc(String(ct.id))}"><div class="aj-cbx">✓</div><div class="aj-ct">${esc(ct.name)}</div></div>`
+  ).join('');
+  cgEl.querySelectorAll('.aj-cert').forEach(el => {
+    el.addEventListener('click', () => {
+      const cid = el.dataset.id;
+      if (_addJobCertTypes.has(cid)) { _addJobCertTypes.delete(cid); el.classList.remove('on'); }
+      else                           { _addJobCertTypes.add(cid);    el.classList.add('on'); }
+    });
+  });
 
   document.getElementById('btn-add-cancel').addEventListener('click', closeAddJob);
   document.getElementById('btn-add-save').addEventListener('click', saveJob);
 
-  const pcBtn  = document.getElementById('add-pc-lookup');
-  const pcInp  = document.getElementById('add-postcode');
-  const addrInp = document.getElementById('add-address');
+  const pcBtn   = document.getElementById('aj-pc-btn');
+  const pcInp   = document.getElementById('aj-pc');
+  const addrInp = document.getElementById('aj-addr');
   pcBtn.addEventListener('click', () => _lookupPostcode(pcInp.value.trim(), addrInp, pcInp));
   pcInp.addEventListener('keydown', e => { if (e.key==='Enter') { e.preventDefault(); _lookupPostcode(pcInp.value.trim(), addrInp, pcInp); }});
 
-  const csInp  = document.getElementById('add-contact-search');
-  const csDrop = document.getElementById('add-contact-dropdown');
+  const csInp  = document.getElementById('aj-cs-inp');
+  const csDrop = document.getElementById('aj-cs-drop');
   csInp.oninput = () => {
     const q = csInp.value.trim();
     clearTimeout(_contactSearchTmr);
@@ -3269,11 +3390,47 @@ async function openAddJob() {
   };
   csInp.onblur = () => { setTimeout(() => { csDrop.style.display = 'none'; }, 200); };
 
+  document.getElementById('aj-sel-cl').addEventListener('click', () => {
+    _addJobContactId  = null;
+    _addJobPropertyId = null;
+    document.getElementById('aj-sel').style.display = 'none';
+    document.getElementById('aj-cs-inp').value = '';
+  });
+
+  const engInp  = document.getElementById('aj-eng-inp');
+  const engDrop = document.getElementById('aj-eng-drop');
+  engInp.oninput = () => {
+    const q = engInp.value.trim().toLowerCase();
+    if (!q) { engDrop.style.display = 'none'; return; }
+    const matches = allEngineers.filter(e =>
+      e.name.toLowerCase().includes(q) && !_addJobEngineers.find(x => x.id === e.id)
+    );
+    if (!matches.length) {
+      engDrop.innerHTML = '<div class="aj-dn">No engineers found</div>';
+      engDrop.style.display = 'block';
+      return;
+    }
+    engDrop.innerHTML = matches.map(e =>
+      `<div class="aj-di" data-id="${esc(String(e.id))}" data-name="${esc(e.name)}">${esc(e.name)}</div>`
+    ).join('');
+    engDrop.querySelectorAll('.aj-di').forEach(item => {
+      item.addEventListener('mousedown', ev => {
+        ev.preventDefault();
+        _addJobEngineers.push({id: item.dataset.id, name: item.dataset.name});
+        _renderEngChips();
+        engInp.value = '';
+        engDrop.style.display = 'none';
+      });
+    });
+    engDrop.style.display = 'block';
+  };
+  engInp.onblur = () => { setTimeout(() => { engDrop.style.display = 'none'; }, 200); };
+
   document.getElementById('view-add').style.display = 'flex';
 }
 
 async function _searchContacts(q, inp, drop) {
-  drop.innerHTML = '<div class="contact-drop-empty">Searching…</div>';
+  drop.innerHTML = '<div class="aj-dn">Searching…</div>';
   drop.style.display = 'block';
 
   const [cRes, pRes] = await Promise.allSettled([
@@ -3285,7 +3442,7 @@ async function _searchContacts(q, inp, drop) {
   const properties = pRes.status === 'fulfilled' ? (pRes.value?.items   || []) : [];
 
   if (!contacts.length && !properties.length) {
-    drop.innerHTML = '<div class="contact-drop-empty">No matches — fill in fields below manually</div>';
+    drop.innerHTML = '<div class="aj-dn">No matches — fill in new client below</div>';
     return;
   }
 
@@ -3293,28 +3450,32 @@ async function _searchContacts(q, inp, drop) {
 
   if (contacts.length) {
     const hdr = document.createElement('div');
-    hdr.className = 'contact-drop-section-hdr';
+    hdr.className = 'aj-dh';
     hdr.textContent = 'Contacts';
     drop.appendChild(hdr);
 
     contacts.forEach(c => {
       const name = c.name || c.company || '';
-      const sub  = [c.company !== name ? c.company : null, c.phone].filter(Boolean).join(' · ');
-      const typeBadge = c.type ? `<span class="contact-drop-badge">${esc(c.type)}</span>` : '';
+      const sub  = [c.company !== name ? c.company : null, c.phone, c.email].filter(Boolean).join(' · ');
+      const badge = c.type ? `<span class="aj-badge">${esc(c.type)}</span>` : '';
       const li = document.createElement('div');
-      li.className = 'contact-drop-item';
-      li.innerHTML = `<div><strong>${esc(name)}</strong>${typeBadge}</div>${sub ? `<span>${esc(sub)}</span>` : ''}`;
+      li.className = 'aj-di';
+      li.innerHTML = `<div class="aj-di-nm">${esc(name)}${badge}</div>${sub ? `<div class="aj-di-sb">${esc(sub)}</div>` : ''}`;
       li.addEventListener('mousedown', e => {
         e.preventDefault();
-        inp.value = name;
+        inp.value = '';
         _addJobContactId  = c.id || null;
         _addJobPropertyId = null;
-        const aEl = document.getElementById('add-address');
-        const pEl = document.getElementById('add-postcode');
-        const cEl = document.getElementById('add-customer');
-        if (aEl && c.address) aEl.value = c.address;
+        const selEl = document.getElementById('aj-sel');
+        const nmEl  = document.getElementById('aj-sel-nm');
+        const sbEl  = document.getElementById('aj-sel-sb');
+        if (nmEl) nmEl.textContent = name;
+        if (sbEl) sbEl.textContent = sub || (c.type || '');
+        if (selEl) selEl.style.display = 'flex';
+        const aEl = document.getElementById('aj-addr');
+        const pEl = document.getElementById('aj-pc');
+        if (aEl && c.address)  aEl.value = c.address;
         if (pEl && c.postcode) pEl.value = c.postcode;
-        if (cEl) cEl.value = name;
         drop.style.display = 'none';
       });
       drop.appendChild(li);
@@ -3323,26 +3484,30 @@ async function _searchContacts(q, inp, drop) {
 
   if (properties.length) {
     const hdr = document.createElement('div');
-    hdr.className = 'contact-drop-section-hdr';
+    hdr.className = 'aj-dh';
     hdr.textContent = 'Saved Properties';
     drop.appendChild(hdr);
 
     properties.forEach(p => {
       const li = document.createElement('div');
-      li.className = 'contact-drop-item';
+      li.className = 'aj-di';
       const sub = [p.postcode, p.contactName].filter(Boolean).join(' · ');
-      li.innerHTML = `<div><strong>${esc(p.address || '')}</strong></div>${sub ? `<span>${esc(sub)}</span>` : ''}`;
+      li.innerHTML = `<div class="aj-di-nm">${esc(p.address || '')}</div>${sub ? `<div class="aj-di-sb">${esc(sub)}</div>` : ''}`;
       li.addEventListener('mousedown', e => {
         e.preventDefault();
-        inp.value = p.address || '';
+        inp.value = '';
         _addJobContactId  = p.contactId || null;
-        _addJobPropertyId = p.id || null;
-        const aEl = document.getElementById('add-address');
-        const pEl = document.getElementById('add-postcode');
-        const cEl = document.getElementById('add-customer');
-        if (aEl) aEl.value = p.address || '';
+        _addJobPropertyId = p.id        || null;
+        const selEl = document.getElementById('aj-sel');
+        const nmEl  = document.getElementById('aj-sel-nm');
+        const sbEl  = document.getElementById('aj-sel-sb');
+        if (nmEl) nmEl.textContent = p.address || '';
+        if (sbEl) sbEl.textContent = sub;
+        if (selEl) selEl.style.display = 'flex';
+        const aEl = document.getElementById('aj-addr');
+        const pEl = document.getElementById('aj-pc');
+        if (aEl) aEl.value = p.address  || '';
         if (pEl) pEl.value = p.postcode || '';
-        if (cEl && p.contactName) cEl.value = p.contactName;
         drop.style.display = 'none';
       });
       drop.appendChild(li);
@@ -3353,7 +3518,7 @@ async function _searchContacts(q, inp, drop) {
 async function _lookupPostcode(pc, addrInp, pcInp) {
   const clean = pc.replace(/\s+/g, '').toUpperCase();
   if (clean.length < 3) return;
-  const btn = document.getElementById('add-pc-lookup');
+  const btn = document.getElementById('aj-pc-btn');
   if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
   try {
     const r = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(clean)}`);
@@ -3368,7 +3533,7 @@ async function _lookupPostcode(pc, addrInp, pcInp) {
       const r2 = await fetch(`https://api.postcodes.io/postcodes?q=${encodeURIComponent(clean)}&limit=5`);
       const d2 = await r2.json();
       if (d2.result?.length) {
-        const errEl = document.getElementById('add-err');
+        const errEl = document.getElementById('aj-err');
         if (errEl) { errEl.textContent = 'Did you mean: ' + d2.result.map(x => x.postcode).join(', ') + '?'; errEl.style.display = 'block'; }
       }
     }
@@ -3379,58 +3544,73 @@ async function _lookupPostcode(pc, addrInp, pcInp) {
 }
 
 async function saveJob() {
-  const errEl   = document.getElementById('add-err');
+  const errEl = document.getElementById('aj-err');
   if (errEl) errEl.style.display = 'none';
-  const address  = document.getElementById('add-address')?.value.trim()    || '';
-  const postcode = document.getElementById('add-postcode')?.value.trim()   || '';
-  const customer = document.getElementById('add-customer')?.value.trim()   || '';
-  const title    = document.getElementById('add-title-inp')?.value.trim()  || '';
-  const trade    = document.getElementById('add-trade')?.value             || '';
-  const jobType  = document.getElementById('add-job-type')?.value          || '';
-  const date     = document.getElementById('add-date')?.value              || '';
-  const time     = document.getElementById('add-time')?.value              || '';
-  const engId    = document.getElementById('add-engineer')?.value          || '';
-  const priority = document.getElementById('add-priority')?.value          || 'normal';
-  const referrer = document.getElementById('add-referrer')?.value.trim()   || '';
-  const access   = document.getElementById('add-access')?.value.trim()     || '';
-  const notes    = document.getElementById('add-notes')?.value.trim()      || '';
+  const _err = msg => { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
+
+  const address  = document.getElementById('aj-addr')?.value.trim()      || '';
+  const postcode = document.getElementById('aj-pc')?.value.trim()        || '';
+  const title    = document.getElementById('aj-title')?.value.trim()     || '';
+  const desc     = document.getElementById('aj-desc')?.value.trim()      || '';
+  const trade    = document.getElementById('aj-trade')?.value            || '';
+  const priority = document.getElementById('aj-prio')?.value             || 'normal';
+  const date     = document.getElementById('aj-date')?.value             || '';
+  const time     = document.getElementById('aj-time')?.value             || '';
+  const amount   = document.getElementById('aj-amount')?.value           || '';
+  const access   = document.getElementById('aj-access')?.value.trim()    || '';
+  const notes    = document.getElementById('aj-notes')?.value.trim()     || '';
+  const newName  = document.getElementById('aj-new-name')?.value.trim()  || '';
+  const newPhone = document.getElementById('aj-new-phone')?.value.trim() || '';
+  const newEmail = document.getElementById('aj-new-email')?.value.trim() || '';
+  const newType  = document.getElementById('aj-new-type')?.value         || '';
+  const newCo    = document.getElementById('aj-new-co')?.value.trim()    || '';
+
+  if (!title) { _err('Job Title is required'); return; }
+  if (!date)  { _err('Date is required'); return; }
 
   const fullAddr = [address, postcode].filter(Boolean).join(', ');
-  if (!fullAddr && errEl) { showErr(errEl, 'Address is required'); return; }
-  if (!date     && errEl) { showErr(errEl, 'Date is required'); return; }
+  const certArr  = [..._addJobCertTypes];
 
   const btn = document.getElementById('btn-add-save');
   if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
   try {
     await api.createJob({
-      title:    title || jobType || trade || fullAddr || 'New Job',
+      title,
       date,
-      ...(fullAddr   ? {address: fullAddr}                          : {}),
-      ...(postcode   ? {postcode}                                   : {}),
-      ...(trade      ? {trade}                                      : {}),
-      ...(jobType    ? {jobType, certType: jobType}                 : {}),
-      ...(customer   ? {customerName: customer}                     : {}),
-      ...(time       ? {time}                                       : {}),
-      ...(engId      ? {engineerId: engId}                          : {}),
-      ...(priority   ? {priority}                                   : {}),
-      ...(referrer   ? {referrerName: referrer}                     : {}),
-      ...(access     ? {accessNotes: access}                        : {}),
-      ...(notes      ? {notes}                                      : {}),
-      ...(_addJobContactId  ? {contactId:  _addJobContactId}        : {}),
-      ...(_addJobPropertyId ? {propertyId: _addJobPropertyId}       : {}),
+      ...(fullAddr              ? {address: fullAddr}                        : {}),
+      ...(postcode              ? {postcode}                                 : {}),
+      ...(trade                 ? {trade}                                    : {}),
+      ...(desc                  ? {description: desc}                        : {}),
+      ...(certArr.length        ? {certTypes: certArr, certType: certArr[0]} : {}),
+      ...(priority              ? {priority}                                 : {}),
+      ...(time                  ? {time}                                     : {}),
+      ...(amount                ? {price: parseFloat(amount)}                : {}),
+      ...(access                ? {accessNotes: access}                      : {}),
+      ...(notes                 ? {notes}                                    : {}),
+      ...(_addJobEngineers.length ? {engineerId: _addJobEngineers[0].id}     : {}),
+      ...(_addJobContactId      ? {contactId:  _addJobContactId}             : {}),
+      ...(_addJobPropertyId     ? {propertyId: _addJobPropertyId}            : {}),
+      ...(!_addJobContactId && newName  ? {customerName: newName}            : {}),
+      ...(!_addJobContactId && newPhone ? {clientPhone:  newPhone}           : {}),
+      ...(!_addJobContactId && newEmail ? {clientEmail:  newEmail}           : {}),
+      ...(!_addJobContactId && newType  ? {clientType:   newType}            : {}),
+      ...(!_addJobContactId && newCo    ? {clientCompany: newCo}             : {}),
     });
     closeAddJob();
     clearCache();
     await switchView(view);
     setStatus('Job added ✓');
   } catch(e) {
-    if (errEl) showErr(errEl, 'Failed: ' + e.message);
+    _err('Failed: ' + e.message);
     if (btn) { btn.disabled = false; btn.textContent = 'Add to Portal'; }
   }
 }
 
 function closeAddJob() {
-  _addJobContactId = null; _addJobPropertyId = null;
+  _addJobContactId  = null;
+  _addJobPropertyId = null;
+  _addJobCertTypes  = new Set();
+  _addJobEngineers  = [];
   document.getElementById('view-add').style.display = 'none';
 }
 
