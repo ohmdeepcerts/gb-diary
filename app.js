@@ -3249,7 +3249,10 @@ async function openAddJob() {
           <div class="aj-row">
             <div class="aj-fg" style="flex:2">
               <div class="aj-fl">Address</div>
-              <input class="inp" id="aj-addr" placeholder="Street, Town">
+              <div class="aj-drop-wrap">
+                <input class="inp" id="aj-addr" placeholder="Street, Town" autocomplete="off">
+                <div class="aj-drop" id="aj-addr-drop" style="display:none"></div>
+              </div>
             </div>
             <div class="aj-fg" style="flex:1">
               <div class="aj-fl">Postcode</div>
@@ -3393,11 +3396,21 @@ async function openAddJob() {
   document.getElementById('btn-add-cancel').addEventListener('click', closeAddJob);
   document.getElementById('btn-add-save').addEventListener('click', saveJob);
 
-  const pcBtn   = document.getElementById('aj-pc-btn');
-  const pcInp   = document.getElementById('aj-pc');
-  const addrInp = document.getElementById('aj-addr');
+  const pcBtn    = document.getElementById('aj-pc-btn');
+  const pcInp    = document.getElementById('aj-pc');
+  const addrInp  = document.getElementById('aj-addr');
+  const addrDrop = document.getElementById('aj-addr-drop');
   pcBtn.addEventListener('click', () => _lookupPostcode(pcInp.value.trim(), addrInp, pcInp));
   pcInp.addEventListener('keydown', e => { if (e.key==='Enter') { e.preventDefault(); _lookupPostcode(pcInp.value.trim(), addrInp, pcInp); }});
+
+  let _addrTmr = null;
+  addrInp.oninput = () => {
+    const q = addrInp.value.trim();
+    clearTimeout(_addrTmr);
+    if (q.length < 2) { addrDrop.style.display = 'none'; return; }
+    _addrTmr = setTimeout(() => _searchAddress(q, addrInp, addrDrop, pcInp), 300);
+  };
+  addrInp.onblur = () => { setTimeout(() => { addrDrop.style.display = 'none'; }, 200); };
 
   const csInp  = document.getElementById('aj-cs-inp');
   const csDrop = document.getElementById('aj-cs-drop');
@@ -3527,6 +3540,66 @@ async function _searchContacts(q, inp, drop) {
         const pEl = document.getElementById('aj-pc');
         if (aEl) aEl.value = p.address  || '';
         if (pEl) pEl.value = p.postcode || '';
+        drop.style.display = 'none';
+      });
+      drop.appendChild(li);
+    });
+  }
+}
+
+async function _searchAddress(q, addrInp, drop, pcInp) {
+  drop.innerHTML = '<div class="aj-dn">Searching…</div>';
+  drop.style.display = 'block';
+
+  const [pRes, pcRes] = await Promise.allSettled([
+    trpcQuery('properties.list', { query: q, pageSize: 8 }),
+    fetch(`https://api.postcodes.io/postcodes?q=${encodeURIComponent(q)}&limit=8`).then(r => r.json()),
+  ]);
+
+  const properties = pRes.status  === 'fulfilled' ? (pRes.value?.items   || []) : [];
+  const postcodes  = pcRes.status === 'fulfilled' ? (pcRes.value?.result  || []) : [];
+
+  if (!properties.length && !postcodes.length) {
+    drop.innerHTML = '<div class="aj-dn">No suggestions found</div>';
+    return;
+  }
+
+  drop.innerHTML = '';
+
+  if (properties.length) {
+    const hdr = document.createElement('div');
+    hdr.className = 'aj-dh';
+    hdr.textContent = 'Saved Addresses';
+    drop.appendChild(hdr);
+    properties.forEach(p => {
+      const li  = document.createElement('div');
+      li.className = 'aj-di';
+      const sub = [p.postcode, p.contactName].filter(Boolean).join(' · ');
+      li.innerHTML = `<div class="aj-di-nm">${esc(p.address || '')}</div>${sub ? `<div class="aj-di-sb">${esc(sub)}</div>` : ''}`;
+      li.addEventListener('mousedown', e => {
+        e.preventDefault();
+        addrInp.value = p.address || '';
+        if (p.postcode && pcInp) pcInp.value = p.postcode;
+        if (p.contactId) { _addJobContactId = p.contactId; _addJobPropertyId = p.id || null; }
+        drop.style.display = 'none';
+      });
+      drop.appendChild(li);
+    });
+  }
+
+  if (postcodes.length) {
+    const hdr = document.createElement('div');
+    hdr.className = 'aj-dh';
+    hdr.textContent = 'UK Postcodes';
+    drop.appendChild(hdr);
+    postcodes.forEach(pc => {
+      const li  = document.createElement('div');
+      li.className = 'aj-di';
+      const loc = [pc.admin_ward, pc.admin_district].filter(Boolean).join(', ');
+      li.innerHTML = `<div class="aj-di-nm">${esc(pc.postcode)}</div>${loc ? `<div class="aj-di-sb">${esc(loc)}</div>` : ''}`;
+      li.addEventListener('mousedown', e => {
+        e.preventDefault();
+        if (pcInp) pcInp.value = pc.postcode;
         drop.style.display = 'none';
       });
       drop.appendChild(li);
