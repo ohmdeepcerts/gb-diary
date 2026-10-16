@@ -4013,16 +4013,64 @@ async function _loadContactInsights(contactId, panel) {
     sub: invoices.length ? `${invoices.length} invoice${invoices.length !== 1 ? 's' : ''} total · £${totalInvAmt.toFixed(2)} billed` : ''
   });
 
+  const statusPills = contactJobs.length
+    ? [...new Set(contactJobs.map(j => j.status || '').filter(Boolean))].join(' · ')
+    : '';
   rows.push({
     icon: '📊',
     label: isAgency ? 'Recent Jobs (group)' : 'Recent Jobs',
-    value: `${contactJobs.length} found in last 150 jobs`,
-    sub: contactJobs.length
-      ? [...new Set(contactJobs.map(j => j.status || '').filter(Boolean))].join(' · ')
-      : ''
+    value: `<span id="aj-ins-jcount">${contactJobs.length} found in last 150 jobs</span>
+            <button id="aj-ins-searchall" style="margin-left:8px;font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;font-family:inherit;vertical-align:middle">🔍 Search all</button>`,
+    sub: `<span id="aj-ins-jpills">${statusPills}</span>`
   });
 
   _insRenderRows(panel, rows);
+
+  // Wire up deep-search button
+  document.getElementById('aj-ins-searchall')?.addEventListener('click', async function() {
+    const btn      = this;
+    const countEl  = document.getElementById('aj-ins-jcount');
+    const pillsEl  = document.getElementById('aj-ins-jpills');
+    btn.disabled   = true;
+    btn.textContent = '⏳ Searching…';
+    btn.style.color = 'var(--text3)';
+
+    let offset = 0; const pageSize = 50;
+    const allFound = [...contactJobs]; // already have first 150
+    let totalScanned = 150;
+
+    // fetch from offset 150 onwards
+    offset = 150;
+    try {
+      while (true) {
+        const r = await trpcQuery('jobs.list', { pageSize, offset });
+        const page = r?.jobs || [];
+        if (!page.length) break;
+        const matched = page.filter(j => idSet.has(j.contact_id));
+        allFound.push(...matched);
+        totalScanned += page.length;
+        if (countEl) countEl.innerHTML = `<span style="color:var(--text3);font-size:11px">🔍 ${allFound.length} found · scanned ${totalScanned}…</span>`;
+        if (page.length < pageSize) break;
+        offset += pageSize;
+      }
+    } catch(e) {
+      if (countEl) countEl.textContent = `${allFound.length} found (search interrupted)`;
+      btn.remove();
+      return;
+    }
+
+    // Build status breakdown
+    const statusMap = {};
+    allFound.forEach(j => { const s = j.status || 'unknown'; statusMap[s] = (statusMap[s] || 0) + 1; });
+    const breakdown = Object.entries(statusMap)
+      .sort((a, b) => b[1] - a[1])
+      .map(([s, n]) => `${n} ${s.replace(/_/g,' ')}`)
+      .join(' · ');
+
+    if (countEl) countEl.innerHTML = `<strong>${allFound.length}</strong> jobs from ${totalScanned} scanned`;
+    if (pillsEl) pillsEl.textContent = breakdown || '—';
+    btn.remove();
+  });
 }
 
 async function _searchAddress(q, addrInp, drop, pcInp) {
