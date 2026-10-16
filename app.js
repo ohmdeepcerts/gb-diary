@@ -3696,34 +3696,64 @@ async function saveJob() {
   if (!title) { _err('Job Title is required'); return; }
   if (!date)  { _err('Date is required'); return; }
 
-  const fullAddr = [address, postcode].filter(Boolean).join(', ');
   const certArr  = [..._addJobCertTypes];
 
   const btn = document.getElementById('btn-add-save');
   if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
   try {
-    await api.createJob({
+    // Step 1: resolve or create contact (portal requires contactId)
+    let contactId = _addJobContactId || null;
+    if (!contactId && newName) {
+      if (btn) btn.textContent = 'Creating contact…';
+      const c = await trpcMutate('directory.contacts.create', {
+        name: newName,
+        ...(newPhone ? {phone: newPhone} : {}),
+        ...(newEmail ? {email: newEmail} : {}),
+        ...(newType  ? {type:  newType}  : {}),
+        ...(newCo    ? {company: newCo}  : {}),
+      });
+      contactId = c?.id;
+    }
+    if (!contactId) { _err('Client name is required'); if (btn) { btn.disabled = false; btn.textContent = 'Add to Portal'; } return; }
+
+    // Step 2: resolve or create property (portal requires propertyId)
+    let propertyId = _addJobPropertyId || null;
+    if (!propertyId && (address || postcode)) {
+      if (btn) btn.textContent = 'Creating property…';
+      const p = await trpcMutate('properties.create', {
+        ...(address  ? {address}  : {}),
+        ...(postcode ? {postcode} : {}),
+        contactId,
+      });
+      propertyId = p?.id;
+    }
+    if (!propertyId) { _err('Address is required'); if (btn) { btn.disabled = false; btn.textContent = 'Add to Portal'; } return; }
+
+    // Step 3: create the job
+    if (btn) btn.textContent = 'Adding…';
+    const job = await trpcMutate('jobs.create', {
       title,
-      date,
-      ...(fullAddr              ? {address: fullAddr}                        : {}),
-      ...(postcode              ? {postcode}                                 : {}),
+      scheduledDate: date,
+      propertyId,
+      contactId,
       ...(trade                 ? {trade}                                    : {}),
-      ...(desc                  ? {description: desc}                        : {}),
-      ...(certArr.length        ? {certTypes: certArr, certType: certArr[0]} : {}),
       ...(priority              ? {priority}                                 : {}),
-      ...(time                  ? {time}                                     : {}),
       ...(amount                ? {price: parseFloat(amount)}                : {}),
       ...(access                ? {accessNotes: access}                      : {}),
       ...(notes                 ? {notes}                                    : {}),
-      ...(_addJobEngineers.length ? {engineerId: _addJobEngineers[0].id}     : {}),
-      ...(_addJobContactId      ? {contactId:  _addJobContactId}             : {}),
-      ...(_addJobPropertyId     ? {propertyId: _addJobPropertyId}            : {}),
-      ...(!_addJobContactId && newName  ? {customerName: newName}            : {}),
-      ...(!_addJobContactId && newPhone ? {clientPhone:  newPhone}           : {}),
-      ...(!_addJobContactId && newEmail ? {clientEmail:  newEmail}           : {}),
-      ...(!_addJobContactId && newType  ? {clientType:   newType}            : {}),
-      ...(!_addJobContactId && newCo    ? {clientCompany: newCo}             : {}),
+      ...(_addJobEngineers.length ? {engineerId: _addJobEngineers[0].id}    : {}),
     });
+    const jobId = job?.id;
+    if (!jobId) throw new Error('No job ID returned');
+
+    // Step 4: update fields the create endpoint ignores
+    const updateFields = {};
+    if (time)           updateFields.timeslot    = time;
+    if (certArr.length) updateFields.certTypeIds = certArr;
+    if (desc)           updateFields.description = desc;
+    updateFields.confirmed = true;
+    await trpcMutate('jobs.update', { id: jobId, ...updateFields });
+
     closeAddJob();
     clearCache();
     await switchView(view);
