@@ -83,9 +83,7 @@ const api = {
     return trpcMutate('jobs.update', { id: jobId, price: amount });
   },
   updateNotes: async (jobId, job, value) => {
-    const payload = { id: jobId, notes: value };
-    if (job.title || job.job_title) payload.title = value;
-    return trpcMutate('jobs.update', payload);
+    return trpcMutate('jobs.update', { id: jobId, description: value });
   },
   getJob: (jobId) => trpcQuery('jobs.get', { id: jobId }),
   setStatus: (jobId, statusKey, extra = {}) => {
