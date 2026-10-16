@@ -4526,6 +4526,7 @@ let _invTotal       = 0;
 let _stmtContactId   = null;
 let _stmtContactName = '';
 let _invCSSInjected  = false;
+let _invDescCache    = {};
 
 // ── INVOICE CSS ────────────────────────────────────────────────────────────────
 
@@ -4699,6 +4700,19 @@ async function _loadInvoices(resetPage = false) {
   _invItems  = list?.invoices || list?.items || [];
   _invTotal  = list?.total ?? _invItems.length;
 
+  // Fetch line-item descriptions for all visible invoices (cached)
+  await Promise.all(_invItems.map(async inv => {
+    if (_invDescCache[inv.id] !== undefined) return;
+    try {
+      const detail = await trpcQuery('invoices.get', { invoiceId: inv.id });
+      const lineItems = detail?.items || [];
+      const desc = lineItems.map(li => li.description).filter(Boolean).join(' • ');
+      _invDescCache[inv.id] = { desc: desc || inv.notes || '', lineItems };
+    } catch(e) {
+      _invDescCache[inv.id] = { desc: inv.notes || '', lineItems: [] };
+    }
+  }));
+
   _renderInvoicePage();
 }
 
@@ -4799,6 +4813,24 @@ function _buildInvBodyHTML() {
         <div class="inv-detail-item"><span>Balance</span><strong>${_invFmt(balance)}</strong></div>
         ${inv.notes?`<div class="inv-detail-item" style="grid-column:1/-1"><span>Notes</span>${esc(inv.notes)}</div>`:''}
       </div>
+      ${lineItems.length ? `
+        <div style="margin-top:8px">
+          <table style="width:100%;border-collapse:collapse;font-size:11px">
+            <thead><tr style="border-bottom:1px solid var(--border);color:var(--muted)">
+              <th style="text-align:left;padding:4px 6px;font-weight:600">Description</th>
+              <th style="text-align:right;padding:4px 6px;font-weight:600">Qty</th>
+              <th style="text-align:right;padding:4px 6px;font-weight:600">Unit</th>
+              <th style="text-align:right;padding:4px 6px;font-weight:600">Total</th>
+            </tr></thead>
+            <tbody>${lineItems.map(li=>`<tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:4px 6px">${esc(li.description||'')}</td>
+              <td style="text-align:right;padding:4px 6px">${li.qty}</td>
+              <td style="text-align:right;padding:4px 6px">${_invFmt(li.unitPrice)}</td>
+              <td style="text-align:right;padding:4px 6px;font-weight:600">${_invFmt(li.lineTotal)}</td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>
+      ` : ''}
       ${inv.payments?.length ? `
         <div class="inv-pay-history">
           <div class="inv-pay-history-title">Payments (${inv.payments.length})</div>
@@ -4823,7 +4855,9 @@ function _buildInvBodyHTML() {
       </div>
     `;
 
-    const descVal = esc(inv.description || inv.notes || inv.title || '—');
+    const cached  = _invDescCache[inv.id];
+    const descVal = esc(cached?.desc || inv.notes || '—');
+    const lineItems = cached?.lineItems || [];
     return `
       <tr class="inv-row st-${status}" data-idx="${idx}">
         <td style="font-weight:700;font-size:11px;white-space:nowrap">${esc(inv.invoiceNo||'—')}</td>
