@@ -3179,6 +3179,7 @@ function renderMonth() {
 
 let _addJobContactId  = null;
 let _addJobPropertyId = null;
+let _addJobAgencyId   = null;
 let _contactSearchTmr = null;
 let _jobOptions       = null;
 let _addJobCertTypes  = new Set();   // checked cert type IDs
@@ -3457,6 +3458,18 @@ async function openAddJob() {
               <div class="aj-fl">Company (optional)</div>
               <input class="inp" id="aj-new-co" placeholder="Letting agent, company…">
             </div>
+            <div class="aj-fg" id="aj-agency-row" style="display:none">
+              <div class="aj-fl">Agency <span class="aj-req">*</span> <span style="font-weight:400;color:var(--text3)">(required for Agent)</span></div>
+              <div class="aj-drop-wrap">
+                <input class="inp" id="aj-agency-inp" type="text" placeholder="Search existing agency…" autocomplete="off">
+                <div class="aj-drop" id="aj-agency-drop" style="display:none"></div>
+              </div>
+              <div id="aj-agency-sel" style="display:none;margin-top:6px;align-items:center;gap:8px;background:var(--bg3);padding:6px 10px;border-radius:6px;font-size:12px">
+                <span style="font-size:14px">🏢</span>
+                <span id="aj-agency-sel-nm" style="font-weight:600;flex:1"></span>
+                <button id="aj-agency-sel-cl" type="button" style="font-size:11px;border:none;background:none;color:var(--text2);cursor:pointer;padding:0">✕</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -3525,6 +3538,7 @@ async function openAddJob() {
   document.getElementById('aj-sel-cl').addEventListener('click', () => {
     _addJobContactId  = null;
     _addJobPropertyId = null;
+    _addJobAgencyId   = null;
     document.getElementById('aj-sel').style.display = 'none';
     document.getElementById('aj-cs-inp').value = '';
     ['aj-new-name','aj-new-phone','aj-new-email','aj-new-co'].forEach(id => {
@@ -3532,6 +3546,12 @@ async function openAddJob() {
     });
     const typeEl = document.getElementById('aj-new-type');
     if (typeEl) typeEl.selectedIndex = 0;
+    const agRow = document.getElementById('aj-agency-row');
+    if (agRow) agRow.style.display = 'none';
+    const agSel = document.getElementById('aj-agency-sel');
+    if (agSel) agSel.style.display = 'none';
+    const agInp = document.getElementById('aj-agency-inp');
+    if (agInp) agInp.value = '';
     _insSetHeader('💡', 'Smart Insights');
     const p = _insPanel(); if (p) p.innerHTML = '<div class="aj-ins-idle"><div class="aj-ins-idle-icon">🔍</div><div class="aj-ins-idle-txt">Select a client or property above<br>to see smart insights here</div></div>';
   });
@@ -3564,6 +3584,62 @@ async function openAddJob() {
     engDrop.style.display = 'block';
   };
   engInp.onblur = () => { setTimeout(() => { engDrop.style.display = 'none'; }, 200); };
+
+  // Agency picker — shown only when Type = "agent"
+  const agencyRow  = document.getElementById('aj-agency-row');
+  const agencyInp  = document.getElementById('aj-agency-inp');
+  const agencyDrop = document.getElementById('aj-agency-drop');
+  const agencySel  = document.getElementById('aj-agency-sel');
+  const agencySelNm = document.getElementById('aj-agency-sel-nm');
+  const agencySelCl = document.getElementById('aj-agency-sel-cl');
+
+  let _agencyTmr = null;
+
+  function _showAgencyRow(show) {
+    if (agencyRow) agencyRow.style.display = show ? '' : 'none';
+    if (!show) { _addJobAgencyId = null; if (agencyInp) agencyInp.value = ''; if (agencySel) agencySel.style.display = 'none'; if (agencyDrop) agencyDrop.style.display = 'none'; }
+  }
+
+  document.getElementById('aj-new-type')?.addEventListener('change', e => {
+    _showAgencyRow(e.target.value === 'agent');
+  });
+
+  if (agencyInp) {
+    agencyInp.oninput = () => {
+      const q = agencyInp.value.trim();
+      clearTimeout(_agencyTmr);
+      if (q.length < 1) { agencyDrop.style.display = 'none'; return; }
+      _agencyTmr = setTimeout(async () => {
+        agencyDrop.innerHTML = '<div class="aj-dn">Searching…</div>';
+        agencyDrop.style.display = 'block';
+        const res = await trpcQuery('directory.contacts.list', { type: 'agency', query: q, pageSize: 8 }).catch(() => null);
+        const items = res?.items || [];
+        if (!items.length) { agencyDrop.innerHTML = '<div class="aj-dn">No agencies found</div>'; return; }
+        agencyDrop.innerHTML = items.map(a =>
+          `<div class="aj-di" data-id="${esc(String(a.id))}" data-name="${esc(a.name || a.company || '')}">${esc(a.name || a.company || '')}</div>`
+        ).join('');
+        agencyDrop.querySelectorAll('.aj-di').forEach(item => {
+          item.addEventListener('mousedown', ev => {
+            ev.preventDefault();
+            _addJobAgencyId = item.dataset.id;
+            agencyInp.value = '';
+            agencyDrop.style.display = 'none';
+            if (agencySelNm) agencySelNm.textContent = item.dataset.name;
+            if (agencySel)   { agencySel.style.display = 'flex'; }
+          });
+        });
+      }, 300);
+    };
+    agencyInp.onblur = () => { setTimeout(() => { if (agencyDrop) agencyDrop.style.display = 'none'; }, 200); };
+  }
+
+  if (agencySelCl) {
+    agencySelCl.addEventListener('click', () => {
+      _addJobAgencyId = null;
+      if (agencyInp)  agencyInp.value = '';
+      if (agencySel)  agencySel.style.display = 'none';
+    });
+  }
 
   document.getElementById('view-add').style.display = 'flex';
 }
@@ -4056,10 +4132,11 @@ async function saveJob() {
       if (btn) btn.textContent = 'Creating contact…';
       const c = await trpcMutate('directory.contacts.create', {
         name: newName,
-        ...(newPhone ? {phone: newPhone} : {}),
-        ...(newEmail ? {email: newEmail} : {}),
-        ...(newType  ? {type:  newType}  : {}),
-        ...(newCo    ? {company: newCo}  : {}),
+        ...(newPhone          ? {phone:    newPhone}          : {}),
+        ...(newEmail          ? {email:    newEmail}          : {}),
+        ...(newType           ? {type:     newType}           : {}),
+        ...(newCo             ? {company:  newCo}             : {}),
+        ...(_addJobAgencyId   ? {agencyId: _addJobAgencyId}   : {}),
       });
       contactId = c?.id;
     }
