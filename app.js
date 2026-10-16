@@ -3614,19 +3614,36 @@ async function openAddJob() {
         agencyDrop.style.display = 'block';
         const res = await trpcQuery('directory.contacts.list', { type: 'agency', query: q, pageSize: 8 }).catch(() => null);
         const items = res?.items || [];
-        if (!items.length) { agencyDrop.innerHTML = '<div class="aj-dn">No agencies found</div>'; return; }
-        agencyDrop.innerHTML = items.map(a =>
-          `<div class="aj-di" data-id="${esc(String(a.id))}" data-name="${esc(a.name || a.company || '')}">${esc(a.name || a.company || '')}</div>`
-        ).join('');
-        agencyDrop.querySelectorAll('.aj-di').forEach(item => {
+        const createRow = `<div class="aj-di aj-di-create" data-create="1" data-name="${esc(q)}" style="border-top:1px solid var(--border);color:var(--red);font-weight:600">➕ Create "${esc(q)}" as new agency</div>`;
+        agencyDrop.innerHTML = (items.length
+          ? items.map(a => `<div class="aj-di" data-id="${esc(String(a.id))}" data-name="${esc(a.name || a.company || '')}">${esc(a.name || a.company || '')}</div>`).join('')
+          : '<div class="aj-dn">No existing agencies found</div>'
+        ) + createRow;
+
+        agencyDrop.querySelectorAll('.aj-di:not(.aj-di-create)').forEach(item => {
           item.addEventListener('mousedown', ev => {
             ev.preventDefault();
             _addJobAgencyId = item.dataset.id;
             agencyInp.value = '';
             agencyDrop.style.display = 'none';
             if (agencySelNm) agencySelNm.textContent = item.dataset.name;
-            if (agencySel)   { agencySel.style.display = 'flex'; }
+            if (agencySel)   agencySel.style.display = 'flex';
           });
+        });
+
+        agencyDrop.querySelector('.aj-di-create')?.addEventListener('mousedown', async ev => {
+          ev.preventDefault();
+          agencyDrop.innerHTML = '<div class="aj-dn">Creating agency…</div>';
+          try {
+            const created = await trpcMutate('directory.contacts.create', { name: q, type: 'agency' });
+            _addJobAgencyId = created?.id;
+            agencyInp.value = '';
+            agencyDrop.style.display = 'none';
+            if (agencySelNm) agencySelNm.textContent = q;
+            if (agencySel)   agencySel.style.display = 'flex';
+          } catch(err) {
+            agencyDrop.innerHTML = '<div class="aj-dn" style="color:#f87171">Failed to create agency</div>';
+          }
         });
       }, 300);
     };
