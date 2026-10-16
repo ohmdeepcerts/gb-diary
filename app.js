@@ -3231,9 +3231,9 @@ async function openAddJob() {
 
   const ctypes    = opts.contactTypes || ['Landlord','Tenant','Owner','Letting Agent','Commercial','Other'];
   const ctypeOpts = ctypes.map(t => {
-    const val = typeof t === 'string' ? t : (t.id || t.name || '');
-    const lbl = typeof t === 'string' ? t : (t.name || t.id || '');
-    return `<option value="${esc(val)}">${esc(lbl)}</option>`;
+    const val = typeof t === 'string' ? t : (t.id || t.value || t.name || t.label || '');
+    const lbl = typeof t === 'string' ? t : (t.label || t.name || t.id || t.value || '');
+    return val ? `<option value="${esc(val)}">${esc(lbl || val)}</option>` : '';
   }).join('');
 
   const today = curDate || todayISO();
@@ -3498,16 +3498,36 @@ async function _searchContacts(q, inp, drop) {
         inp.value = '';
         _addJobContactId  = c.id || null;
         _addJobPropertyId = null;
+        // Show selected badge
         const selEl = document.getElementById('aj-sel');
         const nmEl  = document.getElementById('aj-sel-nm');
         const sbEl  = document.getElementById('aj-sel-sb');
         if (nmEl) nmEl.textContent = name;
         if (sbEl) sbEl.textContent = sub || (c.type || '');
         if (selEl) selEl.style.display = 'flex';
+        // Fill address fields if contact has address
         const aEl = document.getElementById('aj-addr');
         const pEl = document.getElementById('aj-pc');
         if (aEl && c.address)  aEl.value = c.address;
         if (pEl && c.postcode) pEl.value = c.postcode;
+        // Auto-fill new client form with real contact data
+        const fName  = document.getElementById('aj-new-name');
+        const fPhone = document.getElementById('aj-new-phone');
+        const fEmail = document.getElementById('aj-new-email');
+        const fType  = document.getElementById('aj-new-type');
+        const fCo    = document.getElementById('aj-new-co');
+        if (fName  && name)      fName.value  = name;
+        if (fPhone && c.phone)   fPhone.value = c.phone;
+        if (fEmail && c.email)   fEmail.value = c.email;
+        if (fCo    && c.company && c.company !== name) fCo.value = c.company;
+        if (fType  && c.type) {
+          fType.value = c.type;
+          if (!fType.value) { // type not in list — add it
+            const opt = document.createElement('option');
+            opt.value = c.type; opt.textContent = c.type; opt.selected = true;
+            fType.appendChild(opt);
+          }
+        }
         drop.style.display = 'none';
       });
       drop.appendChild(li);
@@ -3530,16 +3550,21 @@ async function _searchContacts(q, inp, drop) {
         inp.value = '';
         _addJobContactId  = p.contactId || null;
         _addJobPropertyId = p.id        || null;
+        // Show selected badge
         const selEl = document.getElementById('aj-sel');
         const nmEl  = document.getElementById('aj-sel-nm');
         const sbEl  = document.getElementById('aj-sel-sb');
         if (nmEl) nmEl.textContent = p.address || '';
         if (sbEl) sbEl.textContent = sub;
         if (selEl) selEl.style.display = 'flex';
+        // Fill address fields
         const aEl = document.getElementById('aj-addr');
         const pEl = document.getElementById('aj-pc');
         if (aEl) aEl.value = p.address  || '';
         if (pEl) pEl.value = p.postcode || '';
+        // Fill client name from property contact
+        const fName = document.getElementById('aj-new-name');
+        if (fName && p.contactName) fName.value = p.contactName;
         drop.style.display = 'none';
       });
       drop.appendChild(li);
