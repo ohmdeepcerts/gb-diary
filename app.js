@@ -4891,7 +4891,7 @@ function _buildInvBodyHTML() {
         <td data-desc-id="${inv.id}" style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">${descVal}</td>
         <td style="white-space:nowrap">${inv.dueAt?new Date(inv.dueAt).toLocaleDateString('en-GB'):'—'}${aging.pill?`<span class="inv-age ${aging.pillCls}" style="margin-left:4px">${aging.pill}</span>`:''}
         </td>
-        <td style="text-align:right;font-weight:700;color:${balance<=0?'#16a34a':'inherit'}">${_invFmt(balance)}</td>
+        <td style="text-align:right;font-weight:700;color:${balance<=0?'#16a34a':'inherit'}">${_invFmt(balance<=0 ? (inv.total||0) : balance)}</td>
         <td>${_invStatusBadge(status)}</td>
       </tr>
       <tr class="inv-detail-row" data-detail="${idx}">
