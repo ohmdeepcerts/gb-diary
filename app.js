@@ -3118,7 +3118,8 @@ function _injectAddJobCSS() {
     #view-add .add-box{width:100%!important;max-width:1020px!important;background:transparent!important;border:none!important;box-shadow:none!important;padding:0!important;gap:12px!important;display:flex;flex-direction:column}
     .aj-hdr{font-size:14px;font-weight:700;color:var(--text1)}
     .aj-hdr span{font-size:11px;font-weight:400;opacity:.5;margin-left:6px}
-    .aj-cards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;align-items:start}
+    .aj-cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+    .aj-right-col{display:flex;flex-direction:column;gap:14px}
     .aj-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column}
     .aj-ch{padding:10px 16px;border-bottom:1px solid var(--border);background:var(--bg3);display:flex;align-items:center;gap:8px;border-radius:12px 12px 0 0}
     .aj-chi{font-size:15px;line-height:1}
@@ -3167,7 +3168,6 @@ function _injectAddJobCSS() {
     .aj-coming-icon{font-size:36px}
     .aj-coming-txt{font-size:13px;font-weight:600;color:var(--text2)}
     .aj-coming-sub{font-size:11px;color:var(--text3);text-align:center}
-    @media(max-width:900px){.aj-cards{grid-template-columns:1fr 1fr}}
     @media(max-width:600px){.aj-cards{grid-template-columns:1fr}#view-add{padding:8px 4px!important}}
   `;
   document.head.appendChild(s);
@@ -3315,6 +3315,7 @@ async function openAddJob() {
         </div>
       </div>
 
+      <div class="aj-right-col">
       <div class="aj-card">
         <div class="aj-ch"><span class="aj-chi">👤</span><span class="aj-cht">Client Details</span></div>
         <div class="aj-cb">
@@ -3370,6 +3371,7 @@ async function openAddJob() {
           <div class="aj-coming-txt">More options coming soon</div>
           <div class="aj-coming-sub">This panel will unlock<br>additional features.</div>
         </div>
+      </div>
       </div>
 
     </div>
@@ -3427,6 +3429,11 @@ async function openAddJob() {
     _addJobPropertyId = null;
     document.getElementById('aj-sel').style.display = 'none';
     document.getElementById('aj-cs-inp').value = '';
+    ['aj-new-name','aj-new-phone','aj-new-email','aj-new-co'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+    const typeEl = document.getElementById('aj-new-type');
+    if (typeEl) typeEl.selectedIndex = 0;
   });
 
   const engInp  = document.getElementById('aj-eng-inp');
