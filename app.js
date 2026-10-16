@@ -1035,13 +1035,16 @@ function applyDayFilter() {
 function applyDayViewStyles() {
   let s = document.getElementById('_day_compact_css');
   if (!s) { s = document.createElement('style'); s.id = '_day_compact_css'; document.head.appendChild(s); }
-  s.textContent = _dayCompact
+  s.textContent = (_dayCompact
     ? `table.day-table tbody td{height:auto!important;padding:1px 6px!important;font-size:11px!important}
        table.day-table tbody td:first-child{min-height:auto!important;padding:1px 8px!important}
        table.day-table .djob-title{display:none!important}
        table.day-table .row-stamps{margin-top:0!important}
        table.day-table .eng-dot{width:6px!important;height:6px!important}`
-    : '';
+    : '') +
+    `\ntable.day-table tbody tr.day-row-dragging{opacity:.35;outline:2px dashed var(--red);}
+     table.day-table tbody tr[draggable]{cursor:grab;}
+     table.day-table tbody tr[draggable]:active{cursor:grabbing;}`;
 }
 
 function renderDay(lanes, dateLabel) {
@@ -1110,14 +1113,22 @@ function renderDay(lanes, dateLabel) {
     sepTd.style.cssText = 'height:3px;padding:0;background:var(--border)';
     gtr.appendChild(sepTd);
 
-    nameTd.addEventListener('dragover', e => { if (_dragPoolJob) { e.preventDefault(); nameTd.style.outline = `2px dashed ${ecolor}`; }});
+    nameTd.addEventListener('dragover', e => {
+      if (_dragPoolJob || (dragJob && dragEng !== eng.id)) { e.preventDefault(); nameTd.style.outline = `2px dashed ${ecolor}`; }
+    });
     nameTd.addEventListener('dragleave', () => nameTd.style.outline = '');
     nameTd.addEventListener('drop', async e => {
       e.preventDefault(); nameTd.style.outline = '';
-      if (!_dragPoolJob) return;
-      const job2 = _dragPoolJob; _dragPoolJob = null;
-      try { setStatus('Assigning…'); await api.reschedule(job2.id, job2._date || curDate, eng.id); setStatus(`Assigned to ${eng.name} · ${now()}`); clearCache(); await loadDay(true); }
-      catch(er) { setStatus(`Failed: ${er.message}`, false); }
+      if (_dragPoolJob) {
+        const job2 = _dragPoolJob; _dragPoolJob = null;
+        try { setStatus('Assigning…'); await api.reschedule(job2.id, job2._date || curDate, eng.id); setStatus(`Assigned to ${eng.name} · ${now()}`); clearCache(); await loadDay(true); }
+        catch(er) { setStatus(`Failed: ${er.message}`, false); }
+      } else if (dragJob && dragEng !== eng.id) {
+        const jid = dragJob; const fromDate = dragDate2 || curDate;
+        dragJob = null; dragDate2 = null; dragEng = null;
+        try { setStatus('Reassigning…'); await api.reschedule(jid, fromDate, eng.id); setStatus(`Moved to ${eng.name} ✓`); clearCache(); await loadDay(true); }
+        catch(er) { setStatus(`Failed: ${er.message}`, false); }
+      }
     });
     tbody.appendChild(gtr);
 
@@ -1206,21 +1217,33 @@ function renderDayRange(merged) {
       <span class="dgroup-drop-hint">Drop here to assign</span>
     </td>`;
 
-    gtr.addEventListener('dragover', e => { if (_dragPoolJob) { e.preventDefault(); gtr.classList.add('dgroup-droptarget'); }});
+    gtr.addEventListener('dragover', e => {
+      if (_dragPoolJob || (dragJob && dragEng !== engineer.id)) { e.preventDefault(); gtr.classList.add('dgroup-droptarget'); }
+    });
     gtr.addEventListener('dragleave', () => gtr.classList.remove('dgroup-droptarget'));
     gtr.addEventListener('drop', async e => {
       e.preventDefault();
       gtr.classList.remove('dgroup-droptarget');
-      if (!_dragPoolJob) return;
-      const job = _dragPoolJob;
-      _dragPoolJob = null;
-      try {
-        setStatus('Assigning…');
-        await api.reschedule(job.id, job._date || curDate, engineer.id);
-        setStatus(`Assigned to ${engineer.name} · ${now()}`);
-        clearCache();
-        await loadDayRange(true);
-      } catch(er) { setStatus(`Failed: ${er.message}`, false); }
+      if (_dragPoolJob) {
+        const job = _dragPoolJob; _dragPoolJob = null;
+        try {
+          setStatus('Assigning…');
+          await api.reschedule(job.id, job._date || curDate, engineer.id);
+          setStatus(`Assigned to ${engineer.name} · ${now()}`);
+          clearCache();
+          await loadDayRange(true);
+        } catch(er) { setStatus(`Failed: ${er.message}`, false); }
+      } else if (dragJob && dragEng !== engineer.id) {
+        const jid = dragJob; const fromDate = dragDate2 || curDate;
+        dragJob = null; dragDate2 = null; dragEng = null;
+        try {
+          setStatus('Reassigning…');
+          await api.reschedule(jid, fromDate, engineer.id);
+          setStatus(`Moved to ${engineer.name} ✓`);
+          clearCache();
+          await loadDayRange(true);
+        } catch(er) { setStatus(`Failed: ${er.message}`, false); }
+      }
     });
 
     tbody.appendChild(gtr);
@@ -1595,7 +1618,23 @@ function dayRow(job, engineer, dateISO) {
       window.open(_dayWaBtn.dataset.wa, '_blank');
     });
   }
-  tr.addEventListener('click', () => openJobDetail(job.id));
+  let _trDragged = false;
+  tr.draggable = true;
+  tr.addEventListener('dragstart', e => {
+    _trDragged = true;
+    dragJob   = job.id;
+    dragDate2 = dateISO || curDate;
+    dragEng   = engineer?.id || null;
+    tr.classList.add('day-row-dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(job.id));
+  });
+  tr.addEventListener('dragend', () => {
+    tr.classList.remove('day-row-dragging');
+    dragJob = null; dragDate2 = null; dragEng = null;
+    setTimeout(() => { _trDragged = false; }, 100);
+  });
+  tr.addEventListener('click', () => { if (_trDragged) return; openJobDetail(job.id); });
   return tr;
 }
 
@@ -3250,7 +3289,7 @@ async function tryLogin() {
     curDate  = todayISO();
     curWeek  = mondayOf(curDate);
     curMonth = {year:d.getFullYear(), month:d.getMonth()+1};
-    await switchView('week');
+    await switchView('day');
     startAutoRefresh();
   } catch(e) {
     showErr(errEl, e.message||'Login failed');
@@ -3365,7 +3404,7 @@ async function init() {
       curDate  = todayISO();
       curWeek  = mondayOf(curDate);
       curMonth = {year:d.getFullYear(), month:d.getMonth()+1};
-      await switchView('week');
+      await switchView('day');
       startAutoRefresh();
     }
   } catch { /* show login */ }
