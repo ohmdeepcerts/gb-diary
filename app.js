@@ -3327,7 +3327,7 @@ async function openAddJob() {
   const certTypes = (opts.certTypes && opts.certTypes.length) ? opts.certTypes : FALLBACK_CERTS;
 
   const ctypes    = opts.contactTypes || ['Landlord','Tenant','Owner','Letting Agent','Commercial','Other'];
-  const ctypeOpts = ctypes.map(t => {
+  const ctypeOpts = '<option value="">— Select type —</option>' + ctypes.map(t => {
     const val = typeof t === 'string' ? t : (t.id || t.value || t.name || t.label || '');
     const lbl = typeof t === 'string' ? t : (t.label || t.name || t.id || t.value || '');
     return val ? `<option value="${esc(val)}">${esc(lbl || val)}</option>` : '';
@@ -3627,9 +3627,13 @@ async function _searchContacts(q, inp, drop) {
         if (fPhone && c.phone)   fPhone.value = c.phone;
         if (fEmail && c.email)   fEmail.value = c.email;
         if (fCo    && c.company && c.company !== name) fCo.value = c.company;
-        if (fType  && c.type) {
-          fType.value = c.type;
-          if (!fType.value) { // type not in list — add it
+        if (fType && c.type) {
+          // Try exact match first, then case-insensitive match
+          const opts = [...fType.options];
+          const match = opts.find(o => o.value === c.type)
+                     || opts.find(o => o.value.toLowerCase() === c.type.toLowerCase());
+          if (match) { fType.value = match.value; }
+          else { // truly not in list — add it once
             const opt = document.createElement('option');
             opt.value = c.type; opt.textContent = c.type; opt.selected = true;
             fType.appendChild(opt);
