@@ -3099,176 +3099,339 @@ function renderMonth() {
 let _addJobContactId  = null;
 let _addJobPropertyId = null;
 let _contactSearchTmr = null;
+let _jobOptions       = null;
 
-function openAddJob() {
+async function _loadJobOptions() {
+  if (_jobOptions) return _jobOptions;
+  try { _jobOptions = await trpcQuery('settings.jobOptions'); } catch(e) {}
+  return _jobOptions || {};
+}
+
+function _injectAddJobCSS() {
+  if (document.getElementById('_add_job2_css')) return;
+  const s = document.createElement('style');
+  s.id = '_add_job2_css';
+  s.textContent = `
+    #view-add .add-box{width:860px!important;max-width:97vw!important;padding:20px 24px!important;gap:12px!important}
+    .add-cols{display:flex;gap:18px}
+    .add-col{flex:1;display:flex;flex-direction:column;gap:9px;min-width:0}
+    .add-col-hdr{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);border-bottom:1px solid var(--border);padding-bottom:5px;margin-bottom:2px}
+    .btn-pc-lookup{flex-shrink:0;width:32px;height:34px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center}
+    .btn-pc-lookup:hover{background:var(--bg4)}
+    .contact-drop-section-hdr{font-size:10px;font-weight:700;text-transform:uppercase;padding:4px 10px 2px;color:var(--text3);letter-spacing:.05em;background:var(--bg3);border-bottom:1px solid var(--border)}
+    .contact-drop-badge{font-size:9px;font-weight:600;padding:1px 5px;border-radius:8px;background:var(--bg4);color:var(--text2);text-transform:capitalize;vertical-align:middle;margin-left:4px}
+    .add-actions2{display:flex;gap:8px;justify-content:flex-end;padding-top:8px;border-top:1px solid var(--border)}
+    @media(max-width:680px){.add-cols{flex-direction:column}#view-add .add-box{width:95vw!important}}
+  `;
+  document.head.appendChild(s);
+}
+
+async function openAddJob() {
   _addJobContactId  = null;
   _addJobPropertyId = null;
+  _injectAddJobCSS();
 
-  // Inject Job Type select once (after title field)
-  if (!document.getElementById('add-job-type')) {
-    const titleFg = document.getElementById('add-title-inp')?.closest?.('.fg');
-    if (titleFg) {
-      const jtFg = document.createElement('div');
-      jtFg.className = 'fg';
-      jtFg.innerHTML =
-        '<label class="fl">Job Type</label>' +
-        '<select class="inp" id="add-job-type">' +
-          '<option value="">– select type –</option>' +
-          '<option value="EICR">EICR</option>' +
-          '<option value="PAT Test">PAT Test</option>' +
-          '<option value="Installation">Installation</option>' +
-          '<option value="Repair">Repair / Fault Finding</option>' +
-          '<option value="Gas CP12">Gas / CP12</option>' +
-          '<option value="Boiler Service">Boiler Service</option>' +
-          '<option value="Periodic Test">Periodic Test</option>' +
-          '<option value="Other">Other</option>' +
-        '</select>';
-      titleFg.after(jtFg);
-    }
-  }
+  const opts = await _loadJobOptions();
 
-  // Inject Notes textarea once (before error message)
-  if (!document.getElementById('add-notes')) {
-    const errEl2 = document.getElementById('add-err');
-    if (errEl2) {
-      const notesFg = document.createElement('div');
-      notesFg.className = 'fg';
-      notesFg.innerHTML =
-        '<label class="fl">Notes (optional)</label>' +
-        '<textarea class="inp" id="add-notes" rows="2" placeholder="Access info, special instructions…" style="resize:vertical;min-height:52px"></textarea>';
-      errEl2.parentNode.insertBefore(notesFg, errEl2);
-    }
-  }
-
-  document.getElementById('add-date').value = curDate || todayISO();
-
-  const sel = document.getElementById('add-engineer');
-  sel.innerHTML = '<option value="">Unassigned</option>';
-  const mon   = curWeek || mondayOf(curDate||todayISO());
+  const mon   = curWeek || mondayOf(curDate || todayISO());
   const lanes = cache[mon] || [];
+  const seenEng = new Set();
+  const engOptions = ['<option value="">Unassigned</option>'];
   lanes.forEach(l => {
-    if (!l.engineer) return;
-    const o = document.createElement('option');
-    o.value = l.engineer.id; o.textContent = l.engineer.name; sel.appendChild(o);
+    if (!l.engineer || seenEng.has(l.engineer.id)) return;
+    seenEng.add(l.engineer.id);
+    engOptions.push(`<option value="${esc(String(l.engineer.id))}">${esc(l.engineer.name)}</option>`);
   });
 
-  // Wire contact search
+  const trades = opts.trades || ['Electrical','Gas','Fire Safety','Testing & Inspection','General Maintenance','EV Charging'];
+  const tradeOpts = ['<option value="">– trade –</option>',
+    ...trades.map(t => `<option value="${esc(t)}">${esc(t)}</option>`)].join('');
+
+  const certTypes = opts.certTypes || [];
+  const certOpts = ['<option value="">– job type –</option>',
+    ...certTypes.map(ct => `<option value="${esc(ct.id)}">${esc(ct.name)}</option>`),
+    '<option value="general">General / Ad-hoc</option>',
+    '<option value="repair">Repair / Fault Finding</option>'].join('');
+
+  const slots = opts.timeslots || ['9-11','11-1','1-3','3-5'];
+  const slotOpts = ['<option value="">Any time</option>',
+    '<option value="AM">Morning (AM)</option>',
+    '<option value="PM">Afternoon (PM)</option>',
+    ...slots.map(s => `<option value="${esc(s)}">${esc(s)}</option>`)].join('');
+
+  const prioOpts = `
+    <option value="normal">Normal</option>
+    <option value="urgent">Urgent</option>
+    <option value="certificate">Certificate</option>
+    <option value="repair">Repair</option>
+    <option value="emergency">Emergency</option>
+    <option value="low">Low</option>`;
+
+  const today = curDate || todayISO();
+
+  const box = document.querySelector('#view-add .add-box');
+  box.innerHTML = `
+    <div class="add-ttl">Add Job <span style="font-size:11px;font-weight:400;opacity:.55">— saves directly to portal</span></div>
+    <div class="add-cols">
+      <div class="add-col">
+        <div class="add-col-hdr">📍 Client &amp; Property</div>
+        <div class="fg">
+          <label class="fl">Search by name, phone, email or address</label>
+          <div class="contact-search-wrap">
+            <input class="inp" type="text" id="add-contact-search" placeholder="Type name, 07…, email or address…" autocomplete="off">
+            <div class="contact-dropdown" id="add-contact-dropdown" style="display:none"></div>
+          </div>
+        </div>
+        <div class="fg">
+          <label class="fl">Address</label>
+          <div style="display:flex;gap:5px;align-items:center">
+            <input class="inp" type="text" id="add-address" placeholder="Street, Town" style="flex:1">
+            <input class="inp" type="text" id="add-postcode" placeholder="Postcode" style="width:88px">
+            <button class="btn-pc-lookup" id="add-pc-lookup" title="Look up postcode online">🔍</button>
+          </div>
+        </div>
+        <div class="fg">
+          <label class="fl">Client / Tenant Name</label>
+          <input class="inp" type="text" id="add-customer" placeholder="Who's at the property?">
+        </div>
+        <div class="fg">
+          <label class="fl">Referrer / Agency / Landlord</label>
+          <input class="inp" type="text" id="add-referrer" placeholder="Company or person who referred">
+        </div>
+        <div class="fg">
+          <label class="fl">Access Notes</label>
+          <textarea class="inp" id="add-access" rows="2" placeholder="Key safe code, gate code, call before…" style="resize:vertical;min-height:46px"></textarea>
+        </div>
+      </div>
+      <div class="add-col">
+        <div class="add-col-hdr">🔧 Job Details</div>
+        <div style="display:flex;gap:8px">
+          <div class="fg" style="flex:1">
+            <label class="fl">Trade</label>
+            <select class="inp" id="add-trade">${tradeOpts}</select>
+          </div>
+          <div class="fg" style="flex:1">
+            <label class="fl">Priority</label>
+            <select class="inp" id="add-priority">${prioOpts}</select>
+          </div>
+        </div>
+        <div class="fg">
+          <label class="fl">Job Type / Certificate</label>
+          <select class="inp" id="add-job-type">${certOpts}</select>
+        </div>
+        <div class="fg">
+          <label class="fl">Description / Title</label>
+          <input class="inp" type="text" id="add-title-inp" placeholder="e.g. Replace consumer unit, EICR inspection">
+        </div>
+        <div style="display:flex;gap:8px">
+          <div class="fg" style="flex:1">
+            <label class="fl">Date</label>
+            <input class="inp" type="date" id="add-date" value="${esc(today)}">
+          </div>
+          <div class="fg" style="flex:1">
+            <label class="fl">Time slot</label>
+            <select class="inp" id="add-time">${slotOpts}</select>
+          </div>
+        </div>
+        <div class="fg">
+          <label class="fl">Engineer</label>
+          <select class="inp" id="add-engineer">${engOptions.join('')}</select>
+        </div>
+        <div class="fg">
+          <label class="fl">Notes</label>
+          <textarea class="inp" id="add-notes" rows="2" placeholder="Internal notes…" style="resize:vertical;min-height:46px"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="err-msg" id="add-err" style="display:none"></div>
+    <div class="add-actions2">
+      <button class="btn" id="btn-add-cancel">Cancel</button>
+      <button class="btn-primary" id="btn-add-save">Add to Portal</button>
+    </div>
+  `;
+
+  document.getElementById('btn-add-cancel').addEventListener('click', closeAddJob);
+  document.getElementById('btn-add-save').addEventListener('click', saveJob);
+
+  const pcBtn  = document.getElementById('add-pc-lookup');
+  const pcInp  = document.getElementById('add-postcode');
+  const addrInp = document.getElementById('add-address');
+  pcBtn.addEventListener('click', () => _lookupPostcode(pcInp.value.trim(), addrInp, pcInp));
+  pcInp.addEventListener('keydown', e => { if (e.key==='Enter') { e.preventDefault(); _lookupPostcode(pcInp.value.trim(), addrInp, pcInp); }});
+
   const csInp  = document.getElementById('add-contact-search');
   const csDrop = document.getElementById('add-contact-dropdown');
-  if (csInp && csDrop) {
-    csInp.value = '';
-    csDrop.style.display = 'none';
-    csDrop.innerHTML = '';
-    csInp.oninput = () => {
-      const q = csInp.value.trim();
-      clearTimeout(_contactSearchTmr);
-      if (q.length < 2) { csDrop.style.display = 'none'; return; }
-      _contactSearchTmr = setTimeout(() => _searchContacts(q, csInp, csDrop), 320);
-    };
-    csInp.onblur = () => { setTimeout(() => { csDrop.style.display = 'none'; }, 200); };
-  }
+  csInp.oninput = () => {
+    const q = csInp.value.trim();
+    clearTimeout(_contactSearchTmr);
+    if (q.length < 2) { csDrop.style.display = 'none'; return; }
+    _contactSearchTmr = setTimeout(() => _searchContacts(q, csInp, csDrop), 320);
+  };
+  csInp.onblur = () => { setTimeout(() => { csDrop.style.display = 'none'; }, 200); };
+
   document.getElementById('view-add').style.display = 'flex';
 }
 
 async function _searchContacts(q, inp, drop) {
-  const attempts = [
-    () => trpcQuery('contacts.search',  { query: q }),
-    () => trpcQuery('contacts.list',    { search: q }),
-    () => trpcQuery('properties.search',{ query: q }),
-    () => trpcQuery('clients.search',   { query: q }),
-  ];
-  let results = null;
-  for (const fn of attempts) {
-    try { results = await fn(); break; } catch(e) {
-      if (e.message?.includes('404') || e.message?.includes('No procedure') || e.message?.includes('not found')) continue;
-      break;
-    }
-  }
-  if (!results) { drop.style.display = 'none'; return; }
-  const items = Array.isArray(results) ? results : (results?.contacts || results?.items || results?.data || []);
-  if (!items.length) {
-    drop.innerHTML = '<div class="contact-drop-empty">No matches</div>';
-    drop.style.display = 'block'; return;
-  }
-  drop.innerHTML = '';
-  items.slice(0, 8).forEach(item => {
-    const name = item.name || item.clientName || item.company || '';
-    const addr = item.address || item.property?.address || item.formattedAddress || '';
-    const pc   = item.postcode || item.property?.postcode || '';
-    const li   = document.createElement('div');
-    li.className = 'contact-drop-item';
-    li.innerHTML = `<strong>${esc(name)}</strong>${addr||pc?`<span>${esc(addr)}${pc?' · '+pc:''}</span>`:''}`;
-    li.addEventListener('mousedown', e => {
-      e.preventDefault();
-      inp.value = [name, addr, pc].filter(Boolean).join(', ');
-      _addJobContactId  = item.id || item.contactId || null;
-      _addJobPropertyId = item.propertyId || item.property?.id || null;
-      const addrInp = document.getElementById('add-address');
-      const custInp = document.getElementById('add-customer');
-      if (addrInp && (addr||pc)) addrInp.value = [addr, pc].filter(Boolean).join(', ');
-      if (custInp && name) custInp.value = name;
-      drop.style.display = 'none';
-    });
-    drop.appendChild(li);
-  });
+  drop.innerHTML = '<div class="contact-drop-empty">Searching…</div>';
   drop.style.display = 'block';
+
+  const [cRes, pRes] = await Promise.allSettled([
+    trpcQuery('directory.contacts.list', { query: q, pageSize: 7 }),
+    trpcQuery('properties.list',          { query: q, pageSize: 7 }),
+  ]);
+
+  const contacts   = cRes.status === 'fulfilled' ? (cRes.value?.items   || []) : [];
+  const properties = pRes.status === 'fulfilled' ? (pRes.value?.items   || []) : [];
+
+  if (!contacts.length && !properties.length) {
+    drop.innerHTML = '<div class="contact-drop-empty">No matches — fill in fields below manually</div>';
+    return;
+  }
+
+  drop.innerHTML = '';
+
+  if (contacts.length) {
+    const hdr = document.createElement('div');
+    hdr.className = 'contact-drop-section-hdr';
+    hdr.textContent = 'Contacts';
+    drop.appendChild(hdr);
+
+    contacts.forEach(c => {
+      const name = c.name || c.company || '';
+      const sub  = [c.company !== name ? c.company : null, c.phone].filter(Boolean).join(' · ');
+      const typeBadge = c.type ? `<span class="contact-drop-badge">${esc(c.type)}</span>` : '';
+      const li = document.createElement('div');
+      li.className = 'contact-drop-item';
+      li.innerHTML = `<div><strong>${esc(name)}</strong>${typeBadge}</div>${sub ? `<span>${esc(sub)}</span>` : ''}`;
+      li.addEventListener('mousedown', e => {
+        e.preventDefault();
+        inp.value = name;
+        _addJobContactId  = c.id || null;
+        _addJobPropertyId = null;
+        const aEl = document.getElementById('add-address');
+        const pEl = document.getElementById('add-postcode');
+        const cEl = document.getElementById('add-customer');
+        if (aEl && c.address) aEl.value = c.address;
+        if (pEl && c.postcode) pEl.value = c.postcode;
+        if (cEl) cEl.value = name;
+        drop.style.display = 'none';
+      });
+      drop.appendChild(li);
+    });
+  }
+
+  if (properties.length) {
+    const hdr = document.createElement('div');
+    hdr.className = 'contact-drop-section-hdr';
+    hdr.textContent = 'Saved Properties';
+    drop.appendChild(hdr);
+
+    properties.forEach(p => {
+      const li = document.createElement('div');
+      li.className = 'contact-drop-item';
+      const sub = [p.postcode, p.contactName].filter(Boolean).join(' · ');
+      li.innerHTML = `<div><strong>${esc(p.address || '')}</strong></div>${sub ? `<span>${esc(sub)}</span>` : ''}`;
+      li.addEventListener('mousedown', e => {
+        e.preventDefault();
+        inp.value = p.address || '';
+        _addJobContactId  = p.contactId || null;
+        _addJobPropertyId = p.id || null;
+        const aEl = document.getElementById('add-address');
+        const pEl = document.getElementById('add-postcode');
+        const cEl = document.getElementById('add-customer');
+        if (aEl) aEl.value = p.address || '';
+        if (pEl) pEl.value = p.postcode || '';
+        if (cEl && p.contactName) cEl.value = p.contactName;
+        drop.style.display = 'none';
+      });
+      drop.appendChild(li);
+    });
+  }
+}
+
+async function _lookupPostcode(pc, addrInp, pcInp) {
+  const clean = pc.replace(/\s+/g, '').toUpperCase();
+  if (clean.length < 3) return;
+  const btn = document.getElementById('add-pc-lookup');
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+  try {
+    const r = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(clean)}`);
+    const d = await r.json();
+    if (d.status === 200 && d.result) {
+      if (pcInp) pcInp.value = d.result.postcode;
+      if (addrInp && !addrInp.value) {
+        const loc = [d.result.admin_ward, d.result.admin_district].filter(Boolean).join(', ');
+        if (loc) addrInp.placeholder = loc;
+      }
+    } else {
+      const r2 = await fetch(`https://api.postcodes.io/postcodes?q=${encodeURIComponent(clean)}&limit=5`);
+      const d2 = await r2.json();
+      if (d2.result?.length) {
+        const errEl = document.getElementById('add-err');
+        if (errEl) { errEl.textContent = 'Did you mean: ' + d2.result.map(x => x.postcode).join(', ') + '?'; errEl.style.display = 'block'; }
+      }
+    }
+  } catch(e) { /* network error, ignore */ }
+  finally {
+    if (btn) { btn.textContent = '🔍'; btn.disabled = false; }
+  }
 }
 
 async function saveJob() {
-  const errEl = document.getElementById('add-err');
-  errEl.style.display = 'none';
-  const address  = document.getElementById('add-address').value.trim();
-  const customer = document.getElementById('add-customer').value.trim();
-  const title    = document.getElementById('add-title-inp').value.trim();
-  const jobType  = document.getElementById('add-job-type')?.value  || '';
-  const date     = document.getElementById('add-date').value;
-  const time     = document.getElementById('add-time').value.trim();
-  const engId    = document.getElementById('add-engineer').value;
-  const referrer = document.getElementById('add-referrer').value.trim();
-  const notes    = document.getElementById('add-notes')?.value.trim() || '';
+  const errEl   = document.getElementById('add-err');
+  if (errEl) errEl.style.display = 'none';
+  const address  = document.getElementById('add-address')?.value.trim()    || '';
+  const postcode = document.getElementById('add-postcode')?.value.trim()   || '';
+  const customer = document.getElementById('add-customer')?.value.trim()   || '';
+  const title    = document.getElementById('add-title-inp')?.value.trim()  || '';
+  const trade    = document.getElementById('add-trade')?.value             || '';
+  const jobType  = document.getElementById('add-job-type')?.value          || '';
+  const date     = document.getElementById('add-date')?.value              || '';
+  const time     = document.getElementById('add-time')?.value              || '';
+  const engId    = document.getElementById('add-engineer')?.value          || '';
+  const priority = document.getElementById('add-priority')?.value          || 'normal';
+  const referrer = document.getElementById('add-referrer')?.value.trim()   || '';
+  const access   = document.getElementById('add-access')?.value.trim()     || '';
+  const notes    = document.getElementById('add-notes')?.value.trim()      || '';
 
-  if (!address) { showErr(errEl,'Address is required'); return; }
-  if (!date)    { showErr(errEl,'Date is required'); return; }
+  const fullAddr = [address, postcode].filter(Boolean).join(', ');
+  if (!fullAddr && errEl) { showErr(errEl, 'Address is required'); return; }
+  if (!date     && errEl) { showErr(errEl, 'Date is required'); return; }
 
   const btn = document.getElementById('btn-add-save');
-  btn.disabled=true; btn.textContent='Adding…';
+  if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
   try {
     await api.createJob({
-      title:    title || jobType || address,
+      title:    title || jobType || trade || fullAddr || 'New Job',
       date,
-      ...(jobType   ? {jobType}                              : {}),
-      ...(address   ? {address}                              : {}),
-      ...(customer  ? {customerName: customer}               : {}),
-      ...(time      ? {time}                                 : {}),
-      ...(engId     ? {engineerId: engId}                    : {}),
-      ...(referrer  ? {referrerName: referrer}               : {}),
-      ...(notes     ? {notes}                                : {}),
-      ...(_addJobContactId  ? {contactId:  _addJobContactId}  : {}),
-      ...(_addJobPropertyId ? {propertyId: _addJobPropertyId} : {}),
+      ...(fullAddr   ? {address: fullAddr}                          : {}),
+      ...(postcode   ? {postcode}                                   : {}),
+      ...(trade      ? {trade}                                      : {}),
+      ...(jobType    ? {jobType, certType: jobType}                 : {}),
+      ...(customer   ? {customerName: customer}                     : {}),
+      ...(time       ? {time}                                       : {}),
+      ...(engId      ? {engineerId: engId}                          : {}),
+      ...(priority   ? {priority}                                   : {}),
+      ...(referrer   ? {referrerName: referrer}                     : {}),
+      ...(access     ? {accessNotes: access}                        : {}),
+      ...(notes      ? {notes}                                      : {}),
+      ...(_addJobContactId  ? {contactId:  _addJobContactId}        : {}),
+      ...(_addJobPropertyId ? {propertyId: _addJobPropertyId}       : {}),
     });
     closeAddJob();
     clearCache();
     await switchView(view);
     setStatus('Job added ✓');
   } catch(e) {
-    showErr(errEl, 'Failed: '+e.message);
-    btn.disabled=false; btn.textContent='Add to Portal';
+    if (errEl) showErr(errEl, 'Failed: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Add to Portal'; }
   }
 }
 
 function closeAddJob() {
   _addJobContactId = null; _addJobPropertyId = null;
-  document.getElementById('view-add').style.display='none';
-  ['add-address','add-customer','add-title-inp','add-referrer'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
-  const addTime  = document.getElementById('add-time');     if (addTime)  addTime.value  = '';
-  const addJT    = document.getElementById('add-job-type'); if (addJT)    addJT.value    = '';
-  const addNotes = document.getElementById('add-notes');    if (addNotes) addNotes.value = '';
-  const csDrop = document.getElementById('add-contact-dropdown'); if (csDrop) csDrop.style.display='none';
-  const csInp  = document.getElementById('add-contact-search');   if (csInp)  csInp.value='';
-  document.getElementById('add-engineer').value='';
-  document.getElementById('add-err').style.display='none';
-  const btn=document.getElementById('btn-add-save');
-  btn.disabled=false; btn.textContent='Add to Portal';
+  document.getElementById('view-add').style.display = 'none';
 }
 
 // ── Login / Logout ────────────────────────────────────────────────────────────
