@@ -616,6 +616,10 @@ function setRowColor(jobId, bg, text) {
   try { localStorage.setItem('gbRowColors', JSON.stringify(c)); } catch(e) {}
 }
 function applyRowColor(tr, anchor, jobId, bg, text) {
+  tr.querySelectorAll('td').forEach(td => {
+    td.style.background = bg || '';
+    td.style.color      = text || '';
+  });
   tr.style.background = bg || '';
   tr.style.color      = text || '';
   anchor.style.background = bg || '';
@@ -1488,7 +1492,7 @@ function dayRow(job, engineer, dateISO) {
   cells.push(`<td><div class="day-act-wrap"><button class="day-act-btn" title="Open in portal">↗</button>${_waCell}<button class="day-paint-btn" title="Highlight row colour" style="background:${_rowBg||''};border:1px solid var(--border);width:18px;height:18px;border-radius:3px;cursor:pointer;font-size:10px;padding:0;flex-shrink:0">${_rowBg?'':'🎨'}</button></div></td>`);
 
   tr.innerHTML = cells.join('');
-  if (_rowBg) tr.style.background = _rowBg;
+  if (_rowBg) { tr.style.background = _rowBg; tr.querySelectorAll('td').forEach(td => { td.style.background = _rowBg; if (_rowEntry?.text) td.style.color = _rowEntry.text; }); }
   if (_rowEntry?.text) tr.style.color = _rowEntry.text;
 
   // Paint button listener
