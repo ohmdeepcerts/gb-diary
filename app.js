@@ -3249,6 +3249,22 @@ function _injectAddJobCSS() {
     .aj-coming-icon{font-size:36px}
     .aj-coming-txt{font-size:13px;font-weight:600;color:var(--text2)}
     .aj-coming-sub{font-size:11px;color:var(--text3);text-align:center}
+    .aj-ins-idle{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:180px;opacity:.4}
+    .aj-ins-idle-icon{font-size:32px}
+    .aj-ins-idle-txt{font-size:12px;color:var(--text2);text-align:center}
+    .aj-ins-loading{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);padding:20px;justify-content:center}
+    .aj-ins-err{font-size:12px;color:var(--text3);padding:20px;text-align:center}
+    .aj-ins-row{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--border)}
+    .aj-ins-row:last-child{border-bottom:none}
+    .aj-ins-icon{font-size:18px;flex-shrink:0;width:22px;text-align:center;margin-top:1px}
+    .aj-ins-body{flex:1;min-width:0}
+    .aj-ins-lbl{font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px}
+    .aj-ins-val{font-size:13px;font-weight:600;color:var(--text)}
+    .aj-ins-sub{font-size:11px;color:var(--text3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .aj-ins-muted{font-weight:400;color:var(--text2)}
+    .aj-ins-warn{color:#b45309}
+    .aj-ins-ok{color:#16a34a}
+    .aj-ins-alert{color:#dc2626}
     @media(max-width:600px){.aj-cards{grid-template-columns:1fr}#view-add{padding:8px 4px!important}}
   `;
   document.head.appendChild(s);
@@ -3445,12 +3461,13 @@ async function openAddJob() {
         </div>
       </div>
 
-      <div class="aj-card">
-        <div class="aj-ch"><span class="aj-chi">🔜</span><span class="aj-cht">Coming Soon</span></div>
-        <div class="aj-cb aj-coming">
-          <div class="aj-coming-icon">🚧</div>
-          <div class="aj-coming-txt">More options coming soon</div>
-          <div class="aj-coming-sub">This panel will unlock<br>additional features.</div>
+      <div class="aj-card" id="aj-insights">
+        <div class="aj-ch"><span class="aj-chi" id="aj-ins-icon">💡</span><span class="aj-cht" id="aj-ins-title">Smart Insights</span></div>
+        <div class="aj-cb" id="aj-ins-body">
+          <div class="aj-ins-idle">
+            <div class="aj-ins-idle-icon">🔍</div>
+            <div class="aj-ins-idle-txt">Select a client or property above<br>to see smart insights here</div>
+          </div>
         </div>
       </div>
       </div>
@@ -3515,6 +3532,8 @@ async function openAddJob() {
     });
     const typeEl = document.getElementById('aj-new-type');
     if (typeEl) typeEl.selectedIndex = 0;
+    _insSetHeader('💡', 'Smart Insights');
+    const p = _insPanel(); if (p) p.innerHTML = '<div class="aj-ins-idle"><div class="aj-ins-idle-icon">🔍</div><div class="aj-ins-idle-txt">Select a client or property above<br>to see smart insights here</div></div>';
   });
 
   const engInp  = document.getElementById('aj-eng-inp');
@@ -3617,6 +3636,7 @@ async function _searchContacts(q, inp, drop) {
           }
         }
         drop.style.display = 'none';
+        loadInsights('contact', c.id);
       });
       drop.appendChild(li);
     });
@@ -3654,10 +3674,244 @@ async function _searchContacts(q, inp, drop) {
         const fName = document.getElementById('aj-new-name');
         if (fName && p.contactName) fName.value = p.contactName;
         drop.style.display = 'none';
+        if (p.id) loadInsights('property', p.id);
+        else if (p.contactId) loadInsights('contact', p.contactId);
       });
       drop.appendChild(li);
     });
   }
+}
+
+// ── Smart Insights Panel ──────────────────────────────────────────────────────
+
+function _insPanel() { return document.getElementById('aj-ins-body'); }
+
+function _insSetHeader(icon, title) {
+  const ic = document.getElementById('aj-ins-icon');
+  const ti = document.getElementById('aj-ins-title');
+  if (ic) ic.textContent = icon;
+  if (ti) ti.textContent = title;
+}
+
+function _insRenderRows(panel, rows) {
+  panel.innerHTML = rows.map(r => `
+    <div class="aj-ins-row">
+      <div class="aj-ins-icon">${r.icon}</div>
+      <div class="aj-ins-body">
+        <div class="aj-ins-lbl">${r.label}</div>
+        <div class="aj-ins-val">${r.value}</div>
+        ${r.sub ? `<div class="aj-ins-sub">${r.sub}</div>` : ''}
+      </div>
+    </div>`).join('');
+}
+
+function _daysAgoStr(isoDate) {
+  if (!isoDate) return null;
+  const d = Math.round((Date.now() - new Date(isoDate).getTime()) / 86400000);
+  if (d < 0) return 'In the future';
+  if (d === 0) return 'Today';
+  if (d === 1) return 'Yesterday';
+  if (d < 30)  return `${d}d ago`;
+  if (d < 365) return `${Math.round(d/30)}mo ago`;
+  return `${Math.round(d/365)}yr ago`;
+}
+
+function _daysFromNowStr(isoDate) {
+  if (!isoDate) return null;
+  const d = Math.round((new Date(isoDate).getTime() - Date.now()) / 86400000);
+  if (d < 0) return { text: `Expired ${Math.abs(d)}d ago`, cls: 'aj-ins-alert' };
+  if (d === 0) return { text: 'Expires today', cls: 'aj-ins-alert' };
+  if (d <= 30) return { text: `Expires in ${d}d`, cls: 'aj-ins-warn' };
+  if (d <= 90) return { text: `Expires in ${d}d`, cls: 'aj-ins-warn' };
+  const mo = Math.round(d / 30);
+  return { text: mo >= 12 ? `Expires in ${Math.round(mo/12)}yr` : `Expires in ${mo}mo`, cls: 'aj-ins-ok' };
+}
+
+function _fmtDate(iso) {
+  if (!iso) return '–';
+  try { return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); }
+  catch(e) { return iso; }
+}
+
+function _certExpiryRows(jobs) {
+  const EXPIRY_DAYS = { 'CP12': 365, 'Gas Certificate': 365, 'Gas': 365, 'EICR': 1825, 'PAT': 365, 'EL': 1825, 'Electrical': 1825 };
+  const seen = {};
+  jobs.forEach(j => {
+    const certNames = (j.certTypes || j.certTypeIds || []).map(c => typeof c === 'string' ? c : (c.name || c.label || ''));
+    const d = j.scheduledDate || j.date || '';
+    if (!d) return;
+    certNames.forEach(name => {
+      const key = Object.keys(EXPIRY_DAYS).find(k => name.toUpperCase().includes(k.toUpperCase()));
+      if (key && (!seen[key] || d > seen[key].date)) seen[key] = { date: d, name };
+    });
+  });
+  return Object.entries(seen).map(([key, { date, name }]) => {
+    const expDate = new Date(new Date(date).getTime() + EXPIRY_DAYS[key] * 86400000).toISOString().slice(0, 10);
+    const exp = _daysFromNowStr(expDate);
+    return {
+      icon: '📜',
+      label: `${name || key} Expiry`,
+      value: `<span class="${exp.cls}">${exp.text}</span>`,
+      sub: `Issued: ${_fmtDate(date)} · Due: ${_fmtDate(expDate)}`
+    };
+  });
+}
+
+async function loadInsights(type, id) {
+  const panel = _insPanel();
+  if (!panel) return;
+  panel.innerHTML = '<div class="aj-ins-loading"><div class="spinner" style="width:14px;height:14px;margin:0"></div> Loading insights…</div>';
+
+  if (type === 'property') {
+    _insSetHeader('📍', 'Property History');
+    try { await _loadPropertyInsights(id, panel); } catch(e) { panel.innerHTML = '<div class="aj-ins-err">Could not load property data</div>'; }
+  } else {
+    _insSetHeader('👤', 'Client Summary');
+    try { await _loadContactInsights(id, panel); } catch(e) { panel.innerHTML = '<div class="aj-ins-err">Could not load client data</div>'; }
+  }
+}
+
+async function _loadPropertyInsights(propertyId, panel) {
+  const [jobsRes, jobsRes2] = await Promise.allSettled([
+    trpcQuery('jobs.list', { propertyId, pageSize: 30 }),
+    trpcQuery('jobs.list', { property_id: propertyId, limit: 30 }),
+  ]);
+  const raw = (jobsRes.status === 'fulfilled' ? jobsRes.value : null)
+           || (jobsRes2.status === 'fulfilled' ? jobsRes2.value : null);
+  const jobs = raw?.items || (Array.isArray(raw) ? raw : []);
+
+  const sorted = jobs.slice().sort((a, b) => {
+    const da = a.scheduledDate || a.date || '';
+    const db = b.scheduledDate || b.date || '';
+    return db.localeCompare(da);
+  });
+
+  const lastJob = sorted[0];
+  const outstanding = jobs.filter(j => {
+    const s = (j.status || '').toLowerCase();
+    return s === 'invoiced' || s === 'outstanding';
+  });
+  const outAmt = outstanding.reduce((s, j) => s + Number(j.price || j.amount || 0), 0);
+  const totalJobs = jobs.length;
+
+  const rows = [];
+
+  rows.push({
+    icon: '🗓',
+    label: 'Last Visit',
+    value: lastJob
+      ? `${_fmtDate(lastJob.scheduledDate || lastJob.date)} <span class="aj-ins-muted">(${_daysAgoStr(lastJob.scheduledDate || lastJob.date)})</span>`
+      : 'No previous visits',
+    sub: lastJob ? esc(lastJob.title || lastJob.description || '') : ''
+  });
+
+  rows.push({
+    icon: totalJobs ? '📋' : '🆕',
+    label: 'Total Jobs Here',
+    value: totalJobs ? `${totalJobs} job${totalJobs !== 1 ? 's' : ''}` : 'First job',
+    sub: ''
+  });
+
+  rows.push({
+    icon: outstanding.length ? '💳' : '✅',
+    label: 'Outstanding Balance',
+    value: outstanding.length
+      ? `<span class="aj-ins-warn">£${outAmt.toFixed(2)} <span class="aj-ins-muted">(${outstanding.length} unpaid)</span></span>`
+      : '<span class="aj-ins-ok">All clear ✓</span>',
+    sub: ''
+  });
+
+  const certRows = _certExpiryRows(sorted.slice(0, 10));
+  certRows.forEach(r => rows.push(r));
+
+  if (!certRows.length) {
+    rows.push({ icon: '📜', label: 'Certificates', value: '<span class="aj-ins-muted">No cert history found</span>', sub: '' });
+  }
+
+  _insRenderRows(panel, rows);
+}
+
+async function _loadContactInsights(contactId, panel) {
+  const [propsRes, jobsRes, jobsRes2] = await Promise.allSettled([
+    trpcQuery('properties.list', { contactId, pageSize: 50 }),
+    trpcQuery('jobs.list', { contactId, pageSize: 30 }),
+    trpcQuery('jobs.list', { contact_id: contactId, limit: 30 }),
+  ]);
+
+  const propsRaw = propsRes.status === 'fulfilled' ? propsRes.value : null;
+  const propList = propsRaw?.items || (Array.isArray(propsRaw) ? propsRaw : []);
+
+  const jobsRaw = (jobsRes.status === 'fulfilled' ? jobsRes.value : null)
+               || (jobsRes2.status === 'fulfilled' ? jobsRes2.value : null);
+  const jobs = jobsRaw?.items || (Array.isArray(jobsRaw) ? jobsRaw : []);
+
+  const sorted = jobs.slice().sort((a, b) => {
+    const da = a.scheduledDate || a.date || '';
+    const db = b.scheduledDate || b.date || '';
+    return db.localeCompare(da);
+  });
+
+  const lastJob = sorted[0];
+  const outstanding = jobs.filter(j => {
+    const s = (j.status || '').toLowerCase();
+    return s === 'invoiced' || s === 'outstanding';
+  });
+  const outAmt = outstanding.reduce((s, j) => s + Number(j.price || j.amount || 0), 0);
+
+  const paidJobs = jobs.filter(j => {
+    const s = (j.status || '').toLowerCase();
+    return s === 'paid' || s === 'closed';
+  }).sort((a, b) => {
+    const da = a.updatedAt || a.updated_at || a.closedAt || '';
+    const db = b.updatedAt || b.updated_at || b.closedAt || '';
+    return db.localeCompare(da);
+  });
+  const lastPaidJob = paidJobs[0];
+
+  const rows = [];
+
+  rows.push({
+    icon: '🏠',
+    label: 'Properties',
+    value: propList.length ? `${propList.length} propert${propList.length !== 1 ? 'ies' : 'y'}` : 'No properties on file',
+    sub: propList.slice(0, 2).map(p => esc(p.address || '')).join(' · ')
+  });
+
+  rows.push({
+    icon: '🗓',
+    label: 'Last Job',
+    value: lastJob
+      ? `${_fmtDate(lastJob.scheduledDate || lastJob.date)} <span class="aj-ins-muted">(${_daysAgoStr(lastJob.scheduledDate || lastJob.date)})</span>`
+      : 'No previous jobs',
+    sub: lastJob ? esc(lastJob.title || '') : ''
+  });
+
+  rows.push({
+    icon: outstanding.length ? '💳' : '✅',
+    label: 'Unpaid Invoices',
+    value: outstanding.length
+      ? `<span class="aj-ins-warn">£${outAmt.toFixed(2)} <span class="aj-ins-muted">(${outstanding.length} invoice${outstanding.length !== 1 ? 's' : ''})</span></span>`
+      : '<span class="aj-ins-ok">No outstanding balance ✓</span>',
+    sub: ''
+  });
+
+  rows.push({
+    icon: lastPaidJob ? '💚' : '❓',
+    label: 'Last Payment',
+    value: lastPaidJob
+      ? `${_fmtDate(lastPaidJob.updatedAt || lastPaidJob.updated_at || lastPaidJob.scheduledDate)} <span class="aj-ins-muted">(${_daysAgoStr(lastPaidJob.updatedAt || lastPaidJob.updated_at || lastPaidJob.scheduledDate)})</span>`
+      : '<span class="aj-ins-muted">No payment on record</span>',
+    sub: lastPaidJob ? esc(lastPaidJob.title || '') : ''
+  });
+
+  rows.push({
+    icon: '📊',
+    label: 'Total Jobs',
+    value: `${jobs.length} job${jobs.length !== 1 ? 's' : ''} on record`,
+    sub: ''
+  });
+
+  _insRenderRows(panel, rows);
 }
 
 async function _searchAddress(q, addrInp, drop, pcInp) {
