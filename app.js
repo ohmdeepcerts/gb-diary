@@ -1048,7 +1048,9 @@ function applyDayViewStyles() {
      table.day-table tbody tr.row-cancelled td:last-child,
      table.day-table tbody tr.row-cancelled td:nth-last-child(2){text-decoration:none;}
      table.day-table tbody tr.drow-insert-before td{box-shadow:0 -3px 0 var(--red);}
-     table.day-table tbody tr.drow-insert-after td{box-shadow:0 3px 0 var(--red);}`;
+     table.day-table tbody tr.drow-insert-after td{box-shadow:0 3px 0 var(--red);}
+     table.day-table tbody tr.row-in-review td{background:rgba(139,92,246,.09);}
+     table.day-table tbody tr.row-in-review td:first-child{border-left:3px solid #8B5CF6;}`;
 }
 
 function renderDay(lanes, dateLabel) {
@@ -1428,7 +1430,8 @@ function dayRow(job, engineer, dateISO) {
     .join('');
 
   const tr = document.createElement('tr');
-  tr.className = [rClass, st === 'cancelled' ? 'row-cancelled' : ''].filter(Boolean).join(' ');
+  const _isReview = st === 'engineer_completed' || st === 'in_review';
+  tr.className = [rClass, st === 'cancelled' ? 'row-cancelled' : '', _isReview ? 'row-in-review' : ''].filter(Boolean).join(' ');
 
   const cells = [];
 
