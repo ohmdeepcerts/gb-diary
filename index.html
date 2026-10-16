@@ -850,6 +850,10 @@
       <button class="vbtn" data-view="week">Week</button>
       <button class="vbtn" data-view="day">Day</button>
     </div>
+    <div class="view-switch" style="margin-left:6px">
+      <button class="vbtn" id="week-inv-btn" data-view="invoices">₤ Invoices</button>
+      <button class="vbtn" id="week-stmt-btn" data-view="statements">📋 Statements</button>
+    </div>
     <button class="nav-btn" id="week-prev">‹</button>
     <span class="date-label" id="week-label">—</span>
     <button class="nav-btn" id="week-next">›</button>
@@ -883,6 +887,10 @@
       <button class="vbtn" data-view="month">Month</button>
       <button class="vbtn" data-view="week">Week</button>
       <button class="vbtn" data-view="day">Day</button>
+    </div>
+    <div class="view-switch" style="margin-left:6px">
+      <button class="vbtn" id="day-inv-btn" data-view="invoices">₤ Invoices</button>
+      <button class="vbtn" id="day-stmt-btn" data-view="statements">📋 Statements</button>
     </div>
     <button class="nav-btn" id="day-prev">‹</button>
     <span class="date-label" id="day-label">—</span>
@@ -920,6 +928,10 @@
       <button class="vbtn" data-view="month">Month</button>
       <button class="vbtn" data-view="week">Week</button>
       <button class="vbtn" data-view="day">Day</button>
+    </div>
+    <div class="view-switch" style="margin-left:6px">
+      <button class="vbtn" id="month-inv-btn" data-view="invoices">₤ Invoices</button>
+      <button class="vbtn" id="month-stmt-btn" data-view="statements">📋 Statements</button>
     </div>
     <button class="nav-btn" id="month-prev">‹</button>
     <span class="date-label" id="month-label">—</span>
@@ -1027,6 +1039,38 @@
   </div>
 </div>
 
+<!-- ── INVOICES VIEW ── -->
+<div id="view-invoices" class="view">
+  <div class="app-header">
+    <span class="hdr-logo">GB</span>
+    <button class="nav-btn" id="inv-back-btn" style="font-size:11px;padding:5px 10px">← Diary</button>
+    <span style="font-size:15px;font-weight:800;margin-left:6px">Invoices</span>
+    <div class="spacer"></div>
+    <button class="btn-icon" id="inv-refresh-btn" title="Refresh">↻</button>
+    <button class="btn-icon" id="inv-theme-btn" title="Toggle theme">🌙</button>
+    <button class="btn-icon" id="inv-logout-btn" title="Sign out">⎋</button>
+  </div>
+  <div id="inv-top" style="flex-shrink:0"></div>
+  <div id="inv-body" class="body" style="flex:1;overflow:auto;padding:0 0 20px">
+    <div class="loading-row"><div class="spinner"></div>Loading invoices…</div>
+  </div>
+  <div class="status-bar"><span id="stxt-inv">Ready</span></div>
+</div>
+
+<!-- ── STATEMENTS VIEW ── -->
+<div id="view-statements" class="view">
+  <div class="app-header">
+    <span class="hdr-logo">GB</span>
+    <button class="nav-btn" id="stmt-back-btn" style="font-size:11px;padding:5px 10px">← Diary</button>
+    <span style="font-size:15px;font-weight:800;margin-left:6px">Statements</span>
+    <div class="spacer"></div>
+    <button class="btn-icon" id="stmt-print-btn" title="Print statement">🖨</button>
+    <button class="btn-icon" id="stmt-theme-btn" title="Toggle theme">🌙</button>
+    <button class="btn-icon" id="stmt-logout-btn" title="Sign out">⎋</button>
+  </div>
+  <div id="stmt-body" class="body" style="flex:1;overflow:auto;padding:0 0 40px"></div>
+</div>
+
 <!-- ── GLOBAL SEARCH OVERLAY ── -->
 <div id="global-search-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;align-items:flex-start;justify-content:center;padding-top:80px">
   <div class="gsearch-box">
@@ -1040,6 +1084,6 @@
   </div>
 </div>
 
-<script src="app.js?v=20261016n"></script>
+<script src="app.js?v=20261016p"></script>
 </body>
 </html>

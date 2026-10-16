@@ -273,7 +273,7 @@ function setUser(name) {
 function applyTheme() {
   document.body.setAttribute('data-theme', isDark ? 'dark' : 'light');
   const ic = isDark ? '🌙' : '☀️';
-  ['week-theme','day-theme','month-theme'].forEach(id => { const e=document.getElementById(id); if(e) e.textContent=ic; });
+  ['week-theme','day-theme','month-theme','inv-theme-btn','stmt-theme-btn'].forEach(id => { const e=document.getElementById(id); if(e) e.textContent=ic; });
   try { localStorage.setItem('gb-theme', isDark ? 'dark' : 'light'); } catch {}
 }
 function toggleTheme() { isDark = !isDark; applyTheme(); }
@@ -301,6 +301,10 @@ async function switchView(name) {
     if (!curMonth) { const d = new Date(curDate+'T00:00:00'); curMonth = {year:d.getFullYear(), month:d.getMonth()+1}; }
     showView('month');
     await loadMonth();
+  } else if (name === 'invoices') {
+    await openInvoices();
+  } else if (name === 'statements') {
+    await openStatements();
   }
 }
 
@@ -4311,7 +4315,7 @@ async function init() {
   applyTheme();
 
   // Wire theme buttons
-  ['week-theme','day-theme','month-theme'].forEach(id => {
+  ['week-theme','day-theme','month-theme','inv-theme-btn','stmt-theme-btn'].forEach(id => {
     document.getElementById(id)?.addEventListener('click', toggleTheme);
   });
 
@@ -4356,6 +4360,16 @@ async function init() {
   document.getElementById('month-refresh').addEventListener('click', async () => { clearCache(); await loadMonth(true); });
   document.getElementById('month-logout').addEventListener('click', logout);
   document.getElementById('month-add').addEventListener('click', openAddJob);
+
+  // Invoices view
+  document.getElementById('inv-back-btn')?.addEventListener('click', () => switchView('day'));
+  document.getElementById('inv-refresh-btn')?.addEventListener('click', () => _loadInvoices(false));
+  document.getElementById('inv-logout-btn')?.addEventListener('click', logout);
+
+  // Statements view
+  document.getElementById('stmt-back-btn')?.addEventListener('click', () => switchView('day'));
+  document.getElementById('stmt-print-btn')?.addEventListener('click', () => window.print());
+  document.getElementById('stmt-logout-btn')?.addEventListener('click', logout);
 
   // Add job overlay
   document.getElementById('btn-add-cancel').addEventListener('click', closeAddJob);
@@ -4494,6 +4508,656 @@ async function _doGlobalSearch(q) {
     row.addEventListener('click', () => { closeGlobalSearch(); openJobDetail(job.id); });
     resultsEl.appendChild(row);
   });
+}
+
+// ── INVOICE / STATEMENT STATE ─────────────────────────────────────────────────
+
+let _invView        = 'outstanding';
+let _invPage        = 1;
+let _invPageSize    = 25;
+let _invQuery       = '';
+let _invContactType = '';
+let _invSortBy      = 'dueAt';
+let _invSortDir     = 'asc';
+let _invAgingChip   = '';
+let _invTotals      = null;
+let _invItems       = [];
+let _invTotal       = 0;
+let _stmtContactId   = null;
+let _stmtContactName = '';
+let _invCSSInjected  = false;
+
+// ── INVOICE CSS ────────────────────────────────────────────────────────────────
+
+function _injectInvoiceCSS() {
+  if (_invCSSInjected) return;
+  _invCSSInjected = true;
+  const s = document.createElement('style');
+  s.textContent = `
+    .inv-cards{display:flex;gap:8px;padding:10px 12px 0;flex-wrap:wrap}
+    .inv-card{flex:1;min-width:110px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px}
+    .inv-card-val{font-size:18px;font-weight:800;color:var(--text)}
+    .inv-card-lbl{font-size:10px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.5px}
+    .inv-card.danger .inv-card-val{color:var(--red)}
+    .inv-card.warn   .inv-card-val{color:#f59e0b}
+    .inv-tabs{display:flex;gap:4px;padding:8px 12px 0;border-bottom:1px solid var(--border)}
+    .inv-tab{padding:5px 12px;border-radius:6px 6px 0 0;font-size:12px;font-weight:600;background:none;border:1px solid transparent;border-bottom:none;color:var(--muted);cursor:pointer;transition:all .15s}
+    .inv-tab.active{background:var(--surface);border-color:var(--border);color:var(--text)}
+    .inv-tab:hover:not(.active){color:var(--text)}
+    .inv-aging-row{display:flex;gap:6px;padding:8px 12px;flex-wrap:wrap;align-items:center}
+    .inv-aging-lbl{font-size:11px;color:var(--muted);margin-right:4px}
+    .inv-chip{padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;transition:all .15s}
+    .inv-chip:hover{border-color:var(--accent);color:var(--accent)}
+    .inv-chip.active{background:var(--accent);border-color:var(--accent);color:#fff}
+    .inv-filter-bar{display:flex;gap:6px;padding:0 12px 8px;align-items:center;flex-wrap:wrap}
+    .inv-filter-bar input,.inv-filter-bar select{padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px}
+    .inv-filter-bar input{flex:1;min-width:140px}
+    .inv-filter-bar select{min-width:110px}
+    .inv-table{width:100%;border-collapse:collapse;font-size:12px}
+    .inv-table th{text-align:left;padding:6px 10px;font-size:10px;font-weight:700;color:var(--muted);border-bottom:2px solid var(--border);white-space:nowrap;position:sticky;top:0;background:var(--bg);z-index:1;text-transform:uppercase;letter-spacing:.4px}
+    .inv-table th.sortable{cursor:pointer;user-select:none}
+    .inv-table th.sortable:hover{color:var(--text)}
+    .inv-row td{padding:7px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
+    .inv-row:hover td{background:var(--surface)}
+    .inv-row{cursor:pointer;transition:background .1s}
+    .inv-row.st-overdue td{background:rgba(239,68,68,.05)}
+    .inv-row.st-overdue:hover td{background:rgba(239,68,68,.1)}
+    .inv-row.st-paid td{background:rgba(34,197,94,.04)}
+    .inv-row.st-paid:hover td{background:rgba(34,197,94,.08)}
+    .inv-row.st-draft td{opacity:.7}
+    .inv-badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;white-space:nowrap}
+    .inv-badge.overdue{background:rgba(239,68,68,.15);color:#ef4444}
+    .inv-badge.paid{background:rgba(34,197,94,.15);color:#16a34a}
+    .inv-badge.draft{background:rgba(148,163,184,.15);color:#64748b}
+    .inv-badge.current{background:rgba(59,130,246,.12);color:#3b82f6}
+    .inv-badge.void{background:rgba(148,163,184,.1);color:#94a3b8;text-decoration:line-through}
+    .inv-age{font-size:10px;padding:1px 5px;border-radius:8px;font-weight:600}
+    .inv-age.age0{background:#fef9c3;color:#854d0e}
+    .inv-age.age1{background:#fed7aa;color:#9a3412}
+    .inv-age.age2{background:#fecaca;color:#b91c1c}
+    .inv-detail-row{display:none}
+    .inv-detail-row.open{display:table-row}
+    .inv-detail-cell{padding:10px 16px 14px 32px;background:var(--surface);border-bottom:2px solid var(--border)}
+    .inv-detail-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 16px;margin-bottom:10px}
+    .inv-detail-item{font-size:11px}
+    .inv-detail-item span:first-child{color:var(--muted);display:block;font-size:10px}
+    .inv-pay-history{margin-top:8px}
+    .inv-pay-history-title{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+    .inv-pay-row{display:flex;gap:10px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)}
+    .inv-pay-row:last-child{border:none}
+    .inv-detail-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+    .inv-act-btn{padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;text-decoration:none;display:inline-block}
+    .inv-act-btn:hover{border-color:var(--accent);color:var(--accent)}
+    .inv-act-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+    .inv-act-btn.primary:hover{opacity:.85}
+    .inv-pager{display:flex;align-items:center;gap:8px;padding:10px 12px;justify-content:center}
+    .inv-pager button{padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;cursor:pointer}
+    .inv-pager button:disabled{opacity:.35;cursor:default}
+    .inv-pager-info{font-size:11px;color:var(--muted)}
+    .inv-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center}
+    .inv-modal{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;width:320px;max-width:90vw}
+    .inv-modal h3{margin:0 0 14px;font-size:15px}
+    .inv-modal label{display:block;font-size:11px;color:var(--muted);margin-bottom:3px}
+    .inv-modal input,.inv-modal select{width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px;margin-bottom:10px;box-sizing:border-box}
+    .inv-modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
+    .inv-modal-btns button{padding:7px 16px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-weight:600;cursor:pointer}
+    .inv-modal-btns .primary{background:var(--accent);border-color:var(--accent);color:#fff}
+    .stmt-search-wrap{padding:14px 12px 6px}
+    .stmt-search-wrap .inp{width:100%;box-sizing:border-box}
+    .stmt-contact-drop{background:var(--surface);border:1px solid var(--border);border-radius:6px;max-height:200px;overflow-y:auto;margin-top:4px}
+    .stmt-cd-item{padding:8px 12px;font-size:13px;cursor:pointer}
+    .stmt-cd-item:hover{background:var(--bg)}
+    .stmt-cd-sub{font-size:10px;color:var(--muted)}
+    .stmt-cards{display:flex;gap:8px;padding:8px 12px;flex-wrap:wrap}
+    .stmt-card{flex:1;min-width:110px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px}
+    .stmt-card-val{font-size:16px;font-weight:800;color:var(--text)}
+    .stmt-card-lbl{font-size:10px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.5px}
+    .stmt-card.danger .stmt-card-val{color:var(--red)}
+    .stmt-card.ok .stmt-card-val{color:#16a34a}
+    .stmt-aging-row{display:flex;gap:6px;padding:4px 12px 8px;flex-wrap:wrap;align-items:center}
+    .stmt-timeline{width:100%;border-collapse:collapse;font-size:12px}
+    .stmt-timeline th{text-align:left;padding:6px 10px;font-size:10px;color:var(--muted);border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--bg);z-index:1;text-transform:uppercase;letter-spacing:.4px;font-weight:700}
+    .stmt-row td{padding:7px 10px;border-bottom:1px solid var(--border)}
+    .stmt-row.inv-row-type td{background:rgba(239,68,68,.04)}
+    .stmt-row.pay-row-type td{background:rgba(34,197,94,.04)}
+    .stmt-row:hover td{filter:brightness(.97)}
+    .stmt-bal-col{font-weight:700;text-align:right;white-space:nowrap}
+    .stmt-bal-pos{color:#16a34a}
+    .stmt-bal-neg{color:var(--red)}
+    .stmt-type-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle}
+    .stmt-type-dot.inv{background:#ef4444}
+    .stmt-type-dot.pay{background:#22c55e}
+    @media print{
+      #view-statements .app-header,.stmt-search-wrap,.stmt-aging-row{display:none!important}
+      #view-statements{display:block!important;overflow:visible!important}
+      #stmt-body{overflow:visible!important}
+    }
+  `;
+  document.head.appendChild(s);
+}
+
+// ── INVOICE HELPERS ────────────────────────────────────────────────────────────
+
+function _invFmt(pence) {
+  if (pence == null) return '—';
+  return '£' + (pence / 100).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function _invAgingInfo(dueAt) {
+  if (!dueAt) return { pill:'', pillCls:'', bucket:'' };
+  const days = Math.floor((Date.now() - new Date(dueAt).getTime()) / 86400000);
+  if (days < 0) return { pill:'', pillCls:'', bucket:'' };
+  if (days <= 30) return { pill:`${days}d`, pillCls:'age0', bucket:'0-30' };
+  if (days <= 60) return { pill:`${days}d`, pillCls:'age1', bucket:'31-60' };
+  return { pill:`${days}d`, pillCls:'age2', bucket:'60+' };
+}
+
+function _invAgingFilter(item) {
+  if (!_invAgingChip) return true;
+  if (item.effectiveStatus !== 'overdue') return false;
+  return _invAgingInfo(item.dueAt).bucket === _invAgingChip;
+}
+
+function _invStatusBadge(status) {
+  const labels = { overdue:'Overdue', paid:'Paid', draft:'Draft', void:'Void', current:'Outstanding' };
+  const cls = { overdue:'overdue', paid:'paid', draft:'draft', void:'void', current:'current' }[status] || 'current';
+  return `<span class="inv-badge ${cls}">${labels[status] || status}</span>`;
+}
+
+// ── INVOICES VIEW ──────────────────────────────────────────────────────────────
+
+async function openInvoices() {
+  _injectInvoiceCSS();
+  showView('invoices');
+  await _loadInvoices(true);
+}
+
+async function _loadInvoices(resetPage = false) {
+  if (resetPage) _invPage = 1;
+  const bodyEl = document.getElementById('inv-body');
+  const topEl  = document.getElementById('inv-top');
+  if (bodyEl) bodyEl.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading invoices…</div>';
+
+  const [totals, list] = await Promise.all([
+    trpcQuery('invoices.totals', {}).catch(() => null),
+    trpcQuery('invoices.list', {
+      view:        _invView,
+      page:        _invPage,
+      pageSize:    _invPageSize,
+      sortBy:      _invSortBy,
+      sortDir:     _invSortDir,
+      ..._invQuery       ? { query:       _invQuery       } : {},
+      ..._invContactType ? { contactType: _invContactType } : {},
+    }).catch(() => null),
+  ]);
+
+  _invTotals = totals;
+  _invItems  = list?.invoices || list?.items || [];
+  _invTotal  = list?.total ?? _invItems.length;
+
+  _renderInvoicePage();
+}
+
+function _renderInvoicePage() {
+  const topEl  = document.getElementById('inv-top');
+  const bodyEl = document.getElementById('inv-body');
+  if (topEl)  topEl.innerHTML  = _buildInvTopHTML();
+  if (bodyEl) bodyEl.innerHTML = _buildInvBodyHTML();
+  _wireInvControls();
+}
+
+function _buildInvTopHTML() {
+  const t = _invTotals || {};
+  const tabs = [
+    { key:'outstanding', label:'Outstanding' },
+    { key:'overdue',     label:'Overdue'     },
+    { key:'all',         label:'All'         },
+    { key:'draft',       label:'Drafts'      },
+    { key:'paid',        label:'Paid'        },
+  ];
+  const tabsHTML = tabs.map(tab =>
+    `<button class="inv-tab${_invView===tab.key?' active':''}" data-invtab="${tab.key}">${tab.label}</button>`
+  ).join('');
+
+  const chips = [
+    { key:'0-30',  label:'1–30 days' },
+    { key:'31-60', label:'31–60 days' },
+    { key:'60+',   label:'60+ days'  },
+  ];
+  const chipsHTML = (_invView === 'overdue')
+    ? `<div class="inv-aging-row">
+        <span class="inv-aging-lbl">Age:</span>
+        ${chips.map(c=>`<button class="inv-chip${_invAgingChip===c.key?' active':''}" data-agechip="${c.key}">${c.label}</button>`).join('')}
+        ${_invAgingChip?`<button class="inv-chip" data-agechip="">All ages</button>`:''}
+       </div>`
+    : '';
+
+  const ctypes  = ['','landlord','agency','agent','developer'];
+  const ctLabel = { '':'All contacts', landlord:'Landlord', agency:'Agency', agent:'Agent', developer:'Developer' };
+  const ctSel   = ctypes.map(v=>`<option value="${v}"${_invContactType===v?' selected':''}>${ctLabel[v]}</option>`).join('');
+
+  const sorts = [
+    { val:'dueAt|asc',   label:'Due ↑'      },
+    { val:'dueAt|desc',  label:'Due ↓'      },
+    { val:'total|desc',  label:'Amount ↓'   },
+    { val:'total|asc',   label:'Amount ↑'   },
+  ];
+  const curSort  = `${_invSortBy}|${_invSortDir}`;
+  const sortSel  = sorts.map(s=>`<option value="${s.val}"${curSort===s.val?' selected':''}>${s.label}</option>`).join('');
+
+  return `
+    <div class="inv-cards">
+      <div class="inv-card danger">
+        <div class="inv-card-val">${_invFmt(t.owedPence)}</div>
+        <div class="inv-card-lbl">Total owed</div>
+      </div>
+      <div class="inv-card warn">
+        <div class="inv-card-val">${t.overdue ?? '—'}</div>
+        <div class="inv-card-lbl">Overdue</div>
+      </div>
+      <div class="inv-card">
+        <div class="inv-card-val">${t.drafts ?? '—'}</div>
+        <div class="inv-card-lbl">Drafts</div>
+      </div>
+    </div>
+    <div class="inv-tabs">${tabsHTML}</div>
+    ${chipsHTML}
+    <div class="inv-filter-bar">
+      <input type="text" id="inv-search" placeholder="Search invoice, contact…" value="${esc(_invQuery)}">
+      <select id="inv-ct">${ctSel}</select>
+      <select id="inv-sort">${sortSel}</select>
+    </div>
+  `;
+}
+
+function _buildInvBodyHTML() {
+  const items = _invItems.filter(_invAgingFilter);
+  const totalPages = Math.max(1, Math.ceil(_invTotal / _invPageSize));
+
+  if (!items.length) {
+    return `<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">No invoices found</div>`;
+  }
+
+  const rows = items.map((inv, idx) => {
+    const status = inv.effectiveStatus || (inv.settled ? 'paid' : (inv.dueAt && new Date(inv.dueAt) < new Date()) ? 'overdue' : 'current');
+    const aging  = status === 'overdue' ? _invAgingInfo(inv.dueAt) : { pill:'', pillCls:'' };
+    const balance = inv.balance ?? ((inv.total||0) - (inv.paidAmount||0));
+
+    const detailHTML = `
+      <div class="inv-detail-grid">
+        <div class="inv-detail-item"><span>Site</span>${esc(inv.siteAddress||'—')}</div>
+        <div class="inv-detail-item"><span>Contact</span>${esc(inv.contactName||'—')} <span style="font-size:10px;color:var(--muted)">(${esc(inv.contactType||'')})</span></div>
+        <div class="inv-detail-item"><span>Issued</span>${inv.issuedAt?new Date(inv.issuedAt).toLocaleDateString('en-GB'):'—'}</div>
+        <div class="inv-detail-item"><span>Subtotal</span>${_invFmt(inv.subtotal)}</div>
+        <div class="inv-detail-item"><span>VAT (${inv.vatRate||0}%)</span>${_invFmt(inv.vatAmount)}</div>
+        <div class="inv-detail-item"><span>Total</span><strong>${_invFmt(inv.total)}</strong></div>
+        <div class="inv-detail-item"><span>Paid</span>${_invFmt(inv.paidAmount||0)}</div>
+        <div class="inv-detail-item"><span>Balance</span><strong>${_invFmt(balance)}</strong></div>
+        ${inv.notes?`<div class="inv-detail-item" style="grid-column:1/-1"><span>Notes</span>${esc(inv.notes)}</div>`:''}
+      </div>
+      ${inv.payments?.length ? `
+        <div class="inv-pay-history">
+          <div class="inv-pay-history-title">Payments (${inv.payments.length})</div>
+          ${inv.payments.map(p=>`
+            <div class="inv-pay-row">
+              <span style="flex:1">${p.receivedAt?new Date(p.receivedAt).toLocaleDateString('en-GB'):'—'}</span>
+              <span style="flex:1;color:var(--muted)">${esc(p.method||'')}</span>
+              <span style="font-weight:600;color:#16a34a">${_invFmt(p.amount)}</span>
+              ${p.stripePaymentRef?`<span style="font-size:10px;color:var(--muted)">${esc(p.stripePaymentRef)}</span>`:''}
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+      <div class="inv-detail-actions">
+        ${status!=='paid'&&status!=='void'&&status!=='draft'?`<button class="inv-act-btn primary" data-rpay="${inv.id}" data-rbal="${balance}" data-rno="${esc(inv.invoiceNo||'')}">₤ Record Payment</button>`:''}
+        ${status==='draft'?`<button class="inv-act-btn" data-issue="${inv.id}">Issue Invoice</button>`:''}
+        ${inv.pdfPath?`<a class="inv-act-btn" href="https://gbelectricals.co.uk${esc(inv.pdfPath)}" target="_blank" rel="noopener">↓ PDF</a>`:''}
+      </div>
+    `;
+
+    return `
+      <tr class="inv-row st-${status}" data-idx="${idx}">
+        <td style="font-weight:700;font-size:11px;white-space:nowrap">${esc(inv.invoiceNo||'—')}</td>
+        <td style="font-size:11px">${esc(inv.jobNo||'—')}</td>
+        <td>${esc(inv.contactName||'—')}</td>
+        <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(inv.siteAddress||'—')}</td>
+        <td style="white-space:nowrap">${inv.dueAt?new Date(inv.dueAt).toLocaleDateString('en-GB'):'—'}${aging.pill?`<span class="inv-age ${aging.pillCls}" style="margin-left:4px">${aging.pill}</span>`:''}
+        </td>
+        <td style="text-align:right;font-weight:700">${_invFmt(inv.total)}</td>
+        <td style="text-align:right;font-weight:700;color:${balance<=0?'#16a34a':'inherit'}">${_invFmt(balance)}</td>
+        <td>${_invStatusBadge(status)}</td>
+      </tr>
+      <tr class="inv-detail-row" data-detail="${idx}">
+        <td class="inv-detail-cell" colspan="8">${detailHTML}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const pager = totalPages > 1
+    ? `<div class="inv-pager">
+        <button id="inv-prev-page" ${_invPage<=1?'disabled':''}>← Prev</button>
+        <span class="inv-pager-info">Page ${_invPage} of ${totalPages} · ${_invTotal} invoices</span>
+        <button id="inv-next-page" ${_invPage>=totalPages?'disabled':''}>Next →</button>
+       </div>`
+    : `<div class="inv-pager"><span class="inv-pager-info">${items.length} invoices</span></div>`;
+
+  return `
+    <div style="overflow-x:auto">
+      <table class="inv-table">
+        <thead><tr>
+          <th>Invoice #</th>
+          <th>Job #</th>
+          <th>Contact</th>
+          <th>Site</th>
+          <th class="sortable" data-sort="dueAt">Due${_invSortBy==='dueAt'?(_invSortDir==='asc'?' ↑':' ↓'):''}</th>
+          <th class="sortable" data-sort="total" style="text-align:right">Total${_invSortBy==='total'?(_invSortDir==='asc'?' ↑':' ↓'):''}</th>
+          <th style="text-align:right">Balance</th>
+          <th>Status</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    ${pager}
+  `;
+}
+
+function _wireInvControls() {
+  document.querySelectorAll('[data-invtab]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      _invView = btn.dataset.invtab;
+      _invAgingChip = '';
+      await _loadInvoices(true);
+    });
+  });
+
+  document.querySelectorAll('[data-agechip]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _invAgingChip = btn.dataset.agechip;
+      _renderInvoicePage();
+    });
+  });
+
+  let _invSrchTimer;
+  const searchEl = document.getElementById('inv-search');
+  if (searchEl) {
+    searchEl.addEventListener('input', () => {
+      clearTimeout(_invSrchTimer);
+      _invSrchTimer = setTimeout(async () => {
+        _invQuery = searchEl.value.trim();
+        await _loadInvoices(true);
+      }, 450);
+    });
+  }
+
+  const ctEl = document.getElementById('inv-ct');
+  if (ctEl) ctEl.addEventListener('change', async () => { _invContactType = ctEl.value; await _loadInvoices(true); });
+
+  const sortEl = document.getElementById('inv-sort');
+  if (sortEl) sortEl.addEventListener('change', async () => {
+    const [by, dir] = sortEl.value.split('|');
+    _invSortBy = by; _invSortDir = dir;
+    await _loadInvoices(true);
+  });
+
+  document.querySelectorAll('.inv-table th.sortable').forEach(th => {
+    th.addEventListener('click', async () => {
+      const col = th.dataset.sort;
+      if (_invSortBy === col) { _invSortDir = _invSortDir === 'asc' ? 'desc' : 'asc'; }
+      else { _invSortBy = col; _invSortDir = 'asc'; }
+      await _loadInvoices(false);
+    });
+  });
+
+  document.querySelectorAll('.inv-row').forEach(row => {
+    row.addEventListener('click', e => {
+      if (e.target.closest('.inv-act-btn, a')) return;
+      const detRow = document.querySelector(`.inv-detail-row[data-detail="${row.dataset.idx}"]`);
+      if (detRow) detRow.classList.toggle('open');
+    });
+  });
+
+  document.querySelectorAll('[data-rpay]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      _openRecordPayment(btn.dataset.rpay, parseInt(btn.dataset.rbal)||0, btn.dataset.rno);
+    });
+  });
+
+  document.querySelectorAll('[data-issue]').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      btn.disabled = true; btn.textContent = 'Issuing…';
+      try {
+        await trpcMutate('invoices.issue', { invoiceId: btn.dataset.issue });
+        await _loadInvoices(false);
+      } catch(err) {
+        btn.disabled = false; btn.textContent = 'Issue Invoice';
+        alert('Failed to issue: ' + (err?.message || err));
+      }
+    });
+  });
+
+  document.getElementById('inv-prev-page')?.addEventListener('click', async () => {
+    if (_invPage > 1) { _invPage--; await _loadInvoices(false); }
+  });
+  document.getElementById('inv-next-page')?.addEventListener('click', async () => {
+    _invPage++; await _loadInvoices(false);
+  });
+}
+
+// ── RECORD PAYMENT MODAL ───────────────────────────────────────────────────────
+
+function _openRecordPayment(invoiceId, balance, invoiceNo) {
+  const today = new Date().toISOString().slice(0,10);
+  const modal = document.createElement('div');
+  modal.className = 'inv-modal-backdrop';
+  modal.innerHTML = `
+    <div class="inv-modal">
+      <h3>Record Payment — ${esc(invoiceNo)}</h3>
+      <label>Amount (£)</label>
+      <input id="rp-amount" type="number" min="0.01" step="0.01" value="${(balance/100).toFixed(2)}">
+      <label>Method</label>
+      <select id="rp-method">
+        <option value="bank">Bank Transfer</option>
+        <option value="cash">Cash</option>
+        <option value="stripe">Stripe</option>
+      </select>
+      <label>Date received</label>
+      <input id="rp-date" type="date" value="${today}">
+      <div id="rp-err" style="color:var(--red);font-size:11px;min-height:16px"></div>
+      <div class="inv-modal-btns">
+        <button id="rp-cancel">Cancel</button>
+        <button id="rp-save" class="primary">Save Payment</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.getElementById('rp-cancel').addEventListener('click', () => modal.remove());
+  document.getElementById('rp-save').addEventListener('click', async () => {
+    const amtStr  = document.getElementById('rp-amount').value.trim();
+    const method  = document.getElementById('rp-method').value;
+    const dateVal = document.getElementById('rp-date').value;
+    const errEl   = document.getElementById('rp-err');
+    const amt     = parseFloat(amtStr);
+    if (!amtStr || isNaN(amt) || amt <= 0) { errEl.textContent = 'Enter a valid amount'; return; }
+    if (!dateVal) { errEl.textContent = 'Enter a date'; return; }
+    const saveBtn = document.getElementById('rp-save');
+    saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+    try {
+      await trpcMutate('invoices.recordPayment', {
+        invoiceId, method, receivedAt: dateVal,
+        amount: Math.round(amt * 100),
+      });
+      modal.remove();
+      await _loadInvoices(false);
+    } catch(err) {
+      saveBtn.disabled = false; saveBtn.textContent = 'Save Payment';
+      errEl.textContent = err?.message || 'Failed to record payment';
+    }
+  });
+}
+
+// ── STATEMENTS VIEW ────────────────────────────────────────────────────────────
+
+async function openStatements() {
+  _injectInvoiceCSS();
+  showView('statements');
+  _renderStatementsShell();
+}
+
+function _renderStatementsShell() {
+  const bodyEl = document.getElementById('stmt-body');
+  if (!bodyEl) return;
+  bodyEl.innerHTML = `
+    <div class="stmt-search-wrap">
+      <input id="stmt-contact-inp" class="inp" type="text" placeholder="Search contact (landlord, agency, agent)…" autocomplete="off">
+      <div id="stmt-contact-drop" class="stmt-contact-drop" style="display:none"></div>
+    </div>
+    <div id="stmt-content" style="padding:0 12px">
+      <div style="text-align:center;padding:60px 20px;color:var(--muted);font-size:13px">Search for a contact above to load their statement</div>
+    </div>
+  `;
+
+  let _stmtSrchTimer;
+  const inp  = document.getElementById('stmt-contact-inp');
+  const drop = document.getElementById('stmt-contact-drop');
+
+  inp?.addEventListener('input', () => {
+    const q = inp.value.trim();
+    clearTimeout(_stmtSrchTimer);
+    if (q.length < 2) { drop.style.display = 'none'; return; }
+    _stmtSrchTimer = setTimeout(async () => {
+      const res = await trpcQuery('directory.contacts.list', { query: q, pageSize: 10 }).catch(() => null);
+      const items = res?.items || res?.contacts || [];
+      if (!items.length) {
+        drop.innerHTML = '<div class="stmt-cd-item" style="color:var(--muted)">No contacts found</div>';
+        drop.style.display = '';
+        return;
+      }
+      drop.innerHTML = items.map(c => `
+        <div class="stmt-cd-item" data-id="${esc(c.id)}" data-name="${esc(c.name||c.contactName||'')}">
+          ${esc(c.name||c.contactName||'')}
+          <div class="stmt-cd-sub">${esc(c.type||'')}${c.company?` · ${esc(c.company)}`:''}</div>
+        </div>
+      `).join('');
+      drop.style.display = '';
+    }, 350);
+  });
+
+  drop?.addEventListener('mousedown', async e => {
+    const item = e.target.closest('.stmt-cd-item[data-id]');
+    if (!item) return;
+    e.preventDefault();
+    _stmtContactId   = item.dataset.id;
+    _stmtContactName = item.dataset.name;
+    inp.value = _stmtContactName;
+    drop.style.display = 'none';
+    await _loadStatement(_stmtContactId, _stmtContactName);
+  });
+
+  inp?.addEventListener('blur', () => { setTimeout(() => { drop.style.display = 'none'; }, 150); });
+}
+
+async function _loadStatement(contactId, contactName) {
+  const contentEl = document.getElementById('stmt-content');
+  if (contentEl) contentEl.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading statement…</div>';
+
+  const [invList, payList, totals] = await Promise.all([
+    trpcQuery('invoices.list', { contactId, view:'all', pageSize:200, sortBy:'dueAt', sortDir:'asc' }).catch(() => null),
+    trpcQuery('payments.list', { contactId, pageSize:200 }).catch(() => null),
+    trpcQuery('invoices.totals', { contactId }).catch(() => null),
+  ]);
+
+  const invoices = invList?.invoices || invList?.items || [];
+  const payments = payList?.items    || payList?.payments || [];
+  _renderStatement(contactId, contactName, invoices, payments, totals);
+}
+
+function _renderStatement(contactId, contactName, invoices, payments, totals) {
+  const contentEl = document.getElementById('stmt-content');
+  if (!contentEl) return;
+
+  const totalInvoiced = invoices.reduce((s,i) => s + (i.total||0), 0);
+  const totalPaid     = invoices.reduce((s,i) => s + (i.paidAmount||0), 0);
+  const outstanding   = totalInvoiced - totalPaid;
+  const overdueInvs   = invoices.filter(i => i.effectiveStatus === 'overdue');
+
+  const ageBuckets = { '0-30':0, '31-60':0, '60+':0 };
+  overdueInvs.forEach(i => {
+    const info = _invAgingInfo(i.dueAt);
+    if (info.bucket) ageBuckets[info.bucket] += i.balance ?? ((i.total||0) - (i.paidAmount||0));
+  });
+
+  const timeline = [];
+  invoices.forEach(inv => {
+    timeline.push({ type:'invoice', date: inv.issuedAt||inv.dueAt, ref: inv.invoiceNo, desc:`Invoice ${inv.invoiceNo||''}`, site: inv.siteAddress, amount: inv.total, status: inv.effectiveStatus });
+  });
+  payments.forEach(pay => {
+    timeline.push({ type:'payment', date: pay.receivedAt, ref: pay.invoiceNo, desc:`Payment — ${pay.method||''}`, site:'', amount: pay.amount });
+  });
+  timeline.sort((a,b) => (a.date?new Date(a.date).getTime():0) - (b.date?new Date(b.date).getTime():0));
+
+  let running = 0;
+  const timelineRows = timeline.map(row => {
+    running += row.type === 'invoice' ? (row.amount||0) : -(row.amount||0);
+    const dateStr = row.date ? new Date(row.date).toLocaleDateString('en-GB') : '—';
+    const balCls  = running <= 0 ? 'stmt-bal-pos' : 'stmt-bal-neg';
+    const balStr  = `${_invFmt(Math.abs(running))}${running < 0 ? ' CR' : ''}`;
+    const dotCls  = row.type === 'invoice' ? 'inv' : 'pay';
+    const invAmt  = row.type === 'invoice' ? `<span style="color:var(--red)">${_invFmt(row.amount)}</span>` : '—';
+    const payAmt  = row.type === 'payment' ? `<span style="color:#16a34a">−${_invFmt(row.amount)}</span>` : '—';
+    const statusBit = row.type==='invoice'&&row.status ? ` ${_invStatusBadge(row.status)}` : '';
+    return `
+      <tr class="stmt-row ${row.type==='invoice'?'inv-row-type':'pay-row-type'}">
+        <td>${dateStr}</td>
+        <td><span class="stmt-type-dot ${dotCls}"></span>${esc(row.ref||'')}</td>
+        <td>${esc(row.desc)}${statusBit}</td>
+        <td style="font-size:11px;color:var(--muted);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(row.site||'')}</td>
+        <td style="text-align:right">${invAmt}</td>
+        <td style="text-align:right">${payAmt}</td>
+        <td class="stmt-bal-col ${balCls}">${balStr}</td>
+      </tr>`;
+  }).join('');
+
+  const agePillsHTML = Object.entries(ageBuckets)
+    .filter(([,v]) => v > 0)
+    .map(([k,v]) => `<span class="inv-chip active" style="cursor:default">${k}d: ${_invFmt(v)}</span>`)
+    .join('');
+
+  contentEl.innerHTML = `
+    <div style="padding:8px 0 4px"><div style="font-size:16px;font-weight:800;color:var(--text)">${esc(contactName)}</div></div>
+    <div class="stmt-cards">
+      <div class="stmt-card danger">
+        <div class="stmt-card-val">${_invFmt(outstanding)}</div>
+        <div class="stmt-card-lbl">Outstanding</div>
+      </div>
+      <div class="stmt-card">
+        <div class="stmt-card-val">${_invFmt(totalInvoiced)}</div>
+        <div class="stmt-card-lbl">Total invoiced</div>
+      </div>
+      <div class="stmt-card ok">
+        <div class="stmt-card-val">${_invFmt(totalPaid)}</div>
+        <div class="stmt-card-lbl">Total paid</div>
+      </div>
+      <div class="stmt-card${overdueInvs.length?' danger':''}">
+        <div class="stmt-card-val">${overdueInvs.length}</div>
+        <div class="stmt-card-lbl">Overdue invoices</div>
+      </div>
+    </div>
+    ${agePillsHTML?`<div class="stmt-aging-row"><span class="inv-aging-lbl">Aging:</span>${agePillsHTML}</div>`:''}
+    <div style="overflow-x:auto;margin-top:4px">
+      <table class="stmt-timeline">
+        <thead><tr>
+          <th>Date</th><th>Reference</th><th>Description</th><th>Site</th>
+          <th style="text-align:right">Invoiced</th>
+          <th style="text-align:right">Paid</th>
+          <th style="text-align:right">Balance</th>
+        </tr></thead>
+        <tbody>${timelineRows||'<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--muted)">No transactions found</td></tr>'}</tbody>
+      </table>
+    </div>
+  `;
 }
 
 document.addEventListener('DOMContentLoaded', init);
