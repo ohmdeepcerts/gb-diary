@@ -4813,6 +4813,9 @@ function _buildInvBodyHTML() {
     const status = inv.effectiveStatus || (inv.settled ? 'paid' : (inv.dueAt && new Date(inv.dueAt) < new Date()) ? 'overdue' : 'current');
     const aging  = status === 'overdue' ? _invAgingInfo(inv.dueAt) : { pill:'', pillCls:'' };
     const balance = inv.balance ?? ((inv.total||0) - (inv.paidAmount||0));
+    const cached   = _invDescCache[inv.id];
+    const descVal  = esc(cached?.desc || inv.notes || '—');
+    const lineItems = cached?.lineItems || [];
 
     const detailHTML = `
       <div class="inv-detail-grid">
@@ -4880,9 +4883,6 @@ function _buildInvBodyHTML() {
       ` : ''}
     `;
 
-    const cached  = _invDescCache[inv.id];
-    const descVal = esc(cached?.desc || inv.notes || '—');
-    const lineItems = cached?.lineItems || [];
     return `
       <tr class="inv-row st-${status}" data-idx="${idx}" data-jobid="${esc(inv.jobId||'')}"  data-jobno="${esc(inv.jobNo||'')}"  data-cname="${esc(inv.contactName||'')}"  data-invno="${esc(inv.invoiceNo||'')}"  >
         <td style="font-weight:700;font-size:11px;white-space:nowrap">${esc(inv.invoiceNo||'—')}</td>
