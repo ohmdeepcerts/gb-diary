@@ -6162,6 +6162,8 @@ function _injectEmailCSS() {
     .email-spill.active { background:var(--accent); color:#fff; border-color:var(--accent); }
     .email-spill-sm { padding:2px 7px; font-size:10px; border-radius:8px; font-weight:500; }
     .email-body-frame { width:100%; min-height:320px; border:1px solid var(--border); border-radius:6px; background:#fff; margin-top:8px; }
+    .email-addr-link { color:var(--accent); cursor:pointer; text-decoration:underline dotted; }
+    .email-addr-link:hover { text-decoration:underline; }
     .email-tbl-wrap { overflow-x:auto; padding:0 12px; }
     .email-table { width:100%; border-collapse:collapse; font-size:12px; min-width:700px; }
     .email-table th { text-align:left; padding:7px 10px; background:var(--bg3); color:var(--text2); font-size:10px; letter-spacing:.4px; text-transform:uppercase; border-bottom:1px solid var(--border); position:sticky; top:0; z-index:2; }
@@ -6288,7 +6290,7 @@ function _renderEmailLog(body, messages, bounces) {
         if (sf.startsWith('__')) { if (!GROUP_FN[sf]?.(st)) return false; }
         else { if (st !== sf) return false; }
       }
-      if (q && ![(m.to_email||''),(m.from_email||''),(m.subject||'')].join(' ').toLowerCase().includes(q)) return false;
+      if (q.length >= 2 && ![(m.to_email||''),(m.from_email||''),(m.subject||'')].join(' ').toLowerCase().includes(q)) return false;
       return true;
     });
     const rows = filtered.map((m, idx) => {
@@ -6299,7 +6301,7 @@ function _renderEmailLog(body, messages, bounces) {
       const bounceHint = bounce ? `<div style="font-size:10px;color:var(--red);margin-top:2px;white-space:normal;max-width:200px">${esc((bounce.reason||'').slice(0,80))}</div>` : '';
       return `<tr class="email-row" data-idx="${idx}" data-msgid="${esc(m.msg_id||'')}">
         <td style="white-space:nowrap;color:var(--text2);font-size:11px">${esc(dt)}</td>
-        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.to_email||'—')}</td>
+        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" onclick="event.stopPropagation()"><span class="email-addr-link" data-addr="${esc(m.to_email||'')}">${esc(m.to_email||'—')}</span></td>
         <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.subject||'—')}</td>
         <td>${_emailBadge(m.status)}${bounceHint}</td>
         <td style="text-align:center;color:${opens?'#2563eb':'var(--muted);opacity:.5'}">${opens||'—'}</td>
@@ -6318,7 +6320,7 @@ function _renderEmailLog(body, messages, bounces) {
         </tr></thead>
         <tbody>${rows||'<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">No emails match</td></tr>'}</tbody>
       </table>
-      <div style="padding:8px 12px;font-size:11px;color:var(--muted)">${filtered.length} of ${total} emails — click any row to view the email &amp; delivery timeline</div>
+      <div style="padding:8px 12px;font-size:11px;color:var(--muted)">${q.length===1?'Type 1 more character to start searching…':filtered.length+' of '+total+' emails'} — click any row to view the email, click an address to see all their emails</div>
     `;
   };
 
@@ -6357,6 +6359,17 @@ function _renderEmailLog(body, messages, bounces) {
     });
     body.querySelectorAll('.email-spill').forEach(pill => {
       pill.addEventListener('click', () => { _emailStatusFilter = pill.dataset.sf; render(); });
+    });
+    body.querySelectorAll('.email-addr-link').forEach(el => {
+      el.addEventListener('click', () => {
+        const addr = el.dataset.addr;
+        if (!addr) return;
+        _emailSearch = addr;
+        _emailStatusFilter = '';
+        render();
+        // focus search input so user knows what's filtered
+        setTimeout(() => { const s = document.getElementById('email-srch'); if (s) { s.value = addr; s.focus(); s.select(); } }, 0);
+      });
     });
     _wireEmailRows(messages, bounceMap);
   };
