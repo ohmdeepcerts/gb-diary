@@ -5896,24 +5896,33 @@ async function _loadStatement(contactId, contactName) {
   if (contentEl) contentEl.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading statement…</div>';
 
   const _extInv = r => r?.invoices || r?.items || (Array.isArray(r) ? r : []);
+  // API silently drops contactId filter when pageSize >= 150 — cap at 100 and paginate
+  const _fetchByContact = async (extraParams = {}) => {
+    const p1 = await trpcQuery('invoices.list', { contactId, pageSize:100, sortBy:'dueAt', sortDir:'asc', ...extraParams }).catch(() => null);
+    const items = _extInv(p1);
+    if (p1?.hasMore) {
+      const p2 = await trpcQuery('invoices.list', { contactId, pageSize:100, page:2, sortBy:'dueAt', sortDir:'asc', ...extraParams }).catch(() => null);
+      return [...items, ..._extInv(p2)];
+    }
+    return items;
+  };
 
-  // Fetch without 'view' — adding view:'all' alongside contactId breaks the filter on some API versions
-  const [invById, invByIdPaid, payList, totals] = await Promise.all([
-    trpcQuery('invoices.list', { contactId, pageSize:200, sortBy:'dueAt', sortDir:'asc' }).catch(() => null),
-    trpcQuery('invoices.list', { contactId, view:'paid', pageSize:200, sortBy:'dueAt', sortDir:'asc' }).catch(() => null),
+  const [p1, p2, payList, totals] = await Promise.all([
+    _fetchByContact(),
+    _fetchByContact({ view:'paid' }),
     trpcQuery('payments.list', { contactId, pageSize:200 }).catch(() => null),
     trpcQuery('invoices.totals', { contactId }).catch(() => null),
   ]);
 
-  // Merge outstanding + paid, deduplicate by id
+  // Merge and deduplicate by id
   const _seen = new Set();
-  let invoices = [..._extInv(invById), ..._extInv(invByIdPaid)].filter(i => {
+  let invoices = [...p1, ...p2].filter(i => {
     if (_seen.has(i.id)) return false; _seen.add(i.id); return true;
   });
 
-  // If contactId filter returned nothing, fall back to view:'all' with name search
+  // If contactId returned nothing, fall back to name search (pageSize 100 is safe for view:'all')
   if (!invoices.length && contactName) {
-    const invByName = await trpcQuery('invoices.list', { view:'all', query: contactName, pageSize:200, sortBy:'dueAt', sortDir:'asc' }).catch(() => null);
+    const invByName = await trpcQuery('invoices.list', { view:'all', query: contactName, pageSize:100, sortBy:'dueAt', sortDir:'asc' }).catch(() => null);
     invoices = _extInv(invByName);
   }
 
