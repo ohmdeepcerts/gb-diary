@@ -4547,6 +4547,10 @@ let _invContactType = '';
 let _invSortBy      = 'dueAt';
 let _invSortDir     = 'asc';
 let _invAgingChip   = '';
+let _invAmtMin      = '';
+let _invAmtMax      = '';
+let _invDateFrom    = '';
+let _invDateTo      = '';
 let _invTotals      = null;
 let _invItems       = [];
 let _invTotal       = 0;
@@ -4729,6 +4733,8 @@ async function _loadInvoices(resetPage = false) {
       sortDir:     _invSortDir,
       ..._invQuery       ? { query:       _invQuery       } : {},
       ..._invContactType ? { contactType: _invContactType } : {},
+      ..._invDateFrom    ? { dueDateFrom: _invDateFrom    } : {},
+      ..._invDateTo      ? { dueDateTo:   _invDateTo      } : {},
     }).catch(() => null),
   ]);
 
@@ -4795,13 +4801,22 @@ function _buildInvTopHTML() {
   const ctSel   = ctypes.map(v=>`<option value="${v}"${_invContactType===v?' selected':''}>${ctLabel[v]}</option>`).join('');
 
   const sorts = [
-    { val:'dueAt|asc',   label:'Due ↑'      },
-    { val:'dueAt|desc',  label:'Due ↓'      },
-    { val:'total|desc',  label:'Amount ↓'   },
-    { val:'total|asc',   label:'Amount ↑'   },
+    { val:'dueAt|asc',       label:'Due ↑'         },
+    { val:'dueAt|desc',      label:'Due ↓'         },
+    { val:'total|desc',      label:'Amount ↓'      },
+    { val:'total|asc',       label:'Amount ↑'      },
+    { val:'invoiceNo|desc',  label:'Invoice # ↓'   },
+    { val:'invoiceNo|asc',   label:'Invoice # ↑'   },
+    { val:'issuedAt|desc',   label:'Issued (latest)'},
+    { val:'contactName|asc', label:'Contact A–Z'   },
   ];
   const curSort  = `${_invSortBy}|${_invSortDir}`;
   const sortSel  = sorts.map(s=>`<option value="${s.val}"${curSort===s.val?' selected':''}>${s.label}</option>`).join('');
+
+  const activeFilters = [_invDateFrom, _invDateTo, _invAmtMin, _invAmtMax].filter(Boolean).length;
+  const clearFiltersBtn = activeFilters
+    ? `<button id="inv-clear-filters" style="padding:5px 10px;border-radius:6px;border:1px solid var(--red);color:var(--red);background:none;font-size:11px;font-weight:600;cursor:pointer">✕ Clear (${activeFilters})</button>`
+    : '';
 
   return `
     <div class="inv-cards">
@@ -4817,6 +4832,10 @@ function _buildInvTopHTML() {
         <div class="inv-card-val">${t.drafts ?? '—'}</div>
         <div class="inv-card-lbl">Drafts</div>
       </div>
+      <div class="inv-card">
+        <div class="inv-card-val" id="inv-card-total">${_invTotal || '—'}</div>
+        <div class="inv-card-lbl">${_invView === 'paid' ? 'Paid' : _invView === 'all' ? 'Total' : 'Showing'}</div>
+      </div>
     </div>
     <div class="inv-tabs">${tabsHTML}</div>
     ${chipsHTML}
@@ -4824,12 +4843,34 @@ function _buildInvTopHTML() {
       <input type="text" id="inv-search" placeholder="Search invoice, contact…" value="${esc(_invQuery)}">
       <select id="inv-ct">${ctSel}</select>
       <select id="inv-sort">${sortSel}</select>
+      <button id="inv-csv-btn" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">⬇ CSV</button>
+    </div>
+    <div class="inv-filter-bar" style="padding-top:0">
+      <input type="date" id="inv-date-from" value="${_invDateFrom}" title="Due from" style="flex:none">
+      <span style="font-size:11px;color:var(--muted);padding:0 2px">→</span>
+      <input type="date" id="inv-date-to" value="${_invDateTo}" title="Due to" style="flex:none">
+      <input type="number" id="inv-amt-min" placeholder="Min £" value="${_invAmtMin}" style="flex:1;min-width:70px;max-width:90px">
+      <input type="number" id="inv-amt-max" placeholder="Max £" value="${_invAmtMax}" style="flex:1;min-width:70px;max-width:90px">
+      ${clearFiltersBtn}
     </div>
   `;
 }
 
 function _buildInvBodyHTML() {
-  const items = _invItems.filter(_invAgingFilter);
+  const amtMin = _invAmtMin ? parseFloat(_invAmtMin) : null;
+  const amtMax = _invAmtMax ? parseFloat(_invAmtMax) : null;
+  const dfrom  = _invDateFrom ? new Date(_invDateFrom) : null;
+  const dto    = _invDateTo   ? new Date(_invDateTo + 'T23:59:59') : null;
+  const items = _invItems.filter(inv => {
+    if (!_invAgingFilter(inv)) return false;
+    const bal = inv.balance ?? ((inv.total||0) - (inv.paidAmount||0));
+    const amt = bal <= 0 ? (inv.total||0) : bal;
+    if (amtMin !== null && amt < amtMin) return false;
+    if (amtMax !== null && amt > amtMax) return false;
+    if (dfrom && inv.dueAt && new Date(inv.dueAt) < dfrom) return false;
+    if (dto   && inv.dueAt && new Date(inv.dueAt) > dto)   return false;
+    return true;
+  });
   const totalPages = Math.max(1, Math.ceil(_invTotal / _invPageSize));
 
   if (!items.length) {
@@ -4847,7 +4888,14 @@ function _buildInvBodyHTML() {
     const detailHTML = `
       <div class="inv-detail-grid">
         <div class="inv-detail-item"><span>Site</span>${esc(inv.siteAddress||'—')}</div>
-        <div class="inv-detail-item"><span>Contact</span>${esc(inv.contactName||'—')} <span style="font-size:10px;color:var(--muted)">(${esc(inv.contactType||'')})</span></div>
+        <div class="inv-detail-item"><span>Contact</span>
+          ${esc(inv.contactName||'—')} <span style="font-size:10px;color:var(--muted)">(${esc(inv.contactType||'')})</span>
+          <div style="margin-top:3px;display:flex;gap:8px;flex-wrap:wrap">
+            ${inv.contactPhone?`<a href="tel:${esc(inv.contactPhone)}" onclick="event.stopPropagation()" style="font-size:10px;color:var(--accent);text-decoration:none">📞 ${esc(inv.contactPhone)}</a>`:''}
+            ${inv.contactPhone?`<a href="https://wa.me/44${inv.contactPhone.replace(/^0/,'').replace(/\s/g,'')}" target="_blank" onclick="event.stopPropagation()" style="font-size:10px;color:#25d366;text-decoration:none">💬 WhatsApp</a>`:''}
+            ${inv.contactEmail?`<a href="mailto:${esc(inv.contactEmail)}" onclick="event.stopPropagation()" style="font-size:10px;color:var(--accent);text-decoration:none">✉ ${esc(inv.contactEmail)}</a>`:''}
+          </div>
+        </div>
         <div class="inv-detail-item"><span>Issued</span>${inv.issuedAt?new Date(inv.issuedAt).toLocaleDateString('en-GB'):'—'}</div>
         <div class="inv-detail-item"><span>Subtotal</span>${_invFmt(inv.subtotal)}</div>
         <div class="inv-detail-item"><span>VAT (${inv.vatRate||0}%)</span>${_invFmt(inv.vatAmount)}</div>
@@ -4914,7 +4962,10 @@ function _buildInvBodyHTML() {
       <tr class="inv-row st-${status}" data-idx="${idx}" data-jobid="${esc(inv.jobId||'')}"  data-jobno="${esc(inv.jobNo||'')}"  data-cname="${esc(inv.contactName||'')}"  data-invno="${esc(inv.invoiceNo||'')}"  >
         <td style="font-weight:700;font-size:11px;white-space:nowrap">${esc(inv.invoiceNo||'—')}</td>
         <td style="font-size:11px;white-space:nowrap">${esc(inv.jobNo||'—')}</td>
-        <td style="font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(inv.siteAddress||'—')}</td>
+        <td style="font-size:11px;max-width:160px">
+          <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(inv.contactName||'—')}</div>
+          ${inv.contactPhone?`<a href="tel:${esc(inv.contactPhone)}" onclick="event.stopPropagation()" style="font-size:10px;color:var(--accent);text-decoration:none;white-space:nowrap">${esc(inv.contactPhone)}</a>`:''}
+        </td>
         <td data-desc-id="${inv.id}" style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">${descVal}</td>
         <td style="white-space:nowrap">${inv.dueAt?new Date(inv.dueAt).toLocaleDateString('en-GB'):'—'}${aging.pill?`<span class="inv-age ${aging.pillCls}" style="margin-left:4px">${aging.pill}</span>`:''}
         </td>
@@ -4941,7 +4992,7 @@ function _buildInvBodyHTML() {
         <thead><tr>
           <th>Invoice #</th>
           <th>Job #</th>
-          <th>Address</th>
+          <th>Contact</th>
           <th>Description</th>
           <th class="sortable" data-sort="dueAt">Due${_invSortBy==='dueAt'?(_invSortDir==='asc'?' ↑':' ↓'):''}</th>
           <th style="text-align:right">Balance</th>
@@ -5165,12 +5216,96 @@ function _wireInvControls() {
     });
   });
 
+  // Date range filters
+  let _invDateTimer;
+  const dateFromEl = document.getElementById('inv-date-from');
+  const dateToEl   = document.getElementById('inv-date-to');
+  if (dateFromEl) dateFromEl.addEventListener('change', () => {
+    _invDateFrom = dateFromEl.value;
+    clearTimeout(_invDateTimer);
+    _invDateTimer = setTimeout(() => _loadInvoices(true), 300);
+  });
+  if (dateToEl) dateToEl.addEventListener('change', () => {
+    _invDateTo = dateToEl.value;
+    clearTimeout(_invDateTimer);
+    _invDateTimer = setTimeout(() => _loadInvoices(true), 300);
+  });
+
+  // Amount range filters (client-side)
+  let _invAmtTimer;
+  const amtMinEl = document.getElementById('inv-amt-min');
+  const amtMaxEl = document.getElementById('inv-amt-max');
+  if (amtMinEl) amtMinEl.addEventListener('input', () => {
+    _invAmtMin = amtMinEl.value;
+    clearTimeout(_invAmtTimer);
+    _invAmtTimer = setTimeout(() => _renderInvoicePage(), 350);
+  });
+  if (amtMaxEl) amtMaxEl.addEventListener('input', () => {
+    _invAmtMax = amtMaxEl.value;
+    clearTimeout(_invAmtTimer);
+    _invAmtTimer = setTimeout(() => _renderInvoicePage(), 350);
+  });
+
+  // Clear all extra filters
+  document.getElementById('inv-clear-filters')?.addEventListener('click', async () => {
+    _invDateFrom = ''; _invDateTo = ''; _invAmtMin = ''; _invAmtMax = '';
+    await _loadInvoices(true);
+  });
+
+  // CSV export
+  document.getElementById('inv-csv-btn')?.addEventListener('click', () => _invExportCSV());
+
   document.getElementById('inv-prev-page')?.addEventListener('click', async () => {
     if (_invPage > 1) { _invPage--; await _loadInvoices(false); }
   });
   document.getElementById('inv-next-page')?.addEventListener('click', async () => {
     _invPage++; await _loadInvoices(false);
   });
+}
+
+function _invExportCSV() {
+  const amtMin = _invAmtMin ? parseFloat(_invAmtMin) : null;
+  const amtMax = _invAmtMax ? parseFloat(_invAmtMax) : null;
+  const dfrom  = _invDateFrom ? new Date(_invDateFrom) : null;
+  const dto    = _invDateTo   ? new Date(_invDateTo + 'T23:59:59') : null;
+
+  const rows = _invItems.filter(inv => {
+    if (!_invAgingFilter(inv)) return false;
+    const bal = inv.balance ?? ((inv.total||0) - (inv.paidAmount||0));
+    const amt = bal <= 0 ? (inv.total||0) : bal;
+    if (amtMin !== null && amt < amtMin) return false;
+    if (amtMax !== null && amt > amtMax) return false;
+    if (dfrom && inv.dueAt && new Date(inv.dueAt) < dfrom) return false;
+    if (dto   && inv.dueAt && new Date(inv.dueAt) > dto)   return false;
+    return true;
+  });
+
+  const headers = ['Invoice #','Job #','Contact','Phone','Email','Contact Type','Site Address','Description','Issued','Due Date','Total','Paid','Balance','Status'];
+  const csvRows = [headers, ...rows.map(inv => {
+    const bal  = inv.balance ?? ((inv.total||0) - (inv.paidAmount||0));
+    const desc = _invDescCache[inv.id]?.desc || inv.notes || '';
+    const status = inv.effectiveStatus || (inv.settled ? 'paid' : 'current');
+    const q = v => `"${String(v||'').replace(/"/g,'""')}"`;
+    return [
+      q(inv.invoiceNo), q(inv.jobNo), q(inv.contactName), q(inv.contactPhone), q(inv.contactEmail),
+      q(inv.contactType), q(inv.siteAddress), q(desc),
+      inv.issuedAt ? new Date(inv.issuedAt).toLocaleDateString('en-GB') : '',
+      inv.dueAt    ? new Date(inv.dueAt).toLocaleDateString('en-GB')    : '',
+      (inv.total||0).toFixed(2), (inv.paidAmount||0).toFixed(2),
+      (bal <= 0 ? (inv.total||0) : bal).toFixed(2), q(status),
+    ];
+  })];
+
+  const csv  = csvRows.map(r => r.join(',')).join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `invoices-${_invView}-${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
 // ── RECORD PAYMENT MODAL ───────────────────────────────────────────────────────
