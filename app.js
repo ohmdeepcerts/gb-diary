@@ -4912,6 +4912,7 @@ let _invItems       = [];
 let _invTotal       = 0;
 let _stmtContactId   = null;
 let _stmtContactName = '';
+let _stmtContactType = '';
 let _invCSSInjected  = false;
 let _invDescCache    = {};
 
@@ -5846,6 +5847,7 @@ function _renderStatementsShell() {
       <input id="stmt-contact-inp" class="inp" type="text" placeholder="Search contact (landlord, agency, agent)…" autocomplete="off">
       <div id="stmt-contact-drop" class="stmt-contact-drop" style="display:none"></div>
     </div>
+    <div id="stmt-agency-bar" style="display:none;padding:4px 12px 6px;border-bottom:1px solid var(--border)"></div>
     <div id="stmt-content" style="padding:0 12px">
       <div style="text-align:center;padding:60px 20px;color:var(--muted);font-size:13px">Search for a contact above to load their statement</div>
     </div>
@@ -5868,7 +5870,7 @@ function _renderStatementsShell() {
         return;
       }
       drop.innerHTML = items.map(c => `
-        <div class="stmt-cd-item" data-id="${esc(c.id)}" data-name="${esc(c.name||c.contactName||'')}">
+        <div class="stmt-cd-item" data-id="${esc(c.id)}" data-name="${esc(c.name||c.contactName||'')}" data-type="${esc(c.type||'')}">
           ${esc(c.name||c.contactName||'')}
           <div class="stmt-cd-sub">${esc(c.type||'')}${c.company?` · ${esc(c.company)}`:''}</div>
         </div>
@@ -5883,51 +5885,115 @@ function _renderStatementsShell() {
     e.preventDefault();
     _stmtContactId   = item.dataset.id;
     _stmtContactName = item.dataset.name;
+    _stmtContactType = item.dataset.type || '';
     inp.value = _stmtContactName;
     drop.style.display = 'none';
-    await _loadStatement(_stmtContactId, _stmtContactName);
+    if (_stmtContactType === 'agency') {
+      await _loadStmtAgency(_stmtContactId, _stmtContactName);
+    } else {
+      const bar = document.getElementById('stmt-agency-bar');
+      if (bar) bar.style.display = 'none';
+      await _loadStatement(_stmtContactId, _stmtContactName);
+    }
   });
 
   inp?.addEventListener('blur', () => { setTimeout(() => { drop.style.display = 'none'; }, 150); });
 }
 
-async function _loadStatement(contactId, contactName) {
+async function _loadStmtAgency(agencyId, agencyName) {
   const contentEl = document.getElementById('stmt-content');
+  const agencyBar = document.getElementById('stmt-agency-bar');
+  if (contentEl) contentEl.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading agents…</div>';
+  if (agencyBar) { agencyBar.style.display = ''; agencyBar.innerHTML = ''; }
+
+  // Search for all contacts associated with this agency name
+  const agentRes = await trpcQuery('directory.contacts.list', { query: agencyName, pageSize: 50 }).catch(() => null);
+  const allContacts = agentRes?.items || agentRes?.contacts || [];
+  const agents = allContacts.filter(c => c.id !== agencyId && c.type !== 'agency');
+
+  const allIds = [agencyId, ...agents.map(a => a.id)];
+  let activeIds = [...allIds];
+
+  const _pillStyle = (isActive) =>
+    `cursor:pointer;padding:4px 12px;border-radius:14px;font-size:11px;font-weight:600;` +
+    `border:1px solid ${isActive ? 'var(--accent)' : 'var(--border)'};` +
+    `background:${isActive ? 'var(--accent)' : 'var(--surface)'};` +
+    `color:${isActive ? '#fff' : 'var(--text2)'};white-space:nowrap`;
+
+  const renderBar = () => {
+    if (!agencyBar) return;
+    const activeSet = new Set(activeIds);
+    const isAll    = allIds.length === activeIds.length && allIds.every(id => activeSet.has(id));
+    const isAgency = activeIds.length === 1 && activeIds[0] === agencyId;
+    agencyBar.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 0">
+      <span style="font-size:11px;color:var(--text2);font-weight:600;flex-shrink:0">Filter:</span>
+      <button class="stmt-apill" data-ids="${esc(allIds.join(','))}" style="${_pillStyle(isAll)}">All (${allIds.length})</button>
+      <button class="stmt-apill" data-ids="${esc(agencyId)}" style="${_pillStyle(isAgency)}">Agency only</button>
+      ${agents.map(a => {
+        const isMe = activeIds.length === 1 && activeIds[0] === a.id;
+        return `<button class="stmt-apill" data-ids="${esc(a.id)}" style="${_pillStyle(isMe)}">${esc(a.name||a.contactName||'')}</button>`;
+      }).join('')}
+    </div>`;
+  };
+
+  renderBar();
+
+  agencyBar.onclick = async (e) => {
+    const pill = e.target.closest('.stmt-apill');
+    if (!pill) return;
+    activeIds = pill.dataset.ids.split(',').filter(Boolean);
+    renderBar();
+    const isAll    = activeIds.length === allIds.length;
+    const isAgency = activeIds.length === 1 && activeIds[0] === agencyId;
+    const agentName = !isAll && !isAgency
+      ? (agents.find(a => a.id === activeIds[0])?.name || agents.find(a => a.id === activeIds[0])?.contactName || '')
+      : '';
+    const displayName = isAll ? agencyName
+      : isAgency ? `${agencyName} (Agency)`
+      : `${agencyName} · ${agentName}`;
+    await _loadStatement(activeIds, displayName);
+  };
+
+  await _loadStatement(allIds, agencyName);
+}
+
+async function _loadStatement(contactIdOrIds, contactName) {
+  const contactIds = Array.isArray(contactIdOrIds) ? contactIdOrIds : [contactIdOrIds];
+  const primaryId  = contactIds[0];
+  const contentEl  = document.getElementById('stmt-content');
   if (contentEl) contentEl.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading statement…</div>';
 
   const _extInv = r => r?.invoices || r?.items || (Array.isArray(r) ? r : []);
-  // API silently drops contactId filter when pageSize >= 150 — cap at 100 and paginate
-  const _fetchByContact = async (extraParams = {}) => {
-    const p1 = await trpcQuery('invoices.list', { contactId, pageSize:100, sortBy:'dueAt', sortDir:'asc', ...extraParams }).catch(() => null);
+  // API silently drops contactId filter when pageSize >= 150 — cap at 100
+  const _fetchById = async (cId, extraParams = {}) => {
+    const p1 = await trpcQuery('invoices.list', { contactId: cId, pageSize:100, sortBy:'dueAt', sortDir:'asc', ...extraParams }).catch(() => null);
     const items = _extInv(p1);
     if (p1?.hasMore) {
-      const p2 = await trpcQuery('invoices.list', { contactId, pageSize:100, page:2, sortBy:'dueAt', sortDir:'asc', ...extraParams }).catch(() => null);
+      const p2 = await trpcQuery('invoices.list', { contactId: cId, pageSize:100, page:2, sortBy:'dueAt', sortDir:'asc', ...extraParams }).catch(() => null);
       return [...items, ..._extInv(p2)];
     }
     return items;
   };
 
-  const [p1, p2, payList, totals] = await Promise.all([
-    _fetchByContact(),
-    _fetchByContact({ view:'paid' }),
-    trpcQuery('payments.list', { contactId, pageSize:200 }).catch(() => null),
-    trpcQuery('invoices.totals', { contactId }).catch(() => null),
+  const [openBatch, paidBatch, payBatch, totals] = await Promise.all([
+    Promise.all(contactIds.map(cId => _fetchById(cId))),
+    Promise.all(contactIds.map(cId => _fetchById(cId, { view:'paid' }))),
+    Promise.all(contactIds.map(cId => trpcQuery('payments.list', { contactId: cId, pageSize:200 }).catch(() => null))),
+    trpcQuery('invoices.totals', { contactId: primaryId }).catch(() => null),
   ]);
 
-  // Merge and deduplicate by id
   const _seen = new Set();
-  let invoices = [...p1, ...p2].filter(i => {
+  let invoices = [...openBatch.flat(), ...paidBatch.flat()].filter(i => {
     if (_seen.has(i.id)) return false; _seen.add(i.id); return true;
   });
 
-  // If contactId returned nothing, fall back to name search (pageSize 100 is safe for view:'all')
   if (!invoices.length && contactName) {
     const invByName = await trpcQuery('invoices.list', { view:'all', query: contactName, pageSize:100, sortBy:'dueAt', sortDir:'asc' }).catch(() => null);
     invoices = _extInv(invByName);
   }
 
-  const payments = payList?.items || payList?.payments || [];
-  _renderStatement(contactId, contactName, invoices, payments, totals);
+  const payments = payBatch.flatMap(r => r?.items || r?.payments || []);
+  _renderStatement(primaryId, contactName, invoices, payments, totals);
 }
 
 function _renderStatement(contactId, contactName, invoices, payments, totals) {
@@ -5947,7 +6013,7 @@ function _renderStatement(contactId, contactName, invoices, payments, totals) {
 
   const timeline = [];
   invoices.forEach(inv => {
-    timeline.push({ type:'invoice', date: inv.issuedAt||inv.dueAt, ref: inv.invoiceNo, desc:`Invoice ${inv.invoiceNo||''}`, site: inv.siteAddress, amount: inv.total, status: inv.effectiveStatus });
+    timeline.push({ type:'invoice', date: inv.issuedAt||inv.dueAt, ref: inv.invoiceNo, jobNo: inv.jobNo, desc: inv.notes || '', site: inv.siteAddress, amount: inv.total, status: inv.effectiveStatus });
   });
   payments.forEach(pay => {
     timeline.push({ type:'payment', date: pay.receivedAt, ref: pay.invoiceNo, desc:`Payment — ${pay.method||''}`, site:'', amount: pay.amount });
@@ -5968,7 +6034,8 @@ function _renderStatement(contactId, contactName, invoices, payments, totals) {
       <tr class="stmt-row ${row.type==='invoice'?'inv-row-type':'pay-row-type'}">
         <td>${dateStr}</td>
         <td><span class="stmt-type-dot ${dotCls}"></span>${esc(row.ref||'')}</td>
-        <td>${esc(row.desc)}${statusBit}</td>
+        <td style="font-size:11px;color:var(--accent)">${row.jobNo ? esc(row.jobNo) : '—'}</td>
+        <td>${row.desc ? esc(row.desc) : (row.type==='payment' ? esc(row.ref ? `Payment ref ${row.ref}` : 'Payment') : '<span style="color:var(--muted)">—</span>')}${statusBit}</td>
         <td style="font-size:11px;color:var(--muted);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(row.site||'')}</td>
         <td style="text-align:right">${invAmt}</td>
         <td style="text-align:right">${payAmt}</td>
@@ -6005,12 +6072,12 @@ function _renderStatement(contactId, contactName, invoices, payments, totals) {
     <div style="overflow-x:auto;margin-top:4px">
       <table class="stmt-timeline">
         <thead><tr>
-          <th>Date</th><th>Reference</th><th>Description</th><th>Site</th>
+          <th>Date</th><th>Invoice #</th><th>Job #</th><th>Description / Notes</th><th>Site</th>
           <th style="text-align:right">Invoiced</th>
           <th style="text-align:right">Paid</th>
           <th style="text-align:right">Balance</th>
         </tr></thead>
-        <tbody>${timelineRows||'<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--muted)">No transactions found</td></tr>'}</tbody>
+        <tbody>${timelineRows||'<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--muted)">No transactions found</td></tr>'}</tbody>
       </table>
     </div>
   `;
