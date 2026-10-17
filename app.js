@@ -3738,11 +3738,11 @@ async function _searchContacts(q, inp, drop) {
         if (nmEl) nmEl.textContent = name;
         if (sbEl) sbEl.textContent = sub || (c.type || '');
         if (selEl) selEl.style.display = 'flex';
-        // Fill address fields if contact has address
+        // Fill address fields if contact has address — only if field is still empty
         const aEl = document.getElementById('aj-addr');
         const pEl = document.getElementById('aj-pc');
-        if (aEl && c.address)  aEl.value = c.address;
-        if (pEl && c.postcode) pEl.value = c.postcode;
+        if (aEl && c.address  && !aEl.value.trim()) aEl.value = c.address;
+        if (pEl && c.postcode && !pEl.value.trim()) pEl.value = c.postcode;
         // Auto-fill new client form with real contact data
         const fName  = document.getElementById('aj-new-name');
         const fPhone = document.getElementById('aj-new-phone');
