@@ -5978,7 +5978,7 @@ function _renderStatement(contactId, contactName, invoices, payments, totals) {
 
   const agePillsHTML = Object.entries(ageBuckets)
     .filter(([,v]) => v > 0)
-    .map(([k,v]) => `<span class="inv-chip active" style="cursor:default">${k}d: ${_invFmt(v)}</span>`)
+    .map(([k,v]) => `<span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.12);color:#b91c1c;cursor:default">${k}d: ${_invFmt(v)}</span>`)
     .join('');
 
   contentEl.innerHTML = `
