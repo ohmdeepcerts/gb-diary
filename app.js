@@ -5398,6 +5398,7 @@ function _buildInvBodyHTML() {
     <div class="inv-bulk-bar" id="inv-bulk-bar">
       <span id="inv-bulk-count">0 selected</span>
       <button class="inv-bulk-dl" id="inv-bulk-dl">⬇ Download PDFs</button>
+      <button class="inv-bulk-dl" id="inv-bulk-merge">⬇ Merged PDF</button>
       <button class="inv-bulk-clear" id="inv-bulk-clear">✕ Clear</button>
     </div>
     <div style="overflow-x:auto">
@@ -5542,6 +5543,53 @@ function _wireInvControls() {
       rowCbs.forEach(cb => cb.checked = false);
       if (selAll) selAll.checked = false;
       _updateBulkBar();
+    });
+  }
+
+  const bulkMergeBtn = document.getElementById('inv-bulk-merge');
+  if (bulkMergeBtn) {
+    bulkMergeBtn.addEventListener('click', async () => {
+      const checked = [...document.querySelectorAll('.inv-row-cb:checked')];
+      if (!checked.length) return;
+      if (typeof PDFLib === 'undefined') {
+        alert('PDF merge library not loaded. Please refresh the page and try again.');
+        return;
+      }
+      const orig = bulkMergeBtn.textContent;
+      bulkMergeBtn.disabled = true;
+      try {
+        const { PDFDocument } = PDFLib;
+        const merged = await PDFDocument.create();
+        let done = 0;
+        for (const cb of checked) {
+          const invId = cb.dataset.invid;
+          const row   = cb.closest('.inv-row');
+          const invNo = row?.dataset.invno || invId;
+          bulkMergeBtn.textContent = `Merging ${++done}/${checked.length}…`;
+          try {
+            const { fetchUrl } = await _invGetPdfUrl(invId);
+            const resp = await fetch(fetchUrl, { credentials: 'include' });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const bytes = await resp.arrayBuffer();
+            const src = await PDFDocument.load(bytes);
+            const pages = await merged.copyPagesFrom(src, src.getPageIndices());
+            pages.forEach(p => merged.addPage(p));
+          } catch(err) {
+            console.warn('Skipping PDF for', invNo, err);
+          }
+        }
+        bulkMergeBtn.textContent = 'Saving…';
+        const pdfBytes = await merged.save();
+        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'invoices-merged.pdf';
+        a.click();
+      } catch(err) {
+        alert('Failed to create merged PDF: ' + (err?.message || String(err)));
+      }
+      bulkMergeBtn.textContent = orig;
+      bulkMergeBtn.disabled = false;
     });
   }
 
