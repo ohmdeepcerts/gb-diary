@@ -4743,37 +4743,13 @@ function _injectAllTimeCSS() {
   const s = document.createElement('style');
   s.textContent = `
     .at-wrap { flex:1; overflow-y:auto; min-width:0; height:100%; }
-    .at-hdr { padding:8px 14px 6px; font-size:11px; color:var(--muted); border-bottom:2px solid var(--border); display:flex; align-items:center; gap:6px; }
-    .at-banner {
+    .at-date-banner-row > td {
       position:sticky; top:0; z-index:10;
       background:#F59E0B; color:#1a1a1a;
       font-weight:700; font-size:12px; letter-spacing:.2px;
-      padding:5px 14px; display:flex; align-items:center; gap:8px;
+      padding:5px 14px;
     }
-    .at-banner-cnt { font-size:10px; font-weight:500; opacity:.65; }
-    .at-row {
-      display:flex; align-items:center; gap:10px;
-      padding:7px 14px; border-bottom:1px solid var(--border);
-      cursor:pointer; font-size:12px;
-    }
-    .at-row:hover { background:var(--bg2); }
-    .at-dot  { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
-    .at-title{ font-weight:600; flex:0 0 180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .at-addr { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text2); }
-    .at-cust { flex:0 0 140px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text2); }
-    .at-eng  { flex:0 0 100px; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .at-time { flex:0 0 52px; font-size:11px; color:var(--muted); }
-    .at-badge{ font-size:10px; padding:2px 7px; border-radius:10px; border:1px solid; white-space:nowrap; flex-shrink:0; }
-    .at-chips { display:flex; flex-wrap:wrap; gap:5px; padding:7px 14px; border-bottom:1px solid var(--border); background:var(--surface); }
-    .at-chip {
-      padding:3px 9px; border-radius:12px; border:1px solid var(--border);
-      background:var(--bg2); color:var(--text2); font-size:11px; cursor:pointer;
-      white-space:nowrap; transition:background .15s;
-    }
-    .at-chip:hover { background:var(--border); }
-    .at-chip-active { background:var(--accent,#3b82f6); color:#fff; border-color:var(--accent,#3b82f6); }
-    .at-chip-hidden { opacity:.7; }
-    .at-chip-hidden::after { content:' ⚠'; font-size:10px; }
+    .at-date-banner-cnt { font-size:10px; font-weight:500; opacity:.65; margin-left:6px; }
   `;
   document.head.appendChild(s);
 }
@@ -4781,6 +4757,7 @@ function _injectAllTimeCSS() {
 async function loadAllTimeView() {
   _inAllTimeView = true;
   _injectAllTimeCSS();
+  applyDayViewStyles();
   const body = document.getElementById('day-body');
   body.style.display = 'block';
   body.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading all jobs…</div>';
@@ -4804,50 +4781,31 @@ async function loadAllTimeView() {
   });
   if (!allJobs.length) { body.innerHTML = '<div class="loading-row">No jobs found</div>'; return; }
 
-  // Status counts
-  const statusCounts = {};
-  allJobs.forEach(job => { const st = jobStatus(job); statusCounts[st] = (statusCounts[st]||0)+1; });
-
   const PORTAL_COUNTED = new Set(['pending','in_progress','engineer_completed','completed','invoiced','paid','waiting_certificate','quotation','project','cannot_access','in_review']);
   const portalCount = allJobs.filter(j => PORTAL_COUNTED.has(jobStatus(j))).length;
   const hiddenCount = allJobs.length - portalCount;
 
-  // ── Replace filter bar with All Time controls (same look as day mode) ─────────
+  // ── Replace filter bar (search + counts, same CSS classes as day mode) ────────
+  daySearch = ''; dayEngFilter = ''; dayStatusFilter = '';
   const filterBar = document.getElementById('day-filter-bar');
   if (filterBar) {
     filterBar.innerHTML = `
       <div class="dfb-search">
-        <input type="text" id="at-search" class="dfb-inp" placeholder="Search title, address, client, engineer…">
+        <input type="text" id="dfb-q" class="dfb-inp" placeholder="Search address, client, ref, description, phone…">
       </div>
       <span style="font-size:11px;color:var(--text2);white-space:nowrap;flex-shrink:0">
         <strong>${allJobs.length}</strong> total &nbsp;·&nbsp;
         <strong style="color:#16a34a">${portalCount}</strong> portal
         ${hiddenCount ? `<span style="color:#ef4444;margin-left:4px">+${hiddenCount} not counted ⚠</span>` : ''}
       </span>
-      <span id="at-visible-count" style="margin-left:auto;font-size:11px;color:var(--muted);white-space:nowrap"></span>`;
+      <span class="dfb-count" id="dfb-count"></span>`;
+    document.getElementById('dfb-q').addEventListener('input', e => { daySearch = e.target.value; applyDayFilter(); });
   }
 
-  // ── Replace status tab strip with All Time status buttons (same .dst classes) ─
-  const tabStrip = document.getElementById('day-status-tabs');
-  if (tabStrip) {
-    tabStrip.innerHTML = '';
-    const makeTab = (key, label, cnt, color, isPortal) => {
-      const btn = document.createElement('button');
-      btn.className = 'dst' + (key === '' ? ' dst-active' : '');
-      btn.dataset.st = key;
-      if (color) { btn.style.setProperty('--dst-color', color); }
-      const dot = color ? `<i style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${color};margin-right:3px;flex-shrink:0;vertical-align:middle"></i>` : '';
-      const warn = !isPortal && key !== '' ? ' ⚠' : '';
-      btn.innerHTML = `${dot}${esc(label)}<span class="dst-badge">${cnt}</span>${warn}`;
-      return btn;
-    };
-    tabStrip.appendChild(makeTab('', 'All', allJobs.length, null, true));
-    Object.entries(statusCounts).sort((a,b) => b[1]-a[1]).forEach(([st, cnt]) => {
-      tabStrip.appendChild(makeTab(st, STATUS_LABEL[st]||st, cnt, STATUS_COLORS[st]||'#888', PORTAL_COUNTED.has(st)));
-    });
-  }
+  // ── Status tabs — identical to day view (uses same IDs, same applyDayFilter) ──
+  renderStatusTabs();
 
-  // ── Group jobs by date — newest first ─────────────────────────────────────────
+  // ── Group jobs by date — newest first ────────────────────────────────────────
   const byDate = new Map();
   allJobs.forEach(job => {
     const date = (job.date || job.scheduledDate || job.scheduled_date || job.visitPlan?.date || '').slice(0, 10);
@@ -4858,94 +4816,81 @@ async function loadAllTimeView() {
   const sortedDates = [...byDate.keys()]
     .sort((a, b) => b === 'unscheduled' ? -1 : a === 'unscheduled' ? 1 : b.localeCompare(a));
 
-  // ── Build scrollable content (banners + rows only, no inner header/chips) ─────
-  const wrap = document.createElement('div');
-  wrap.className = 'at-wrap';
-  let activeFilter = '';
-  let activeSearch = '';
-  const allRows    = [];
-  const allBanners = [];
+  // ── Build table — identical structure to day view ─────────────────────────────
+  _dayRowMeta = [];
+  const table = document.createElement('table');
+  table.className = 'day-table';
+  table.style.minWidth = '1270px';
+
+  const thead = document.createElement('thead');
+  thead.innerHTML = `<tr>
+    <th style="width:130px">Engineer</th>
+    <th style="width:120px">Job / Type</th>
+    <th style="width:220px">Address</th>
+    <th>Description</th>
+    <th style="width:80px">Access</th>
+    <th style="width:100px">Time</th>
+    <th style="width:74px;text-align:right">Amount</th>
+    <th style="width:110px">Client</th>
+    <th style="width:130px">Phone</th>
+    <th style="width:110px">Status</th>
+    <th style="width:96px"></th>
+  </tr>`;
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
 
   sortedDates.forEach(dateKey => {
     const jobs = byDate.get(dateKey);
-    const banner = document.createElement('div');
-    banner.className = 'at-banner';
-    banner.dataset.dateKey = dateKey;
+
+    // Sticky date banner row (acts as gtr for applyDayFilter group-hide logic)
+    const bannerTr = document.createElement('tr');
+    bannerTr.className = 'at-date-banner-row';
+    const bannerTd = document.createElement('td');
+    bannerTd.colSpan = 11;
     if (dateKey === 'unscheduled') {
-      banner.innerHTML = `Unscheduled <span class="at-banner-cnt at-banner-vis">${jobs.length}</span>`;
+      bannerTd.innerHTML = `Unscheduled <span class="at-date-banner-cnt">${jobs.length}</span>`;
     } else {
       const d = new Date(dateKey + 'T00:00:00');
       const dateStr = d.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
-      banner.innerHTML = `${esc(dateStr)}&nbsp;<span class="at-banner-cnt at-banner-vis">${jobs.length}</span>`;
+      bannerTd.innerHTML = `${esc(dateStr)}&nbsp;<span class="at-date-banner-cnt">${jobs.length}</span>`;
     }
-    wrap.appendChild(banner);
-    allBanners.push(banner);
+    bannerTr.appendChild(bannerTd);
+    tbody.appendChild(bannerTr);
 
     jobs.forEach(job => {
-      const row   = document.createElement('div');
-      row.className = 'at-row';
-      const st    = jobStatus(job);
-      const color = STATUS_COLORS[st] || '#888';
-      const label = STATUS_LABEL[st]  || st;
-      const addr  = jobAddr(job);
-      const cust  = jobCustomer(job);
-      const eng   = (job.engineer || job.assignedEngineer)?.name || 'Unassigned';
-      const title = jobTitle(job) || '—';
-      const time  = jobTime(job)  || '';
-      row.dataset.st      = st;
-      row.dataset.dateKey = dateKey;
-      row.dataset.search  = [title, addr, cust, eng, label, job.job_no||''].join(' ').toLowerCase();
-      row.innerHTML = `
-        <span class="at-dot" style="background:${color}"></span>
-        <span class="at-title" title="${esc(title)}">${esc(title)}</span>
-        <span class="at-addr"  title="${esc(addr)}">${esc(addr)}</span>
-        <span class="at-cust"  title="${esc(cust)}">${esc(cust)}</span>
-        <span class="at-time">${esc(time)}</span>
-        <span class="at-eng">${esc(eng)}</span>
-        <span class="at-badge" style="border-color:${color};color:${color}">${esc(label)}</span>`;
-      row.addEventListener('click', () => openJobDetail(job.id));
-      wrap.appendChild(row);
-      allRows.push(row);
+      const eng   = job.engineer || job.assignedEngineer || null;
+      const engId = eng?.id || '';
+
+      const tr = dayRow(job, eng, null);
+      tr.draggable = false;
+
+      // Prepend engineer cell (col 1 — identical width to day view lane)
+      const engTd = document.createElement('td');
+      const engName = eng?.name || 'Unassigned';
+      const color   = engColor(engId);
+      engTd.style.cssText = 'width:130px;vertical-align:middle;padding:4px 8px';
+      engTd.innerHTML = `<span style="display:inline-flex;align-items:center;gap:5px;max-width:120px;overflow:hidden">
+        <span class="eng-dot" style="background:${color};flex-shrink:0"></span>
+        <span style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(engName)}</span>
+      </span>`;
+      tr.insertBefore(engTd, tr.firstChild);
+
+      tbody.appendChild(tr);
+      _dayRowMeta.push({ tr, gtr: bannerTr, engId, searchText: buildSearchText(job, eng), status: jobStatus(job) });
     });
   });
+
+  table.appendChild(tbody);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'at-wrap';
+  wrap.appendChild(table);
 
   body.innerHTML = '';
   body.appendChild(wrap);
 
-  // ── Filter function ───────────────────────────────────────────────────────────
-  function _atApplyFilter() {
-    const q = activeSearch.toLowerCase();
-    let visible = 0;
-    const bannerVis = {};
-    allRows.forEach(row => {
-      const show = (!activeFilter || row.dataset.st === activeFilter) && (!q || row.dataset.search.includes(q));
-      row.style.display = show ? '' : 'none';
-      if (show) { visible++; bannerVis[row.dataset.dateKey] = (bannerVis[row.dataset.dateKey]||0)+1; }
-    });
-    allBanners.forEach(b => {
-      const cnt = bannerVis[b.dataset.dateKey] || 0;
-      b.style.display = cnt ? '' : 'none';
-      const cntEl = b.querySelector('.at-banner-vis');
-      if (cntEl) cntEl.textContent = cnt;
-    });
-    const vcEl = document.getElementById('at-visible-count');
-    if (vcEl) vcEl.textContent = (activeFilter||q) ? `${visible} shown` : '';
-  }
-
-  // ── Wire status tabs ──────────────────────────────────────────────────────────
-  if (tabStrip) {
-    tabStrip.querySelectorAll('.dst').forEach(btn => {
-      btn.addEventListener('click', () => {
-        activeFilter = btn.dataset.st;
-        tabStrip.querySelectorAll('.dst').forEach(b => b.classList.toggle('dst-active', b === btn));
-        _atApplyFilter();
-      });
-    });
-  }
-
-  // ── Wire search ───────────────────────────────────────────────────────────────
-  const searchEl = document.getElementById('at-search');
-  if (searchEl) searchEl.addEventListener('input', e => { activeSearch = e.target.value; _atApplyFilter(); });
+  applyDayFilter();
 }
 
 // ── INVOICE / STATEMENT STATE ─────────────────────────────────────────────────
