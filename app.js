@@ -4964,8 +4964,9 @@ function _buildInvBodyHTML() {
         <td style="font-size:11px;white-space:nowrap">${esc(inv.jobNo||'—')}</td>
         <td style="font-size:11px;max-width:160px">
           <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(inv.contactName||'—')}</div>
-          ${inv.contactPhone?`<a href="tel:${esc(inv.contactPhone)}" onclick="event.stopPropagation()" style="font-size:10px;color:var(--accent);text-decoration:none;white-space:nowrap">${esc(inv.contactPhone)}</a>`:''}
+          ${inv.contactPhone?`<a href="tel:${esc(inv.contactPhone)}" onclick="event.stopPropagation()" style="font-size:10px;color:var(--accent);text-decoration:none;white-space:nowrap">📞 ${esc(inv.contactPhone)}</a>`:''}
         </td>
+        <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">${esc(inv.siteAddress||'—')}</td>
         <td data-desc-id="${inv.id}" style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">${descVal}</td>
         <td style="white-space:nowrap">${inv.dueAt?new Date(inv.dueAt).toLocaleDateString('en-GB'):'—'}${aging.pill?`<span class="inv-age ${aging.pillCls}" style="margin-left:4px">${aging.pill}</span>`:''}
         </td>
@@ -4973,7 +4974,7 @@ function _buildInvBodyHTML() {
         <td>${_invStatusBadge(status)}</td>
       </tr>
       <tr class="inv-detail-row" data-detail="${idx}">
-        <td class="inv-detail-cell" colspan="7">${detailHTML}</td>
+        <td class="inv-detail-cell" colspan="8">${detailHTML}</td>
       </tr>
     `;
   }).join('');
@@ -4990,13 +4991,14 @@ function _buildInvBodyHTML() {
     <div style="overflow-x:auto">
       <table class="inv-table">
         <thead><tr>
-          <th>Invoice #</th>
-          <th>Job #</th>
-          <th>Contact</th>
-          <th>Description</th>
-          <th class="sortable" data-sort="dueAt">Due${_invSortBy==='dueAt'?(_invSortDir==='asc'?' ↑':' ↓'):''}</th>
-          <th style="text-align:right">Balance</th>
-          <th>Status</th>
+          <th style="min-width:90px">Invoice #</th>
+          <th style="min-width:80px">Job #</th>
+          <th style="min-width:150px">Contact</th>
+          <th style="min-width:160px">Address</th>
+          <th style="min-width:160px">Description</th>
+          <th class="sortable" data-sort="dueAt" style="min-width:100px">Due${_invSortBy==='dueAt'?(_invSortDir==='asc'?' ↑':' ↓'):''}</th>
+          <th style="text-align:right;min-width:90px">Balance</th>
+          <th style="min-width:90px">Status</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
