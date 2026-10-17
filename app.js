@@ -6156,10 +6156,12 @@ function _injectEmailCSS() {
     .email-card.blue .email-card-val { color:#2563eb; }
     .email-card.warn .email-card-val { color:#d97706; }
     .email-card.danger .email-card-val { color:var(--red); }
-    .email-filter-bar { display:flex; gap:8px; padding:10px 12px; flex-wrap:wrap; align-items:center; }
-    .email-status-pills { display:flex; gap:4px; flex-wrap:wrap; }
-    .email-spill { padding:3px 10px; border-radius:10px; font-size:11px; font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--surface); color:var(--text2); }
+    .email-filter-bar { display:flex; gap:6px; padding:10px 12px; flex-wrap:wrap; align-items:center; }
+    .email-filter-row { display:flex; gap:4px; flex-wrap:wrap; width:100%; }
+    .email-spill { padding:3px 10px; border-radius:10px; font-size:11px; font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--surface); color:var(--text2); white-space:nowrap; }
     .email-spill.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .email-spill-sm { padding:2px 7px; font-size:10px; border-radius:8px; font-weight:500; }
+    .email-body-frame { width:100%; min-height:320px; border:1px solid var(--border); border-radius:6px; background:#fff; margin-top:8px; }
     .email-tbl-wrap { overflow-x:auto; padding:0 12px; }
     .email-table { width:100%; border-collapse:collapse; font-size:12px; min-width:700px; }
     .email-table th { text-align:left; padding:7px 10px; background:var(--bg3); color:var(--text2); font-size:10px; letter-spacing:.4px; text-transform:uppercase; border-bottom:1px solid var(--border); position:sticky; top:0; z-index:2; }
@@ -6253,19 +6255,39 @@ function _renderEmailLog(body, messages, bounces) {
   const bounceMap = {};
   bounces.forEach(b => { bounceMap[(b.email||'').toLowerCase()] = b; });
 
-  const total     = messages.length;
-  const delivered = messages.filter(m => ['delivered','open','opened','click','clicked'].includes((m.status||'').toLowerCase())).length;
-  const opened    = messages.filter(m => ['open','opened','click','clicked'].includes((m.status||'').toLowerCase())).length;
-  const bounced   = messages.filter(m => ['bounce','bounced','blocked','drop','dropped'].includes((m.status||'').toLowerCase())).length;
-  const deferred  = messages.filter(m => (m.status||'').toLowerCase() === 'deferred').length;
+  const DELIVERED_ST  = new Set(['delivered','open','opened','click','clicked']);
+  const BOUNCED_ST    = new Set(['bounce','bounced','blocked','drop','dropped']);
 
-  const statuses = [...new Set(messages.map(m => (m.status||'').toLowerCase()))].filter(Boolean).sort();
+  const total        = messages.length;
+  const delivered    = messages.filter(m => DELIVERED_ST.has((m.status||'').toLowerCase())).length;
+  const notDelivered = total - delivered;
+  const opened       = messages.filter(m => ['open','opened','click','clicked'].includes((m.status||'').toLowerCase())).length;
+  const bounced      = messages.filter(m => BOUNCED_ST.has((m.status||'').toLowerCase())).length;
+  const deferred     = messages.filter(m => (m.status||'').toLowerCase() === 'deferred').length;
+
+  // raw unique statuses with counts for row-2 pills
+  const statusCounts = {};
+  messages.forEach(m => { const s = (m.status||'').toLowerCase(); if (s) statusCounts[s] = (statusCounts[s]||0) + 1; });
+  const statuses = Object.keys(statusCounts).sort();
+
+  // group filter predicates (keys start with '__')
+  const GROUP_FN = {
+    '__delivered':    s => DELIVERED_ST.has(s),
+    '__notdelivered': s => !DELIVERED_ST.has(s),
+    '__opened':       s => ['open','opened','click','clicked'].includes(s),
+    '__bounced':      s => BOUNCED_ST.has(s),
+    '__deferred':     s => s === 'deferred',
+  };
 
   const buildTable = () => {
     const q  = _emailSearch.toLowerCase();
-    const sf = _emailStatusFilter.toLowerCase();
+    const sf = _emailStatusFilter;
     const filtered = messages.filter(m => {
-      if (sf && (m.status||'').toLowerCase() !== sf) return false;
+      const st = (m.status||'').toLowerCase();
+      if (sf) {
+        if (sf.startsWith('__')) { if (!GROUP_FN[sf]?.(st)) return false; }
+        else { if (st !== sf) return false; }
+      }
       if (q && ![(m.to_email||''),(m.from_email||''),(m.subject||'')].join(' ').toLowerCase().includes(q)) return false;
       return true;
     });
@@ -6274,7 +6296,7 @@ function _renderEmailLog(body, messages, bounces) {
       const opens   = m.opens_count  || 0;
       const clicks  = m.clicks_count || 0;
       const bounce  = bounceMap[(m.to_email||'').toLowerCase()];
-      const bounceHint = bounce ? `<div style="font-size:10px;color:var(--red);margin-top:2px;white-space:normal;max-width:180px">${esc((bounce.reason||'').slice(0,60))}…</div>` : '';
+      const bounceHint = bounce ? `<div style="font-size:10px;color:var(--red);margin-top:2px;white-space:normal;max-width:200px">${esc((bounce.reason||'').slice(0,80))}</div>` : '';
       return `<tr class="email-row" data-idx="${idx}" data-msgid="${esc(m.msg_id||'')}">
         <td style="white-space:nowrap;color:var(--text2);font-size:11px">${esc(dt)}</td>
         <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.to_email||'—')}</td>
@@ -6290,31 +6312,39 @@ function _renderEmailLog(body, messages, bounces) {
           <th style="width:140px">Date &amp; Time</th>
           <th style="width:180px">To</th>
           <th>Subject</th>
-          <th style="width:120px">Status</th>
+          <th style="width:160px">Status</th>
           <th style="width:60px;text-align:center">Opens</th>
           <th style="width:60px;text-align:center">Clicks</th>
         </tr></thead>
         <tbody>${rows||'<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">No emails match</td></tr>'}</tbody>
       </table>
-      <div style="padding:8px 12px;font-size:11px;color:var(--muted)">${filtered.length} of ${total} emails shown — click any row for event timeline &amp; attachment detail</div>
+      <div style="padding:8px 12px;font-size:11px;color:var(--muted)">${filtered.length} of ${total} emails — click any row to view the email &amp; delivery timeline</div>
     `;
   };
 
   const render = () => {
-    const sf = _emailStatusFilter.toLowerCase();
+    const sf = _emailStatusFilter;
     body.innerHTML = `
       <div class="email-stats">
         <div class="email-card"><div class="email-card-val">${total}</div><div class="email-card-lbl">Total Sent</div></div>
         <div class="email-card ok"><div class="email-card-val">${delivered}</div><div class="email-card-lbl">Delivered</div></div>
+        <div class="email-card warn"><div class="email-card-val">${notDelivered}</div><div class="email-card-lbl">Not Delivered</div></div>
         <div class="email-card blue"><div class="email-card-val">${opened}</div><div class="email-card-lbl">Opened</div></div>
         <div class="email-card danger"><div class="email-card-val">${bounced}</div><div class="email-card-lbl">Bounced</div></div>
         ${deferred ? `<div class="email-card warn"><div class="email-card-val">${deferred}</div><div class="email-card-lbl">Deferred</div></div>` : ''}
       </div>
       <div class="email-filter-bar">
-        <input type="text" id="email-srch" class="inp" placeholder="Search address or subject…" value="${esc(_emailSearch)}" style="flex:1;min-width:180px">
-        <div class="email-status-pills">
-          <span class="email-spill${!sf?' active':''}" data-sf="">All</span>
-          ${statuses.map(s => `<span class="email-spill${sf===s?' active':''}" data-sf="${esc(s)}">${esc(s.charAt(0).toUpperCase()+s.slice(1))}</span>`).join('')}
+        <input type="text" id="email-srch" class="inp" placeholder="Search address or subject…" value="${esc(_emailSearch)}" style="flex:1;min-width:200px">
+        <div class="email-filter-row">
+          <span class="email-spill${!sf?' active':''}" data-sf="">All (${total})</span>
+          <span class="email-spill${sf==='__delivered'?' active':''}" data-sf="__delivered">✓ Delivered (${delivered})</span>
+          <span class="email-spill${sf==='__notdelivered'?' active':''}" data-sf="__notdelivered">✕ Not Delivered (${notDelivered})</span>
+          ${opened  ? `<span class="email-spill${sf==='__opened'?' active':''}" data-sf="__opened">👁 Opened (${opened})</span>` : ''}
+          ${bounced ? `<span class="email-spill${sf==='__bounced'?' active':''}" data-sf="__bounced">⚠ Bounced (${bounced})</span>` : ''}
+          ${deferred? `<span class="email-spill${sf==='__deferred'?' active':''}" data-sf="__deferred">⏳ Deferred (${deferred})</span>` : ''}
+        </div>
+        <div class="email-filter-row" style="opacity:.8">
+          ${statuses.map(s => `<span class="email-spill email-spill-sm${sf===s?' active':''}" data-sf="${esc(s)}">${esc(s)} (${statusCounts[s]})</span>`).join('')}
         </div>
       </div>
       <div class="email-tbl-wrap" id="email-tbl-wrap">${buildTable()}</div>
@@ -6375,7 +6405,21 @@ function _wireEmailRows(messages, bounceMap) {
         const toHtml   = d.to_email   ? `<div style="font-size:11px;margin-bottom:4px;color:var(--text2)"><strong>To:</strong> ${esc(Array.isArray(d.to_email)?d.to_email.join(', '):d.to_email)}</div>` : '';
         const subjHtml = d.subject     ? `<div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--text)">${esc(d.subject)}</div>` : '';
 
-        td.innerHTML = `<div style="max-width:860px">${subjHtml}${fromHtml}${toHtml}<div style="margin-top:8px">${evHtml}</div>${attHtml}</div>`;
+        // Email body: prefer HTML, fall back to plain text
+        const content = d.content || d.body || [];
+        const htmlPart  = Array.isArray(content) ? content.find(c => (c.type||'').includes('html'))  : null;
+        const plainPart = Array.isArray(content) ? content.find(c => (c.type||'').includes('plain')) : null;
+        let bodyHtml = '';
+        if (htmlPart?.value) {
+          const encoded = htmlPart.value.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+          bodyHtml = `<div style="margin-top:12px"><div style="font-size:10px;color:var(--text2);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Email Body</div><iframe class="email-body-frame" srcdoc="${encoded}" sandbox="allow-same-origin"></iframe></div>`;
+        } else if (plainPart?.value) {
+          bodyHtml = `<div style="margin-top:12px"><div style="font-size:10px;color:var(--text2);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Email Body</div><pre style="font-size:12px;white-space:pre-wrap;background:var(--bg3);padding:10px;border-radius:6px;max-height:300px;overflow:auto">${esc(plainPart.value)}</pre></div>`;
+        } else if (typeof d.body === 'string' && d.body) {
+          bodyHtml = `<div style="margin-top:12px"><pre style="font-size:12px;white-space:pre-wrap;background:var(--bg3);padding:10px;border-radius:6px;max-height:300px;overflow:auto">${esc(d.body)}</pre></div>`;
+        }
+
+        td.innerHTML = `<div style="max-width:900px;padding:4px 0">${subjHtml}${fromHtml}${toHtml}<div style="margin-top:8px">${evHtml}</div>${attHtml}${bodyHtml}</div>`;
       } catch(e) {
         td.innerHTML = `<div style="color:var(--red);font-size:11px">⚠ ${esc(e.message)}</div>`;
       }
