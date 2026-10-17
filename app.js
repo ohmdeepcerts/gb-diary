@@ -942,8 +942,7 @@ function jobExcelRow(job, engineer, dateISO) {
   const invNo  = inv?.ref || '';
   const cert   = job.certificate || job.cert || job.cert_no || job.certificateNo || '';
   const status = STATUS_LABEL[jobStatus(job)] || jobStatus(job);
-  const invSt  = job.invoice?.status || job.invoiceStatus || job.invoice_status ||
-                 (inv ? (inv.paid ? 'Paid' : 'Unpaid') : '');
+  const invSt  = '';   // user-managed field; left blank so user fills in Excel
   return [dateFmt, addr, desc, tenantContact, time, eng, price,
           refName, refContact, email, invNo, cert, status, invSt].join('\t');
 }
@@ -995,7 +994,7 @@ async function exportJobsExcel() {
             const invNo  = inv?.ref || '';
             const cert   = job.certificate || job.cert || job.cert_no || job.certificateNo || '';
             const status = STATUS_LABEL[jobStatus(job)] || jobStatus(job);
-            const invSt  = job.invoice?.status || job.invoiceStatus || job.invoice_status || (inv ? (inv.paid ? 'Paid' : 'Unpaid') : '');
+            const invSt  = '';   // user-managed field; left blank so user fills in Excel
             rows.push([dateFmt, addr, desc, tenantContact, time, eng, price,
                        refName, refContact, email, invNo, cert, status, invSt]);
           });
