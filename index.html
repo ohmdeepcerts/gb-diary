@@ -186,12 +186,11 @@
   }
   .job-card:hover { box-shadow: var(--shadow); }
   .job-card.dragging { opacity: 0.3; }
-  .jcard-mv-btn { display:none; position:absolute; top:2px; right:2px; background:var(--accent); color:#fff; border:none; border-radius:3px; font-size:10px; font-weight:700; padding:1px 5px; cursor:pointer; z-index:10; line-height:1.4; }
-  .job-card:hover .jcard-mv-btn { display:block; }
+  .jcard-mv-btn { display:inline-block; background:var(--accent); color:#fff; border:none; border-radius:3px; font-size:9px; font-weight:700; padding:1px 5px; cursor:pointer; line-height:1.6; vertical-align:middle; }
   .jcard-mv-btn:hover { opacity:.85; }
-  .jcard-mv-drop { display:none; position:absolute; top:20px; right:0; background:var(--bg2); border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 14px rgba(0,0,0,.18); z-index:100; min-width:150px; overflow:hidden; }
+  .jcard-mv-drop { display:none; position:fixed; background:var(--bg2); border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 18px rgba(0,0,0,.22); z-index:9999; min-width:160px; overflow:hidden; }
   .jcard-mv-wrap.open .jcard-mv-drop { display:block; }
-  .jcard-mv-opt { display:block; width:100%; text-align:left; padding:7px 12px; font-size:11px; font-weight:600; border:none; background:none; color:var(--text); cursor:pointer; }
+  .jcard-mv-opt { display:block; width:100%; text-align:left; padding:8px 14px; font-size:12px; font-weight:600; border:none; background:none; color:var(--text); cursor:pointer; }
   .jcard-mv-opt:hover { background:var(--bg3); }
   .jc-title { font-size: 11px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .jc-addr  { font-size: 10px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
@@ -1110,6 +1109,6 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-<script src="app.js?v=20261017t"></script>
+<script src="app.js?v=20261017u"></script>
 </body>
 </html>

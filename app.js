@@ -571,40 +571,51 @@ function weekCard(job, iso, engId) {
       <span class="jbadge badge-${st}">${esc(label)}</span>
       ${time ? `<span class="jtime">${esc(time)}</span>` : ''}
       ${ref  ? `<span class="jref">${esc(String(ref).replace('JOB-','#'))}</span>` : ''}
+      <span class="jcard-mv-wrap" style="margin-left:auto">
+        <button class="jcard-mv-btn" title="Move to another week">▸▸</button>
+        <div class="jcard-mv-drop"></div>
+      </span>
     </div>`;
 
-  // Quick-move button (appears on hover, drops down date options)
-  const mvWrap = document.createElement('div');
-  mvWrap.className = 'jcard-mv-wrap';
-  mvWrap.innerHTML = `
-    <button class="jcard-mv-btn" title="Quick move to another week">▸▸</button>
-    <div class="jcard-mv-drop">
-      <button class="jcard-mv-opt" data-days="1">Tomorrow (+1 day)</button>
-      <button class="jcard-mv-opt" data-days="7">Next week (+7 days)</button>
-      <button class="jcard-mv-opt" data-days="14">In 2 weeks (+14 days)</button>
-      <button class="jcard-mv-opt" data-days="21">In 3 weeks (+21 days)</button>
-    </div>`;
-  mvWrap.querySelector('.jcard-mv-btn').addEventListener('click', e => {
-    e.stopPropagation();
-    // close any other open dropdowns first
-    document.querySelectorAll('.jcard-mv-wrap.open').forEach(el => { if (el !== mvWrap) el.classList.remove('open'); });
-    mvWrap.classList.toggle('open');
-  });
-  mvWrap.querySelectorAll('.jcard-mv-opt').forEach(btn => {
-    btn.addEventListener('click', async e => {
+  // Quick-move button — wired after innerHTML is set
+  const mvWrap = div.querySelector('.jcard-mv-wrap');
+  const mvBtn  = div.querySelector('.jcard-mv-btn');
+  const mvDrop = div.querySelector('.jcard-mv-drop');
+  const MOVE_OPTS = [
+    { label: 'Tomorrow (+1 day)',    days: 1  },
+    { label: 'Next week (+7 days)',  days: 7  },
+    { label: 'In 2 weeks (+14 days)', days: 14 },
+    { label: 'In 3 weeks (+21 days)', days: 21 },
+  ];
+  MOVE_OPTS.forEach(opt => {
+    const b = document.createElement('button');
+    b.className = 'jcard-mv-opt';
+    b.textContent = opt.label;
+    b.addEventListener('click', async e => {
       e.stopPropagation();
       mvWrap.classList.remove('open');
-      const days = parseInt(btn.dataset.days, 10);
-      const nd = new Date(iso); nd.setDate(nd.getDate() + days);
+      const nd = new Date(iso); nd.setDate(nd.getDate() + opt.days);
       const newDate = nd.toISOString().slice(0, 10);
       setStatus('Moving…');
       try { await api.reschedule(job.id, newDate, engId||null); clearCache(); await loadWeek(true); setStatus('Moved ✓'); }
       catch(ex) { setStatus('Move failed: ' + (ex.message||ex), false); }
     });
+    mvDrop.appendChild(b);
   });
-  div.appendChild(mvWrap);
-  // close dropdown when clicking anywhere else
-  document.addEventListener('click', () => mvWrap.classList.remove('open'), { capture: true, once: false });
+  if (mvBtn) {
+    mvBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const isOpen = mvWrap.classList.contains('open');
+      document.querySelectorAll('.jcard-mv-wrap.open').forEach(el => el.classList.remove('open'));
+      if (!isOpen) {
+        mvWrap.classList.add('open');
+        // position dropdown using fixed coords to escape any overflow container
+        const r = mvBtn.getBoundingClientRect();
+        mvDrop.style.top  = (r.bottom + 4) + 'px';
+        mvDrop.style.left = Math.max(4, r.right - 160) + 'px';
+      }
+    });
+  }
 
   let _dragged = false;
   div.addEventListener('dragstart', e => {
@@ -6598,5 +6609,9 @@ function _wireEmailRows(messages, bounceMap) {
     });
   });
 }
+
+document.addEventListener('click', () => {
+  document.querySelectorAll('.jcard-mv-wrap.open').forEach(el => el.classList.remove('open'));
+});
 
 document.addEventListener('DOMContentLoaded', init);
