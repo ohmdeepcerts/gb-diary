@@ -4251,7 +4251,36 @@ async function saveJob() {
     }
     if (!propertyId) { _err('Address is required'); if (btn) { btn.disabled = false; btn.textContent = 'Add to Portal'; } return; }
 
-    // Step 3: create the job
+    // Step 3: duplicate check — scan locally-loaded diary data for same property + same title
+    {
+      const dupes = [];
+      const titleLc = title.toLowerCase();
+      Object.values(cache).forEach(lanes => {
+        if (!Array.isArray(lanes)) return;
+        lanes.forEach(lane => {
+          lane.days.forEach(day => {
+            (day.jobs || []).forEach(job => {
+              const pid = job.property_id || job.propertyId;
+              if (pid !== propertyId) return;
+              const jt = (job.title || job.job_type || '').trim().toLowerCase();
+              if (jt === titleLc) dupes.push(job);
+            });
+          });
+        });
+      });
+      if (dupes.length) {
+        const d = dupes[0];
+        const ds = d.scheduled_date || d.scheduledDate || '';
+        const ok = window.confirm(
+          `⚠️ Possible duplicate!\n\n"${d.title || d.job_type}" already exists at this address` +
+          (ds ? ` (${ds})` : '') + (d.job_no ? `\nJob #${d.job_no}` : '') +
+          `\n\nAdd another job anyway?`
+        );
+        if (!ok) { if (btn) { btn.disabled = false; btn.textContent = 'Add to Portal'; } return; }
+      }
+    }
+
+    // Step 4: create the job
     if (btn) btn.textContent = 'Adding…';
     const job = await trpcMutate('jobs.create', {
       title,
@@ -4513,6 +4542,30 @@ async function _doGlobalSearch(q) {
     resultsEl.innerHTML = '<div class="gsearch-hint">Search not yet available — open portal F12 to find the endpoint name</div>'; return;
   }
   const jobs = Array.isArray(results) ? results : (results?.jobs || results?.items || results?.data || []);
+
+  // Also search locally-loaded diary data — this catches unassigned jobs the API may not return
+  const seen   = new Set(jobs.map(j => j.id).filter(Boolean));
+  const needle = q.toLowerCase();
+  Object.values(cache).forEach(lanes => {
+    if (!Array.isArray(lanes)) return;
+    lanes.forEach(lane => {
+      lane.days.forEach(day => {
+        (day.jobs || []).forEach(job => {
+          if (!job.id || seen.has(job.id)) return;
+          const a = jobAddr(job).toLowerCase();
+          const c = jobCustomer(job).toLowerCase();
+          const t = (job.title || job.job_type || '').toLowerCase();
+          const r = (job.job_no || '').toLowerCase();
+          const d = (job.description || '').toLowerCase();
+          if (a.includes(needle)||c.includes(needle)||t.includes(needle)||r.includes(needle)||d.includes(needle)) {
+            jobs.push(job);
+            seen.add(job.id);
+          }
+        });
+      });
+    });
+  });
+
   if (!jobs.length) { resultsEl.innerHTML = '<div class="gsearch-hint">No results</div>'; return; }
   resultsEl.innerHTML = '';
   jobs.forEach(job => {
