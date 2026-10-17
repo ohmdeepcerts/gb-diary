@@ -4640,6 +4640,16 @@ function _injectAllTimeCSS() {
     .at-eng  { flex:0 0 100px; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .at-time { flex:0 0 52px; font-size:11px; color:var(--muted); }
     .at-badge{ font-size:10px; padding:2px 7px; border-radius:10px; border:1px solid; white-space:nowrap; flex-shrink:0; }
+    .at-chips { display:flex; flex-wrap:wrap; gap:5px; padding:7px 14px; border-bottom:1px solid var(--border); background:var(--surface); }
+    .at-chip {
+      padding:3px 9px; border-radius:12px; border:1px solid var(--border);
+      background:var(--bg2); color:var(--text2); font-size:11px; cursor:pointer;
+      white-space:nowrap; transition:background .15s;
+    }
+    .at-chip:hover { background:var(--border); }
+    .at-chip-active { background:var(--accent,#3b82f6); color:#fff; border-color:var(--accent,#3b82f6); }
+    .at-chip-hidden { opacity:.7; }
+    .at-chip-hidden::after { content:' ⚠'; font-size:10px; }
   `;
   document.head.appendChild(s);
 }
@@ -4648,15 +4658,12 @@ async function loadAllTimeView() {
   _inAllTimeView = true;
   _injectAllTimeCSS();
   const body = document.getElementById('day-body');
-  // Ensure body is a simple block container for the all-time view
   body.style.display = 'block';
   body.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading all jobs…</div>';
   const dayLabel = document.getElementById('day-label');
   if (dayLabel) dayLabel.textContent = 'All Jobs';
 
-  // Load up to 10 pages (500 jobs) in parallel — stop early if any page is short
-  const PAGE  = 50;
-  const PAGES = 10;
+  const PAGE = 50, PAGES = 10;
   let results;
   try {
     results = await Promise.allSettled(
@@ -4671,8 +4678,19 @@ async function loadAllTimeView() {
     const d = r.value;
     return Array.isArray(d) ? d : (d?.jobs || d?.items || []);
   });
-
   if (!allJobs.length) { body.innerHTML = '<div class="loading-row">No jobs found</div>'; return; }
+
+  // Status counts for breakdown chips
+  const statusCounts = {};
+  allJobs.forEach(job => {
+    const st = jobStatus(job);
+    statusCounts[st] = (statusCounts[st] || 0) + 1;
+  });
+
+  // Statuses the portal counts in its main total (active/billable)
+  const PORTAL_COUNTED = new Set(['pending','in_progress','engineer_completed','completed','invoiced','paid','waiting_certificate','quotation','project','cannot_access','in_review']);
+  const portalCount = allJobs.filter(j => PORTAL_COUNTED.has(jobStatus(j))).length;
+  const hiddenCount = allJobs.length - portalCount;
 
   // Group by date — newest first
   const byDate = new Map();
@@ -4683,31 +4701,66 @@ async function loadAllTimeView() {
     byDate.get(key).push(job);
   });
   const sortedDates = [...byDate.keys()]
-    .sort((a, b) => (b === 'unscheduled' ? -1 : a === 'unscheduled' ? 1 : b.localeCompare(a)));
+    .sort((a, b) => b === 'unscheduled' ? -1 : a === 'unscheduled' ? 1 : b.localeCompare(a));
 
   const wrap = document.createElement('div');
   wrap.className = 'at-wrap';
 
-  // Summary header
+  // ── Header + search ──────────────────────────────────────────────────────────
   const hdr = document.createElement('div');
   hdr.className = 'at-hdr';
-  hdr.innerHTML = `<strong>${allJobs.length}</strong>&nbsp;jobs across&nbsp;<strong>${sortedDates.filter(d=>d!=='unscheduled').length}</strong>&nbsp;days &nbsp;·&nbsp; newest at top · click any job to open`;
+  hdr.innerHTML = `
+    <span><strong>${allJobs.length}</strong> total &nbsp;·&nbsp; <strong style="color:#16a34a">${portalCount}</strong> portal-counted</span>
+    ${hiddenCount ? `<span style="color:#ef4444;font-weight:600">+${hiddenCount} not in portal count ▾</span>` : ''}
+    <input id="at-search" type="text" placeholder="Search title, address, client…"
+      style="margin-left:auto;padding:4px 8px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:11px;width:200px">
+    <span id="at-visible-count" style="font-size:11px;color:var(--muted)"></span>`;
   wrap.appendChild(hdr);
+
+  // ── Status filter chips ───────────────────────────────────────────────────────
+  const chipsRow = document.createElement('div');
+  chipsRow.className = 'at-chips';
+  // All chip
+  const allChip = document.createElement('button');
+  allChip.className = 'at-chip at-chip-active';
+  allChip.dataset.st = '';
+  allChip.textContent = `All (${allJobs.length})`;
+  chipsRow.appendChild(allChip);
+  // Per-status chips — sorted by count desc
+  Object.entries(statusCounts).sort((a,b) => b[1]-a[1]).forEach(([st, cnt]) => {
+    const color = STATUS_COLORS[st] || '#888';
+    const label = STATUS_LABEL[st] || st;
+    const isPortal = PORTAL_COUNTED.has(st);
+    const chip = document.createElement('button');
+    chip.className = 'at-chip' + (!isPortal ? ' at-chip-hidden' : '');
+    chip.dataset.st = st;
+    chip.style.borderColor = color;
+    chip.style.color = color;
+    chip.innerHTML = `${label} <span style="font-weight:700">${cnt}</span>${!isPortal?' ⚠':''}`;
+    chipsRow.appendChild(chip);
+  });
+  wrap.appendChild(chipsRow);
+
+  // ── Rows ─────────────────────────────────────────────────────────────────────
+  let activeFilter = '';
+  let activeSearch = '';
+  const allRows    = [];
+  const allBanners = [];
 
   sortedDates.forEach(dateKey => {
     const jobs = byDate.get(dateKey);
-
-    // Yellow date banner (sticky)
     const banner = document.createElement('div');
     banner.className = 'at-banner';
+    banner.dataset.dateKey = dateKey;
     if (dateKey === 'unscheduled') {
-      banner.innerHTML = `Unscheduled <span class="at-banner-cnt">${jobs.length} job${jobs.length!==1?'s':''}</span>`;
+      banner.innerHTML = `Unscheduled <span class="at-banner-cnt at-banner-vis">${jobs.length}</span>`;
     } else {
       const d = new Date(dateKey + 'T00:00:00');
       const dateStr = d.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
-      banner.innerHTML = `${esc(dateStr)}&nbsp;<span class="at-banner-cnt">${jobs.length} job${jobs.length!==1?'s':''}</span>`;
+      banner.innerHTML = `${esc(dateStr)}&nbsp;<span class="at-banner-cnt at-banner-vis">${jobs.length}</span>`;
     }
     wrap.appendChild(banner);
+    allBanners.push(banner);
 
     jobs.forEach(job => {
       const row   = document.createElement('div');
@@ -4720,6 +4773,10 @@ async function loadAllTimeView() {
       const eng   = (job.engineer || job.assignedEngineer)?.name || 'Unassigned';
       const title = jobTitle(job) || '—';
       const time  = jobTime(job)  || '';
+      const search = [title, addr, cust, eng, label, job.job_no||''].join(' ').toLowerCase();
+      row.dataset.st      = st;
+      row.dataset.dateKey = dateKey;
+      row.dataset.search  = search;
       row.innerHTML = `
         <span class="at-dot" style="background:${color}"></span>
         <span class="at-title" title="${esc(title)}">${esc(title)}</span>
@@ -4730,8 +4787,44 @@ async function loadAllTimeView() {
         <span class="at-badge" style="border-color:${color};color:${color}">${esc(label)}</span>`;
       row.addEventListener('click', () => openJobDetail(job.id));
       wrap.appendChild(row);
+      allRows.push(row);
     });
   });
+
+  // ── Filter function ───────────────────────────────────────────────────────────
+  function _atApplyFilter() {
+    const q = activeSearch.toLowerCase();
+    let visible = 0;
+    const bannerVis = {};
+    allRows.forEach(row => {
+      const stMatch = !activeFilter || row.dataset.st === activeFilter;
+      const qMatch  = !q || row.dataset.search.includes(q);
+      const show    = stMatch && qMatch;
+      row.style.display = show ? '' : 'none';
+      if (show) { visible++; bannerVis[row.dataset.dateKey] = (bannerVis[row.dataset.dateKey]||0)+1; }
+    });
+    allBanners.forEach(b => {
+      const cnt = bannerVis[b.dataset.dateKey] || 0;
+      b.style.display = cnt ? '' : 'none';
+      const cntEl = b.querySelector('.at-banner-vis');
+      if (cntEl) cntEl.textContent = cnt;
+    });
+    const vcEl = document.getElementById('at-visible-count');
+    if (vcEl) vcEl.textContent = (activeFilter||q) ? `${visible} shown` : '';
+  }
+
+  // ── Wire chips ────────────────────────────────────────────────────────────────
+  chipsRow.querySelectorAll('.at-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      activeFilter = chip.dataset.st;
+      chipsRow.querySelectorAll('.at-chip').forEach(c => c.classList.toggle('at-chip-active', c === chip));
+      _atApplyFilter();
+    });
+  });
+
+  // ── Wire search ───────────────────────────────────────────────────────────────
+  const searchEl = wrap.querySelector('#at-search');
+  if (searchEl) searchEl.addEventListener('input', e => { activeSearch = e.target.value; _atApplyFilter(); });
 
   body.innerHTML = '';
   body.appendChild(wrap);
