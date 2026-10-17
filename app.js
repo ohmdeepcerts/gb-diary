@@ -573,6 +573,39 @@ function weekCard(job, iso, engId) {
       ${ref  ? `<span class="jref">${esc(String(ref).replace('JOB-','#'))}</span>` : ''}
     </div>`;
 
+  // Quick-move button (appears on hover, drops down date options)
+  const mvWrap = document.createElement('div');
+  mvWrap.className = 'jcard-mv-wrap';
+  mvWrap.innerHTML = `
+    <button class="jcard-mv-btn" title="Quick move to another week">▸▸</button>
+    <div class="jcard-mv-drop">
+      <button class="jcard-mv-opt" data-days="1">Tomorrow (+1 day)</button>
+      <button class="jcard-mv-opt" data-days="7">Next week (+7 days)</button>
+      <button class="jcard-mv-opt" data-days="14">In 2 weeks (+14 days)</button>
+      <button class="jcard-mv-opt" data-days="21">In 3 weeks (+21 days)</button>
+    </div>`;
+  mvWrap.querySelector('.jcard-mv-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    // close any other open dropdowns first
+    document.querySelectorAll('.jcard-mv-wrap.open').forEach(el => { if (el !== mvWrap) el.classList.remove('open'); });
+    mvWrap.classList.toggle('open');
+  });
+  mvWrap.querySelectorAll('.jcard-mv-opt').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      mvWrap.classList.remove('open');
+      const days = parseInt(btn.dataset.days, 10);
+      const nd = new Date(iso); nd.setDate(nd.getDate() + days);
+      const newDate = nd.toISOString().slice(0, 10);
+      setStatus('Moving…');
+      try { await api.reschedule(job.id, newDate, engId||null); clearCache(); await loadWeek(true); setStatus('Moved ✓'); }
+      catch(ex) { setStatus('Move failed: ' + (ex.message||ex), false); }
+    });
+  });
+  div.appendChild(mvWrap);
+  // close dropdown when clicking anywhere else
+  document.addEventListener('click', () => mvWrap.classList.remove('open'), { capture: true, once: false });
+
   let _dragged = false;
   div.addEventListener('dragstart', e => {
     _dragged = true;
