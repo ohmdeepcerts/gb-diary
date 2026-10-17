@@ -158,13 +158,15 @@ function _setLiveDot(on) {
   });
 }
 
+let _inAllTimeView = false;
+
 async function silentRefresh() {
   // Never interrupt active typing / form use
   if (_isUserTyping()) {
-    // Retry in 5 s without resetting the main schedule
     setTimeout(silentRefresh, 5000);
     return;
   }
+  if (_inAllTimeView) return; // don't overwrite the all-time scroll view
   clearCache();
   try {
     if (view === 'day') {
@@ -870,9 +872,12 @@ function jobReviewer(job) {
 }
 
 async function loadDay(force=false) {
+  _inAllTimeView = false;
   _dbgLogged = false;
   document.getElementById('day-label').textContent = fmtDay(curDate);
-  document.getElementById('day-body').innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading…</div>';
+  const _dayBody = document.getElementById('day-body');
+  _dayBody.style.display = ''; // restore flex layout after all-time view
+  _dayBody.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading…</div>';
   setStatus('Loading…');
   try {
     const mon   = mondayOf(curDate);
@@ -4613,7 +4618,7 @@ function _injectAllTimeCSS() {
   _atCSSInjected = true;
   const s = document.createElement('style');
   s.textContent = `
-    .at-wrap { overflow-y:auto; height:100%; }
+    .at-wrap { flex:1; overflow-y:auto; min-width:0; height:100%; }
     .at-hdr { padding:8px 14px 6px; font-size:11px; color:var(--muted); border-bottom:2px solid var(--border); display:flex; align-items:center; gap:6px; }
     .at-banner {
       position:sticky; top:0; z-index:10;
@@ -4640,8 +4645,11 @@ function _injectAllTimeCSS() {
 }
 
 async function loadAllTimeView() {
+  _inAllTimeView = true;
   _injectAllTimeCSS();
   const body = document.getElementById('day-body');
+  // Ensure body is a simple block container for the all-time view
+  body.style.display = 'block';
   body.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading all jobs…</div>';
   const dayLabel = document.getElementById('day-label');
   if (dayLabel) dayLabel.textContent = 'All Jobs';
