@@ -919,6 +919,35 @@ function jobReviewer(job) {
   return job.comments_check?.user_name || '';
 }
 
+function jobExcelRow(job, engineer, dateISO) {
+  const d = dateISO || job.scheduled_date || '';
+  let dateFmt = d;
+  if (d && d.includes('-')) { const [y,m,dy] = d.split('-'); dateFmt = `${dy}/${m}/${y}`; }
+  const addr   = jobAddr(job);
+  const desc   = jobTitle(job) || jobNotes(job);
+  const cust   = jobCustomer(job);
+  const phone  = jobPhone(job);
+  const tenantContact = [cust, phone].filter(Boolean).join(' / ');
+  const time   = jobTime(job);
+  const eng    = engineer?.name || '';
+  const raw    = job.price ?? job.amount ?? job.value ?? null;
+  const price  = raw != null ? Number(raw).toFixed(2) : '';
+  const refName    = job.client?.name || job.agency?.name || job.referrer?.name ||
+                     job.referredBy  || job.property?.agencyName || '';
+  const refContact = job.client?.phone || job.client?.mobile ||
+                     job.agency?.phone || job.agency?.mobile || job.referrer?.phone || '';
+  const email      = job.email || job.client?.email || job.customer?.email ||
+                     job.agency?.email || job.property?.email || '';
+  const inv    = jobInvoice(job);
+  const invNo  = inv?.ref || '';
+  const cert   = job.certificate || job.cert || job.cert_no || job.certificateNo || '';
+  const status = STATUS_LABEL[jobStatus(job)] || jobStatus(job);
+  const invSt  = job.invoice?.status || job.invoiceStatus || job.invoice_status ||
+                 (inv ? (inv.paid ? 'Paid' : 'Unpaid') : '');
+  return [dateFmt, addr, desc, tenantContact, time, eng, price,
+          refName, refContact, email, invNo, cert, status, invSt].join('\t');
+}
+
 async function loadDay(force=false) {
   _inAllTimeView = false;
   _dbgLogged = false;
@@ -1566,7 +1595,7 @@ function dayRow(job, engineer, dateISO) {
     : '';
   const _rowEntry = getRowColorEntry(String(job.id));
   const _rowBg = _rowEntry?.bg || '';
-  cells.push(`<td><div class="day-act-wrap"><button class="day-act-btn" title="Open in portal">↗</button>${_waCell}<button class="day-paint-btn" title="Highlight row colour" style="background:${_rowBg||''};border:1px solid var(--border);width:18px;height:18px;border-radius:3px;cursor:pointer;font-size:10px;padding:0;flex-shrink:0">${_rowBg?'':'🎨'}</button></div></td>`);
+  cells.push(`<td><div class="day-act-wrap"><button class="day-excel-copy" title="Copy row for Excel">📋</button><button class="day-act-btn" title="Open in portal">↗</button>${_waCell}<button class="day-paint-btn" title="Highlight row colour" style="background:${_rowBg||''};border:1px solid var(--border);width:18px;height:18px;border-radius:3px;cursor:pointer;font-size:10px;padding:0;flex-shrink:0">${_rowBg?'':'🎨'}</button></div></td>`);
 
   tr.innerHTML = cells.join('');
   if (_rowBg) { tr.style.background = _rowBg; tr.querySelectorAll('td').forEach(td => { td.style.background = _rowBg; if (_rowEntry?.text) td.style.color = _rowEntry.text; }); }
@@ -1575,6 +1604,19 @@ function dayRow(job, engineer, dateISO) {
   // Paint button listener
   const paintBtn = tr.querySelector('.day-paint-btn');
   if (paintBtn) paintBtn.addEventListener('click', e => { e.stopPropagation(); showRowColorPicker(paintBtn, job.id, tr); });
+
+  // Copy-to-Excel button
+  const xlCopyBtn = tr.querySelector('.day-excel-copy');
+  if (xlCopyBtn) {
+    xlCopyBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const text = jobExcelRow(job, engineer, dateISO);
+      navigator.clipboard.writeText(text).catch(()=>{}).then(() => {
+        xlCopyBtn.textContent = '✓'; xlCopyBtn.style.color = 'var(--green)';
+        setTimeout(() => { xlCopyBtn.textContent = '📋'; xlCopyBtn.style.color = ''; }, 1500);
+      });
+    });
+  }
 
   makeCopyCell(tr.querySelector('.addr-td'), addr || '—');
   makeCopyCell(tr.querySelector('.cust-td'), cust || '—');
