@@ -3522,12 +3522,22 @@ async function openAddJob() {
 
   let _addrTmr = null;
   addrInp.oninput = () => {
+    _addJobPropertyId = null; // clear saved property when address is manually edited
     const q = addrInp.value.trim();
     clearTimeout(_addrTmr);
     if (q.length < 2) { addrDrop.style.display = 'none'; return; }
     _addrTmr = setTimeout(() => _searchAddress(q, addrInp, addrDrop, pcInp), 300);
   };
-  addrInp.onblur = () => { setTimeout(() => { addrDrop.style.display = 'none'; }, 200); };
+  addrInp.onblur = () => {
+    setTimeout(() => {
+      addrDrop.style.display = 'none';
+      if (!_addJobPropertyId && addrInp.value.trim()) {
+        _insSetHeader('🆕', 'New Address');
+        const panel = _insPanel();
+        if (panel) panel.innerHTML = '<div class="aj-ins-idle"><div class="aj-ins-idle-icon">🆕</div><div class="aj-ins-idle-txt">This will be added as a<br><strong>new property</strong> on the portal</div></div>';
+      }
+    }, 200);
+  };
 
   const csInp  = document.getElementById('aj-cs-inp');
   const csDrop = document.getElementById('aj-cs-drop');
@@ -4112,6 +4122,7 @@ async function _searchAddress(q, addrInp, drop, pcInp) {
         if (p.postcode && pcInp) pcInp.value = p.postcode;
         if (p.contactId) { _addJobContactId = p.contactId; _addJobPropertyId = p.id || null; }
         drop.style.display = 'none';
+        if (p.id) loadInsights('property', p.id);
       });
       drop.appendChild(li);
     });
