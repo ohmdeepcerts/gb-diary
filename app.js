@@ -1035,6 +1035,19 @@ function applyDayFilter() {
     if (badge) badge.textContent = cnt > 0 ? cnt : '';
     btn.style.display = (tab.key !== '' && cnt === 0) ? 'none' : '';
   });
+  // Filter unassigned pool cards by search text + engineer filter
+  const poolCards = document.querySelectorAll('#day-upool .day-upool-card');
+  let visiblePool = 0;
+  poolCards.forEach(card => {
+    let show = true;
+    if (q && !(card.dataset.search || '').includes(q)) show = false;
+    if (dayEngFilter && dayEngFilter !== '__none__') show = false; // specific engineer selected — hide unassigned
+    card.style.display = show ? '' : 'none';
+    if (show) visiblePool++;
+  });
+  const cntEl = document.getElementById('day-upool-cnt');
+  if (cntEl) cntEl.textContent = visiblePool;
+
   if (_updateDayEngCells) _updateDayEngCells();
 }
 
@@ -1330,6 +1343,7 @@ function buildUnassignedPanel(jobs, targetDate) {
       const st      = jobStatus(job);
       const stColor = STATUS_COLORS[st] || '#888';
       const stLabel = STATUS_LABEL[st]  || st;
+      card.dataset.search = [title, addr, cust, phone, stLabel, job.job_no||'', job.id||''].join(' ').toLowerCase();
       card.innerHTML = `
         <div class="day-upool-card-title">${esc(title)}</div>
         ${addr  ? `<div class="day-upool-card-addr">📍 ${esc(addr)}</div>` : ''}
