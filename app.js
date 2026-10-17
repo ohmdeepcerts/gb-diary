@@ -4215,12 +4215,28 @@ async function saveJob() {
     let propertyId = _addJobPropertyId || null;
     if (!propertyId && (address || postcode)) {
       if (btn) btn.textContent = 'Creating property…';
-      const p = await trpcMutate('properties.create', {
-        ...(address  ? {address}  : {}),
-        ...(postcode ? {postcode} : {}),
-        contactId,
-      });
-      propertyId = p?.id;
+      try {
+        const p = await trpcMutate('properties.create', {
+          ...(address  ? {address}  : {}),
+          ...(postcode ? {postcode} : {}),
+          contactId,
+        });
+        propertyId = p?.id;
+      } catch(createErr) {
+        if (!createErr.message.includes('409')) throw createErr;
+        // Property already exists — find the matching one for this contact
+        if (btn) btn.textContent = 'Finding property…';
+        const existing = await trpcQuery('properties.list', { contactId, pageSize: 50 });
+        const items = existing?.items || [];
+        const needle = (address || '').toLowerCase().split(',')[0].trim();
+        const pc = (postcode || '').replace(/\s/g, '').toLowerCase();
+        const match = items.find(it => {
+          const addr = (it.address || '').toLowerCase();
+          const ipc  = (it.postcode || '').replace(/\s/g, '').toLowerCase();
+          return (needle && addr.includes(needle)) || (pc && ipc === pc);
+        });
+        propertyId = match?.id || null;
+      }
     }
     if (!propertyId) { _err('Address is required'); if (btn) { btn.disabled = false; btn.textContent = 'Add to Portal'; } return; }
 
