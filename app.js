@@ -920,31 +920,26 @@ function jobReviewer(job) {
 }
 
 function jobExcelRow(job, engineer, dateISO) {
+  const md = v => { const s = String(v ?? '').trim(); return s || 'MD'; };
   const d = dateISO || job.scheduled_date || '';
   let dateFmt = d;
   if (d && d.includes('-')) { const [y,m,dy] = d.split('-'); dateFmt = `${dy}/${m}/${y}`; }
-  const addr   = jobAddr(job);
-  const desc   = jobTitle(job) || jobNotes(job);
-  const cust   = jobCustomer(job);
-  const phone  = jobPhone(job);
-  const tenantContact = [cust, phone].filter(Boolean).join(' / ');
-  const time   = jobTime(job);
-  const eng    = engineer?.name || '';
-  const raw    = job.price ?? job.amount ?? job.value ?? null;
-  const price  = raw != null ? Number(raw).toFixed(2) : '';
-  const refName    = job.client?.name || job.agency?.name || job.referrer?.name ||
-                     job.referredBy  || job.property?.agencyName || '';
-  const refContact = job.client?.phone || job.client?.mobile ||
-                     job.agency?.phone || job.agency?.mobile || job.referrer?.phone || '';
-  const email      = job.email || job.client?.email || job.customer?.email ||
-                     job.agency?.email || job.property?.email || '';
+  const addr    = jobAddr(job);
+  const desc    = jobTitle(job) || jobNotes(job);
+  const access  = md(jobAccess(job));
+  const time    = jobTime(job);
+  const eng     = engineer?.name || '';
+  const raw     = job.price ?? job.amount ?? job.value ?? null;
+  const price   = raw != null ? Number(raw).toFixed(2) : '';
+  const custName  = md(jobCustomer(job));
+  const custPhone = md(jobPhone(job));
+  const email     = md(job.email || job.customer?.email || job.property?.email || '');
   const inv    = jobInvoice(job);
   const invNo  = inv?.ref || '';
   const cert   = job.certificate || job.cert || job.cert_no || job.certificateNo || '';
   const status = STATUS_LABEL[jobStatus(job)] || jobStatus(job);
-  const invSt  = '';   // user-managed field; left blank so user fills in Excel
-  return [dateFmt, addr, desc, tenantContact, time, eng, price,
-          refName, refContact, email, invNo, cert, status, invSt].join('\t');
+  return [dateFmt, addr, desc, access, time, eng, price,
+          custName, custPhone, email, invNo, cert, status, ''].join('\t');
 }
 
 async function exportJobsExcel() {
@@ -962,9 +957,9 @@ async function exportJobsExcel() {
     while (d <= to) { mondays.add(mondayOf(d)); d = addDays(d, 1); }
     const allLanes = await Promise.all([...mondays].map(m => getWeek(m)));
 
-    const HEADERS = ['DATE','ADDRESS','JOB DESCRIPTION','TENANT NAME & CONTACT',
-                     'TIME','ENGINEER','PRICE (£)','JOB REFERRER',
-                     'JOB REFERRER CONTACT DETAILS','EMAIL',
+    const HEADERS = ['DATE','ADDRESS','JOB DESCRIPTION','ACCESS DETAILS',
+                     'TIME','ENGINEER','PRICE','CLIENT NAME',
+                     'CLIENT CONTACT NUMBER','EMAIL',
                      'INVOICE NUMBER','CERTIFICATE','STATUS','INVOICE STATUS'];
     const rows = [HEADERS];
 
@@ -976,27 +971,25 @@ async function exportJobsExcel() {
           const iso = days[di];
           if (iso < from || iso > to) return;
           (dayData.jobs || []).forEach(job => {
+            const md = v => { const s = String(v ?? '').trim(); return s || 'MD'; };
             const [y,mo,dy] = iso.split('-');
-            const dateFmt = `${dy}/${mo}/${y}`;
-            const addr   = jobAddr(job);
-            const desc   = jobTitle(job) || jobNotes(job);
-            const cust   = jobCustomer(job);
-            const phone  = jobPhone(job);
-            const tenantContact = [cust, phone].filter(Boolean).join(' / ');
-            const time   = jobTime(job);
-            const eng    = lane.engineer?.name || '';
-            const raw    = job.price ?? job.amount ?? job.value ?? null;
-            const price  = raw != null ? Number(raw).toFixed(2) : '';
-            const refName    = job.client?.name || job.agency?.name || job.referrer?.name || job.referredBy || job.property?.agencyName || '';
-            const refContact = job.client?.phone || job.client?.mobile || job.agency?.phone || job.agency?.mobile || job.referrer?.phone || '';
-            const email      = job.email || job.client?.email || job.customer?.email || job.agency?.email || job.property?.email || '';
+            const dateFmt   = `${dy}/${mo}/${y}`;
+            const addr      = jobAddr(job);
+            const desc      = jobTitle(job) || jobNotes(job);
+            const access    = md(jobAccess(job));
+            const time      = jobTime(job);
+            const eng       = lane.engineer?.name || '';
+            const raw       = job.price ?? job.amount ?? job.value ?? null;
+            const price     = raw != null ? Number(raw).toFixed(2) : '';
+            const custName  = md(jobCustomer(job));
+            const custPhone = md(jobPhone(job));
+            const email     = md(job.email || job.customer?.email || job.property?.email || '');
             const inv    = jobInvoice(job);
             const invNo  = inv?.ref || '';
             const cert   = job.certificate || job.cert || job.cert_no || job.certificateNo || '';
             const status = STATUS_LABEL[jobStatus(job)] || jobStatus(job);
-            const invSt  = '';   // user-managed field; left blank so user fills in Excel
-            rows.push([dateFmt, addr, desc, tenantContact, time, eng, price,
-                       refName, refContact, email, invNo, cert, status, invSt]);
+            rows.push([dateFmt, addr, desc, access, time, eng, price,
+                       custName, custPhone, email, invNo, cert, status, '']);
           });
         });
       });
