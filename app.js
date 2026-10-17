@@ -4680,19 +4680,50 @@ async function loadAllTimeView() {
   });
   if (!allJobs.length) { body.innerHTML = '<div class="loading-row">No jobs found</div>'; return; }
 
-  // Status counts for breakdown chips
+  // Status counts
   const statusCounts = {};
-  allJobs.forEach(job => {
-    const st = jobStatus(job);
-    statusCounts[st] = (statusCounts[st] || 0) + 1;
-  });
+  allJobs.forEach(job => { const st = jobStatus(job); statusCounts[st] = (statusCounts[st]||0)+1; });
 
-  // Statuses the portal counts in its main total (active/billable)
   const PORTAL_COUNTED = new Set(['pending','in_progress','engineer_completed','completed','invoiced','paid','waiting_certificate','quotation','project','cannot_access','in_review']);
   const portalCount = allJobs.filter(j => PORTAL_COUNTED.has(jobStatus(j))).length;
   const hiddenCount = allJobs.length - portalCount;
 
-  // Group by date — newest first
+  // ── Replace filter bar with All Time controls (same look as day mode) ─────────
+  const filterBar = document.getElementById('day-filter-bar');
+  if (filterBar) {
+    filterBar.innerHTML = `
+      <div class="dfb-search">
+        <input type="text" id="at-search" class="dfb-inp" placeholder="Search title, address, client, engineer…">
+      </div>
+      <span style="font-size:11px;color:var(--text2);white-space:nowrap;flex-shrink:0">
+        <strong>${allJobs.length}</strong> total &nbsp;·&nbsp;
+        <strong style="color:#16a34a">${portalCount}</strong> portal
+        ${hiddenCount ? `<span style="color:#ef4444;margin-left:4px">+${hiddenCount} not counted ⚠</span>` : ''}
+      </span>
+      <span id="at-visible-count" style="margin-left:auto;font-size:11px;color:var(--muted);white-space:nowrap"></span>`;
+  }
+
+  // ── Replace status tab strip with All Time status buttons (same .dst classes) ─
+  const tabStrip = document.getElementById('day-status-tabs');
+  if (tabStrip) {
+    tabStrip.innerHTML = '';
+    const makeTab = (key, label, cnt, color, isPortal) => {
+      const btn = document.createElement('button');
+      btn.className = 'dst' + (key === '' ? ' dst-active' : '');
+      btn.dataset.st = key;
+      if (color) { btn.style.setProperty('--dst-color', color); }
+      const dot = color ? `<i style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${color};margin-right:3px;flex-shrink:0;vertical-align:middle"></i>` : '';
+      const warn = !isPortal && key !== '' ? ' ⚠' : '';
+      btn.innerHTML = `${dot}${esc(label)}<span class="dst-badge">${cnt}</span>${warn}`;
+      return btn;
+    };
+    tabStrip.appendChild(makeTab('', 'All', allJobs.length, null, true));
+    Object.entries(statusCounts).sort((a,b) => b[1]-a[1]).forEach(([st, cnt]) => {
+      tabStrip.appendChild(makeTab(st, STATUS_LABEL[st]||st, cnt, STATUS_COLORS[st]||'#888', PORTAL_COUNTED.has(st)));
+    });
+  }
+
+  // ── Group jobs by date — newest first ─────────────────────────────────────────
   const byDate = new Map();
   allJobs.forEach(job => {
     const date = (job.date || job.scheduledDate || job.scheduled_date || job.visitPlan?.date || '').slice(0, 10);
@@ -4703,45 +4734,9 @@ async function loadAllTimeView() {
   const sortedDates = [...byDate.keys()]
     .sort((a, b) => b === 'unscheduled' ? -1 : a === 'unscheduled' ? 1 : b.localeCompare(a));
 
+  // ── Build scrollable content (banners + rows only, no inner header/chips) ─────
   const wrap = document.createElement('div');
   wrap.className = 'at-wrap';
-
-  // ── Header + search ──────────────────────────────────────────────────────────
-  const hdr = document.createElement('div');
-  hdr.className = 'at-hdr';
-  hdr.innerHTML = `
-    <span><strong>${allJobs.length}</strong> total &nbsp;·&nbsp; <strong style="color:#16a34a">${portalCount}</strong> portal-counted</span>
-    ${hiddenCount ? `<span style="color:#ef4444;font-weight:600">+${hiddenCount} not in portal count ▾</span>` : ''}
-    <input id="at-search" type="text" placeholder="Search title, address, client…"
-      style="margin-left:auto;padding:4px 8px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:11px;width:200px">
-    <span id="at-visible-count" style="font-size:11px;color:var(--muted)"></span>`;
-  wrap.appendChild(hdr);
-
-  // ── Status filter chips ───────────────────────────────────────────────────────
-  const chipsRow = document.createElement('div');
-  chipsRow.className = 'at-chips';
-  // All chip
-  const allChip = document.createElement('button');
-  allChip.className = 'at-chip at-chip-active';
-  allChip.dataset.st = '';
-  allChip.textContent = `All (${allJobs.length})`;
-  chipsRow.appendChild(allChip);
-  // Per-status chips — sorted by count desc
-  Object.entries(statusCounts).sort((a,b) => b[1]-a[1]).forEach(([st, cnt]) => {
-    const color = STATUS_COLORS[st] || '#888';
-    const label = STATUS_LABEL[st] || st;
-    const isPortal = PORTAL_COUNTED.has(st);
-    const chip = document.createElement('button');
-    chip.className = 'at-chip' + (!isPortal ? ' at-chip-hidden' : '');
-    chip.dataset.st = st;
-    chip.style.borderColor = color;
-    chip.style.color = color;
-    chip.innerHTML = `${label} <span style="font-weight:700">${cnt}</span>${!isPortal?' ⚠':''}`;
-    chipsRow.appendChild(chip);
-  });
-  wrap.appendChild(chipsRow);
-
-  // ── Rows ─────────────────────────────────────────────────────────────────────
   let activeFilter = '';
   let activeSearch = '';
   const allRows    = [];
@@ -4773,10 +4768,9 @@ async function loadAllTimeView() {
       const eng   = (job.engineer || job.assignedEngineer)?.name || 'Unassigned';
       const title = jobTitle(job) || '—';
       const time  = jobTime(job)  || '';
-      const search = [title, addr, cust, eng, label, job.job_no||''].join(' ').toLowerCase();
       row.dataset.st      = st;
       row.dataset.dateKey = dateKey;
-      row.dataset.search  = search;
+      row.dataset.search  = [title, addr, cust, eng, label, job.job_no||''].join(' ').toLowerCase();
       row.innerHTML = `
         <span class="at-dot" style="background:${color}"></span>
         <span class="at-title" title="${esc(title)}">${esc(title)}</span>
@@ -4791,15 +4785,16 @@ async function loadAllTimeView() {
     });
   });
 
+  body.innerHTML = '';
+  body.appendChild(wrap);
+
   // ── Filter function ───────────────────────────────────────────────────────────
   function _atApplyFilter() {
     const q = activeSearch.toLowerCase();
     let visible = 0;
     const bannerVis = {};
     allRows.forEach(row => {
-      const stMatch = !activeFilter || row.dataset.st === activeFilter;
-      const qMatch  = !q || row.dataset.search.includes(q);
-      const show    = stMatch && qMatch;
+      const show = (!activeFilter || row.dataset.st === activeFilter) && (!q || row.dataset.search.includes(q));
       row.style.display = show ? '' : 'none';
       if (show) { visible++; bannerVis[row.dataset.dateKey] = (bannerVis[row.dataset.dateKey]||0)+1; }
     });
@@ -4813,21 +4808,20 @@ async function loadAllTimeView() {
     if (vcEl) vcEl.textContent = (activeFilter||q) ? `${visible} shown` : '';
   }
 
-  // ── Wire chips ────────────────────────────────────────────────────────────────
-  chipsRow.querySelectorAll('.at-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-      activeFilter = chip.dataset.st;
-      chipsRow.querySelectorAll('.at-chip').forEach(c => c.classList.toggle('at-chip-active', c === chip));
-      _atApplyFilter();
+  // ── Wire status tabs ──────────────────────────────────────────────────────────
+  if (tabStrip) {
+    tabStrip.querySelectorAll('.dst').forEach(btn => {
+      btn.addEventListener('click', () => {
+        activeFilter = btn.dataset.st;
+        tabStrip.querySelectorAll('.dst').forEach(b => b.classList.toggle('dst-active', b === btn));
+        _atApplyFilter();
+      });
     });
-  });
+  }
 
   // ── Wire search ───────────────────────────────────────────────────────────────
-  const searchEl = wrap.querySelector('#at-search');
+  const searchEl = document.getElementById('at-search');
   if (searchEl) searchEl.addEventListener('input', e => { activeSearch = e.target.value; _atApplyFilter(); });
-
-  body.innerHTML = '';
-  body.appendChild(wrap);
 }
 
 // ── INVOICE / STATEMENT STATE ─────────────────────────────────────────────────
