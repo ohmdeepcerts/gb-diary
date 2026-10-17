@@ -4416,6 +4416,7 @@ async function init() {
   document.getElementById('day-refresh').addEventListener('click', async () => { clearCache(); await loadDay(true); });
   document.getElementById('day-logout').addEventListener('click', logout);
   document.getElementById('day-add').addEventListener('click', openAddJob);
+  document.getElementById('day-alltime-btn').addEventListener('click', loadAllTimeView);
 
   // Month nav
   document.getElementById('month-prev').addEventListener('click', async () => {
@@ -4602,6 +4603,130 @@ async function _doGlobalSearch(q) {
     row.addEventListener('click', () => { closeGlobalSearch(); openJobDetail(job.id); });
     resultsEl.appendChild(row);
   });
+}
+
+// ── ALL-TIME DIARY VIEW ────────────────────────────────────────────────────────
+
+let _atCSSInjected = false;
+function _injectAllTimeCSS() {
+  if (_atCSSInjected) return;
+  _atCSSInjected = true;
+  const s = document.createElement('style');
+  s.textContent = `
+    .at-wrap { overflow-y:auto; height:100%; }
+    .at-hdr { padding:8px 14px 6px; font-size:11px; color:var(--muted); border-bottom:2px solid var(--border); display:flex; align-items:center; gap:6px; }
+    .at-banner {
+      position:sticky; top:0; z-index:10;
+      background:#F59E0B; color:#1a1a1a;
+      font-weight:700; font-size:12px; letter-spacing:.2px;
+      padding:5px 14px; display:flex; align-items:center; gap:8px;
+    }
+    .at-banner-cnt { font-size:10px; font-weight:500; opacity:.65; }
+    .at-row {
+      display:flex; align-items:center; gap:10px;
+      padding:7px 14px; border-bottom:1px solid var(--border);
+      cursor:pointer; font-size:12px;
+    }
+    .at-row:hover { background:var(--bg2); }
+    .at-dot  { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .at-title{ font-weight:600; flex:0 0 180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .at-addr { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text2); }
+    .at-cust { flex:0 0 140px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text2); }
+    .at-eng  { flex:0 0 100px; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .at-time { flex:0 0 52px; font-size:11px; color:var(--muted); }
+    .at-badge{ font-size:10px; padding:2px 7px; border-radius:10px; border:1px solid; white-space:nowrap; flex-shrink:0; }
+  `;
+  document.head.appendChild(s);
+}
+
+async function loadAllTimeView() {
+  _injectAllTimeCSS();
+  const body = document.getElementById('day-body');
+  body.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading all jobs…</div>';
+  const dayLabel = document.getElementById('day-label');
+  if (dayLabel) dayLabel.textContent = 'All Jobs';
+
+  // Load up to 10 pages (500 jobs) in parallel — stop early if any page is short
+  const PAGE  = 50;
+  const PAGES = 10;
+  let results;
+  try {
+    results = await Promise.allSettled(
+      Array.from({ length: PAGES }, (_, i) => trpcQuery('jobs.list', { pageSize: PAGE, offset: i * PAGE }))
+    );
+  } catch(e) {
+    body.innerHTML = `<div class="loading-row" style="color:#ef4444">⚠ ${esc(e.message)}</div>`; return;
+  }
+
+  const allJobs = results.flatMap(r => {
+    if (r.status !== 'fulfilled') return [];
+    const d = r.value;
+    return Array.isArray(d) ? d : (d?.jobs || d?.items || []);
+  });
+
+  if (!allJobs.length) { body.innerHTML = '<div class="loading-row">No jobs found</div>'; return; }
+
+  // Group by date — newest first
+  const byDate = new Map();
+  allJobs.forEach(job => {
+    const date = (job.date || job.scheduledDate || job.scheduled_date || job.visitPlan?.date || '').slice(0, 10);
+    const key = date || 'unscheduled';
+    if (!byDate.has(key)) byDate.set(key, []);
+    byDate.get(key).push(job);
+  });
+  const sortedDates = [...byDate.keys()]
+    .sort((a, b) => (b === 'unscheduled' ? -1 : a === 'unscheduled' ? 1 : b.localeCompare(a)));
+
+  const wrap = document.createElement('div');
+  wrap.className = 'at-wrap';
+
+  // Summary header
+  const hdr = document.createElement('div');
+  hdr.className = 'at-hdr';
+  hdr.innerHTML = `<strong>${allJobs.length}</strong>&nbsp;jobs across&nbsp;<strong>${sortedDates.filter(d=>d!=='unscheduled').length}</strong>&nbsp;days &nbsp;·&nbsp; newest at top · click any job to open`;
+  wrap.appendChild(hdr);
+
+  sortedDates.forEach(dateKey => {
+    const jobs = byDate.get(dateKey);
+
+    // Yellow date banner (sticky)
+    const banner = document.createElement('div');
+    banner.className = 'at-banner';
+    if (dateKey === 'unscheduled') {
+      banner.innerHTML = `Unscheduled <span class="at-banner-cnt">${jobs.length} job${jobs.length!==1?'s':''}</span>`;
+    } else {
+      const d = new Date(dateKey + 'T00:00:00');
+      const dateStr = d.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+      banner.innerHTML = `${esc(dateStr)}&nbsp;<span class="at-banner-cnt">${jobs.length} job${jobs.length!==1?'s':''}</span>`;
+    }
+    wrap.appendChild(banner);
+
+    jobs.forEach(job => {
+      const row   = document.createElement('div');
+      row.className = 'at-row';
+      const st    = jobStatus(job);
+      const color = STATUS_COLORS[st] || '#888';
+      const label = STATUS_LABEL[st]  || st;
+      const addr  = jobAddr(job);
+      const cust  = jobCustomer(job);
+      const eng   = (job.engineer || job.assignedEngineer)?.name || 'Unassigned';
+      const title = jobTitle(job) || '—';
+      const time  = jobTime(job)  || '';
+      row.innerHTML = `
+        <span class="at-dot" style="background:${color}"></span>
+        <span class="at-title" title="${esc(title)}">${esc(title)}</span>
+        <span class="at-addr"  title="${esc(addr)}">${esc(addr)}</span>
+        <span class="at-cust"  title="${esc(cust)}">${esc(cust)}</span>
+        <span class="at-time">${esc(time)}</span>
+        <span class="at-eng">${esc(eng)}</span>
+        <span class="at-badge" style="border-color:${color};color:${color}">${esc(label)}</span>`;
+      row.addEventListener('click', () => openJobDetail(job.id));
+      wrap.appendChild(row);
+    });
+  });
+
+  body.innerHTML = '';
+  body.appendChild(wrap);
 }
 
 // ── INVOICE / STATEMENT STATE ─────────────────────────────────────────────────
