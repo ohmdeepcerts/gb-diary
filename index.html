@@ -853,6 +853,7 @@
     <div class="view-switch" style="margin-left:6px">
       <button class="vbtn" id="week-inv-btn" data-view="invoices">₤ Invoices</button>
       <button class="vbtn" id="week-stmt-btn" data-view="statements">📋 Statements</button>
+      <button class="vbtn" id="week-email-btn" data-view="emails">✉ Emails</button>
     </div>
     <button class="nav-btn" id="week-prev">‹</button>
     <span class="date-label" id="week-label">—</span>
@@ -891,6 +892,7 @@
     <div class="view-switch" style="margin-left:6px">
       <button class="vbtn" id="day-inv-btn" data-view="invoices">₤ Invoices</button>
       <button class="vbtn" id="day-stmt-btn" data-view="statements">📋 Statements</button>
+      <button class="vbtn" id="day-email-btn" data-view="emails">✉ Emails</button>
       <button class="vbtn" id="day-alltime-btn" title="All jobs — full scrollable history">📜 All Time</button>
     </div>
     <button class="nav-btn" id="day-prev">‹</button>
@@ -933,6 +935,7 @@
     <div class="view-switch" style="margin-left:6px">
       <button class="vbtn" id="month-inv-btn" data-view="invoices">₤ Invoices</button>
       <button class="vbtn" id="month-stmt-btn" data-view="statements">📋 Statements</button>
+      <button class="vbtn" id="month-email-btn" data-view="emails">✉ Emails</button>
     </div>
     <button class="nav-btn" id="month-prev">‹</button>
     <span class="date-label" id="month-label">—</span>
@@ -1072,6 +1075,20 @@
   <div id="stmt-body" class="body" style="flex:1;overflow:auto;padding:0 0 40px"></div>
 </div>
 
+<!-- ── EMAILS VIEW ── -->
+<div id="view-emails" class="view">
+  <div class="app-header">
+    <span class="hdr-logo">GB</span>
+    <button class="nav-btn" id="email-back-btn" style="font-size:11px;padding:5px 10px">← Diary</button>
+    <span style="font-size:15px;font-weight:800;margin-left:6px">Email Log</span>
+    <div class="spacer"></div>
+    <button class="btn-icon" id="email-refresh-btn" title="Refresh">↻</button>
+    <button class="btn-icon" id="email-theme-btn" title="Toggle theme">🌙</button>
+    <button class="btn-icon" id="email-logout-btn" title="Sign out">⎋</button>
+  </div>
+  <div id="email-body" class="body" style="flex:1;overflow:auto;padding:0 0 40px"></div>
+</div>
+
 <!-- ── GLOBAL SEARCH OVERLAY ── -->
 <div id="global-search-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;align-items:flex-start;justify-content:center;padding-top:80px">
   <div class="gsearch-box">
@@ -1085,6 +1102,6 @@
   </div>
 </div>
 
-<script src="app.js?v=20261017l"></script>
+<script src="app.js?v=20261017m"></script>
 </body>
 </html>

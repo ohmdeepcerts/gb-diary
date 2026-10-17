@@ -276,7 +276,7 @@ function setUser(name) {
 function applyTheme() {
   document.body.setAttribute('data-theme', isDark ? 'dark' : 'light');
   const ic = isDark ? '🌙' : '☀️';
-  ['week-theme','day-theme','month-theme','inv-theme-btn','stmt-theme-btn'].forEach(id => { const e=document.getElementById(id); if(e) e.textContent=ic; });
+  ['week-theme','day-theme','month-theme','inv-theme-btn','stmt-theme-btn','email-theme-btn'].forEach(id => { const e=document.getElementById(id); if(e) e.textContent=ic; });
   try { localStorage.setItem('gb-theme', isDark ? 'dark' : 'light'); } catch {}
 }
 function toggleTheme() { isDark = !isDark; applyTheme(); }
@@ -308,6 +308,8 @@ async function switchView(name) {
     await openInvoices();
   } else if (name === 'statements') {
     await openStatements();
+  } else if (name === 'emails') {
+    await openEmails();
   }
 }
 
@@ -4514,7 +4516,7 @@ async function init() {
   applyTheme();
 
   // Wire theme buttons
-  ['week-theme','day-theme','month-theme','inv-theme-btn','stmt-theme-btn'].forEach(id => {
+  ['week-theme','day-theme','month-theme','inv-theme-btn','stmt-theme-btn','email-theme-btn'].forEach(id => {
     document.getElementById(id)?.addEventListener('click', toggleTheme);
   });
 
@@ -4570,6 +4572,11 @@ async function init() {
   document.getElementById('stmt-back-btn')?.addEventListener('click', () => switchView('day'));
   document.getElementById('stmt-print-btn')?.addEventListener('click', () => window.print());
   document.getElementById('stmt-logout-btn')?.addEventListener('click', logout);
+
+  // Emails view
+  document.getElementById('email-back-btn')?.addEventListener('click', () => switchView('day'));
+  document.getElementById('email-logout-btn')?.addEventListener('click', logout);
+  document.getElementById('email-refresh-btn')?.addEventListener('click', () => _loadEmailLog());
 
   // Add job overlay
   document.getElementById('btn-add-cancel').addEventListener('click', closeAddJob);
@@ -6081,6 +6088,251 @@ function _renderStatement(contactId, contactName, invoices, payments, totals) {
       </table>
     </div>
   `;
+}
+
+// ── EMAILS VIEW ────────────────────────────────────────────────────────────────
+
+const SG_PROXY = 'https://gb-proxy.gbmandeep.workers.dev/sg';
+
+let _emailCSSInjected = false;
+function _injectEmailCSS() {
+  if (_emailCSSInjected) return;
+  _emailCSSInjected = true;
+  const s = document.createElement('style');
+  s.textContent = `
+    .email-stats { display:flex; gap:12px; padding:12px 12px 0; flex-wrap:wrap; }
+    .email-card { flex:1; min-width:110px; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:10px 14px; }
+    .email-card-val { font-size:22px; font-weight:800; color:var(--text); }
+    .email-card-lbl { font-size:10px; color:var(--text2); margin-top:2px; text-transform:uppercase; letter-spacing:.5px; }
+    .email-card.ok   .email-card-val { color:#16a34a; }
+    .email-card.blue .email-card-val { color:#2563eb; }
+    .email-card.warn .email-card-val { color:#d97706; }
+    .email-card.danger .email-card-val { color:var(--red); }
+    .email-filter-bar { display:flex; gap:8px; padding:10px 12px; flex-wrap:wrap; align-items:center; }
+    .email-status-pills { display:flex; gap:4px; flex-wrap:wrap; }
+    .email-spill { padding:3px 10px; border-radius:10px; font-size:11px; font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--surface); color:var(--text2); }
+    .email-spill.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .email-tbl-wrap { overflow-x:auto; padding:0 12px; }
+    .email-table { width:100%; border-collapse:collapse; font-size:12px; min-width:700px; }
+    .email-table th { text-align:left; padding:7px 10px; background:var(--bg3); color:var(--text2); font-size:10px; letter-spacing:.4px; text-transform:uppercase; border-bottom:1px solid var(--border); position:sticky; top:0; z-index:2; }
+    .email-table td { padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:middle; }
+    .email-row:hover { background:var(--bg3); cursor:pointer; }
+    .email-row.expanded { background:var(--bg3); }
+    .email-detail-row > td { background:var(--bg2); padding:12px 16px; border-bottom:2px solid var(--border); }
+    .email-badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:700; white-space:nowrap; }
+    .email-badge.delivered { background:#dcfce7; color:#166534; }
+    .email-badge.open,.email-badge.opened { background:#dbeafe; color:#1e40af; }
+    .email-badge.click,.email-badge.clicked { background:#ede9fe; color:#6d28d9; }
+    .email-badge.bounce,.email-badge.bounced,.email-badge.blocked,.email-badge.drop,.email-badge.dropped { background:#fee2e2; color:#991b1b; }
+    .email-badge.deferred { background:#fef3c7; color:#92400e; }
+    .email-badge.spamreport { background:#fce7f3; color:#9d174d; }
+    .email-badge.processed,.email-badge.unsubscribe,.email-badge.unsubscribed { background:var(--bg3); color:var(--text2); }
+    .email-evt { display:flex; gap:8px; align-items:flex-start; padding:3px 0; font-size:11px; }
+    .email-evt-dot { width:7px; height:7px; border-radius:50%; background:var(--accent); margin-top:3px; flex-shrink:0; }
+  `;
+  document.head.appendChild(s);
+}
+
+let _emailSearch = '', _emailStatusFilter = '';
+
+async function openEmails() {
+  _injectEmailCSS();
+  showView('emails');
+  await _loadEmailLog();
+}
+
+async function _loadEmailLog() {
+  const body = document.getElementById('email-body');
+  if (!body) return;
+  body.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading email log…</div>';
+
+  try {
+    const [msgRes, bounceRes] = await Promise.all([
+      fetch(SG_PROXY + '/v3/messages?limit=1000').then(r => r.json()).catch(() => null),
+      fetch(SG_PROXY + '/v3/suppression/bounces?limit=500').then(r => r.json()).catch(() => null),
+    ]);
+
+    if (msgRes?.error?.includes?.('not configured') || msgRes?.error?.includes?.('SENDGRID')) {
+      _renderEmailSetup(body);
+      return;
+    }
+    if (msgRes?.errors || (typeof msgRes?.error === 'string')) {
+      _renderEmailSetup(body, msgRes?.errors?.[0]?.message || msgRes?.error || 'SendGrid error');
+      return;
+    }
+
+    const messages = msgRes?.messages || (Array.isArray(msgRes) ? msgRes : []);
+    const bounces  = Array.isArray(bounceRes) ? bounceRes : [];
+    _emailSearch = ''; _emailStatusFilter = '';
+    _renderEmailLog(body, messages, bounces);
+  } catch(e) {
+    body.innerHTML = `<div class="loading-row" style="color:var(--red)">⚠ ${esc(e.message)}</div>`;
+  }
+}
+
+function _renderEmailSetup(body, msg) {
+  body.innerHTML = `
+    <div style="max-width:500px;margin:60px auto;padding:0 20px;text-align:center">
+      <div style="font-size:36px;margin-bottom:12px">✉</div>
+      <div style="font-size:17px;font-weight:800;margin-bottom:8px;color:var(--text)">SendGrid not configured yet</div>
+      ${msg ? `<div style="font-size:12px;color:var(--red);margin-bottom:12px">${esc(msg)}</div>` : ''}
+      <div style="font-size:13px;color:var(--text2);margin-bottom:20px;line-height:1.6">
+        Add your SendGrid API key as a secret to the Cloudflare Worker to enable full email tracking — delivery status, opens, clicks, bounces.
+      </div>
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:16px;text-align:left;font-size:12px;line-height:2">
+        1. Cloudflare Dashboard → <strong>Workers &amp; Pages</strong> → <strong>gb-proxy</strong><br>
+        2. <strong>Settings</strong> → <strong>Variables &amp; Secrets</strong><br>
+        3. Add secret: name <code>SENDGRID_API_KEY</code>, value = your key (starts with SG.)<br>
+        4. <strong>Save</strong> — no redeploy needed, secrets apply immediately
+      </div>
+      <div style="margin-top:12px;font-size:11px;color:var(--muted)">The API key needs <em>Mail Activity → Read</em> permission at minimum.</div>
+    </div>
+  `;
+}
+
+function _emailBadge(status) {
+  const s = (status || '').toLowerCase().replace(/\s/g, '');
+  const labels = {
+    delivered:'Delivered', open:'Opened', opened:'Opened', click:'Clicked', clicked:'Clicked',
+    bounce:'Bounced', bounced:'Bounced', blocked:'Blocked', drop:'Dropped', dropped:'Dropped',
+    deferred:'Deferred', spamreport:'Spam Report', processed:'Processing',
+    unsubscribe:'Unsubscribed', unsubscribed:'Unsubscribed',
+  };
+  return `<span class="email-badge ${s}">${esc(labels[s] || status || '—')}</span>`;
+}
+
+function _renderEmailLog(body, messages, bounces) {
+  const bounceMap = {};
+  bounces.forEach(b => { bounceMap[(b.email||'').toLowerCase()] = b; });
+
+  const total     = messages.length;
+  const delivered = messages.filter(m => ['delivered','open','opened','click','clicked'].includes((m.status||'').toLowerCase())).length;
+  const opened    = messages.filter(m => ['open','opened','click','clicked'].includes((m.status||'').toLowerCase())).length;
+  const bounced   = messages.filter(m => ['bounce','bounced','blocked','drop','dropped'].includes((m.status||'').toLowerCase())).length;
+  const deferred  = messages.filter(m => (m.status||'').toLowerCase() === 'deferred').length;
+
+  const statuses = [...new Set(messages.map(m => (m.status||'').toLowerCase()))].filter(Boolean).sort();
+
+  const buildTable = () => {
+    const q  = _emailSearch.toLowerCase();
+    const sf = _emailStatusFilter.toLowerCase();
+    const filtered = messages.filter(m => {
+      if (sf && (m.status||'').toLowerCase() !== sf) return false;
+      if (q && ![(m.to_email||''),(m.from_email||''),(m.subject||'')].join(' ').toLowerCase().includes(q)) return false;
+      return true;
+    });
+    const rows = filtered.map((m, idx) => {
+      const dt  = m.last_event_time ? new Date(m.last_event_time).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+      const opens   = m.opens_count  || 0;
+      const clicks  = m.clicks_count || 0;
+      const bounce  = bounceMap[(m.to_email||'').toLowerCase()];
+      const bounceHint = bounce ? `<div style="font-size:10px;color:var(--red);margin-top:2px;white-space:normal;max-width:180px">${esc((bounce.reason||'').slice(0,60))}…</div>` : '';
+      return `<tr class="email-row" data-idx="${idx}" data-msgid="${esc(m.msg_id||'')}">
+        <td style="white-space:nowrap;color:var(--text2);font-size:11px">${esc(dt)}</td>
+        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.to_email||'—')}</td>
+        <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.subject||'—')}</td>
+        <td>${_emailBadge(m.status)}${bounceHint}</td>
+        <td style="text-align:center;color:${opens?'#2563eb':'var(--muted);opacity:.5'}">${opens||'—'}</td>
+        <td style="text-align:center;color:${clicks?'#6d28d9':'var(--muted);opacity:.5'}">${clicks||'—'}</td>
+      </tr>`;
+    }).join('');
+    return `
+      <table class="email-table">
+        <thead><tr>
+          <th style="width:140px">Date &amp; Time</th>
+          <th style="width:180px">To</th>
+          <th>Subject</th>
+          <th style="width:120px">Status</th>
+          <th style="width:60px;text-align:center">Opens</th>
+          <th style="width:60px;text-align:center">Clicks</th>
+        </tr></thead>
+        <tbody>${rows||'<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">No emails match</td></tr>'}</tbody>
+      </table>
+      <div style="padding:8px 12px;font-size:11px;color:var(--muted)">${filtered.length} of ${total} emails shown — click any row for event timeline &amp; attachment detail</div>
+    `;
+  };
+
+  const render = () => {
+    const sf = _emailStatusFilter.toLowerCase();
+    body.innerHTML = `
+      <div class="email-stats">
+        <div class="email-card"><div class="email-card-val">${total}</div><div class="email-card-lbl">Total Sent</div></div>
+        <div class="email-card ok"><div class="email-card-val">${delivered}</div><div class="email-card-lbl">Delivered</div></div>
+        <div class="email-card blue"><div class="email-card-val">${opened}</div><div class="email-card-lbl">Opened</div></div>
+        <div class="email-card danger"><div class="email-card-val">${bounced}</div><div class="email-card-lbl">Bounced</div></div>
+        ${deferred ? `<div class="email-card warn"><div class="email-card-val">${deferred}</div><div class="email-card-lbl">Deferred</div></div>` : ''}
+      </div>
+      <div class="email-filter-bar">
+        <input type="text" id="email-srch" class="inp" placeholder="Search address or subject…" value="${esc(_emailSearch)}" style="flex:1;min-width:180px">
+        <div class="email-status-pills">
+          <span class="email-spill${!sf?' active':''}" data-sf="">All</span>
+          ${statuses.map(s => `<span class="email-spill${sf===s?' active':''}" data-sf="${esc(s)}">${esc(s.charAt(0).toUpperCase()+s.slice(1))}</span>`).join('')}
+        </div>
+      </div>
+      <div class="email-tbl-wrap" id="email-tbl-wrap">${buildTable()}</div>
+    `;
+
+    document.getElementById('email-srch')?.addEventListener('input', e => {
+      _emailSearch = e.target.value;
+      document.getElementById('email-tbl-wrap').innerHTML = buildTable();
+      _wireEmailRows(messages, bounceMap);
+    });
+    body.querySelectorAll('.email-spill').forEach(pill => {
+      pill.addEventListener('click', () => { _emailStatusFilter = pill.dataset.sf; render(); });
+    });
+    _wireEmailRows(messages, bounceMap);
+  };
+
+  render();
+}
+
+function _wireEmailRows(messages, bounceMap) {
+  document.querySelectorAll('.email-row').forEach(row => {
+    row.addEventListener('click', async () => {
+      const existing = row.nextElementSibling;
+      if (existing?.classList.contains('email-detail-row')) {
+        existing.remove(); row.classList.remove('expanded'); return;
+      }
+      row.classList.add('expanded');
+      const detailTr = document.createElement('tr');
+      detailTr.className = 'email-detail-row';
+      const td = document.createElement('td');
+      td.colSpan = 6;
+      td.innerHTML = '<div style="color:var(--text2);font-size:11px">Loading detail…</div>';
+      detailTr.appendChild(td);
+      row.insertAdjacentElement('afterend', detailTr);
+
+      const msgId = row.dataset.msgid;
+      if (!msgId) { td.innerHTML = '<div style="color:var(--muted);font-size:11px">No message ID — detail not available</div>'; return; }
+      try {
+        const r = await fetch(SG_PROXY + '/v3/messages/' + encodeURIComponent(msgId));
+        const d = await r.json();
+        if (d?.errors) throw new Error(d.errors[0]?.message || 'API error');
+
+        const events = d.events || [];
+        const attachments = d.attachments || d.attachment_info || [];
+        const evHtml = events.length
+          ? events.map(ev => {
+              const t = ev.processed_at || ev.event_timestamp ? new Date((ev.processed_at||ev.event_timestamp)*1000||ev.processed_at).toLocaleString('en-GB') : '';
+              const label = ev.event_name || ev.type || ev.event || '';
+              return `<div class="email-evt"><span class="email-evt-dot"></span><span style="color:var(--text2);min-width:130px">${esc(t)}</span> ${_emailBadge(label)} ${ev.reason?`<span style="color:var(--red);font-size:10px">— ${esc(ev.reason)}</span>`:''}${ev.url?`<a href="${esc(ev.url)}" target="_blank" rel="noopener" style="font-size:10px;color:var(--accent);margin-left:6px;text-decoration:none">🔗 ${esc(ev.url.slice(0,60))}</a>`:''}</div>`;
+            }).join('')
+          : '<div style="color:var(--muted);font-size:11px">No event timeline (may require Twilio SendGrid Email Activity plan)</div>';
+
+        const attHtml = attachments.length
+          ? `<div style="margin-top:10px"><strong style="font-size:11px">Attachments (${attachments.length}):</strong> ${attachments.map(a => `<span style="display:inline-block;background:var(--bg3);padding:2px 8px;border-radius:4px;margin:2px;font-size:11px">📎 ${esc(a.name||a.filename||a.content_id||'file')}</span>`).join('')}</div>`
+          : '';
+
+        const fromHtml = d.from_email ? `<div style="font-size:11px;margin-bottom:4px;color:var(--text2)"><strong>From:</strong> ${esc(d.from_email)}</div>` : '';
+        const toHtml   = d.to_email   ? `<div style="font-size:11px;margin-bottom:4px;color:var(--text2)"><strong>To:</strong> ${esc(Array.isArray(d.to_email)?d.to_email.join(', '):d.to_email)}</div>` : '';
+        const subjHtml = d.subject     ? `<div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--text)">${esc(d.subject)}</div>` : '';
+
+        td.innerHTML = `<div style="max-width:860px">${subjHtml}${fromHtml}${toHtml}<div style="margin-top:8px">${evHtml}</div>${attHtml}</div>`;
+      } catch(e) {
+        td.innerHTML = `<div style="color:var(--red);font-size:11px">⚠ ${esc(e.message)}</div>`;
+      }
+    });
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);
