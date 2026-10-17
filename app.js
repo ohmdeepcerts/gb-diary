@@ -6185,7 +6185,8 @@ function _injectEmailCSS() {
   document.head.appendChild(s);
 }
 
-let _emailSearch = '', _emailStatusFilter = '';
+let _emailSearch = '', _emailStatusFilter = '', _emailPage = 0;
+const EMAIL_PAGE_SIZE = 30;
 
 async function openEmails() {
   _injectEmailCSS();
@@ -6293,13 +6294,17 @@ function _renderEmailLog(body, messages, bounces) {
       if (q.length >= 2 && ![(m.to_email||''),(m.from_email||''),(m.subject||'')].join(' ').toLowerCase().includes(q)) return false;
       return true;
     });
-    const rows = filtered.map((m, idx) => {
+    const totalPages = Math.ceil(filtered.length / EMAIL_PAGE_SIZE) || 1;
+    if (_emailPage >= totalPages) _emailPage = totalPages - 1;
+    const pageItems = filtered.slice(_emailPage * EMAIL_PAGE_SIZE, (_emailPage + 1) * EMAIL_PAGE_SIZE);
+
+    const rows = pageItems.map((m, idx) => {
       const dt  = m.last_event_time ? new Date(m.last_event_time).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
       const opens   = m.opens_count  || 0;
       const clicks  = m.clicks_count || 0;
       const bounce  = bounceMap[(m.to_email||'').toLowerCase()];
       const bounceHint = bounce ? `<div style="font-size:10px;color:var(--red);margin-top:2px;white-space:normal;max-width:200px">${esc((bounce.reason||'').slice(0,80))}</div>` : '';
-      return `<tr class="email-row" data-idx="${idx}" data-msgid="${esc(m.msg_id||'')}">
+      return `<tr class="email-row" data-idx="${_emailPage*EMAIL_PAGE_SIZE+idx}" data-msgid="${esc(m.msg_id||'')}">
         <td style="white-space:nowrap;color:var(--text2);font-size:11px">${esc(dt)}</td>
         <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" onclick="event.stopPropagation()"><span class="email-addr-link" data-addr="${esc(m.to_email||'')}">${esc(m.to_email||'—')}</span></td>
         <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.subject||'—')}</td>
@@ -6308,6 +6313,15 @@ function _renderEmailLog(body, messages, bounces) {
         <td style="text-align:center;color:${clicks?'#6d28d9':'var(--muted);opacity:.5'}">${clicks||'—'}</td>
       </tr>`;
     }).join('');
+
+    const pagerHtml = totalPages > 1 ? `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 12px">
+        <button class="inv-act-btn email-pg-btn" data-pg="${_emailPage-1}" ${_emailPage===0?'disabled':''}>← Prev</button>
+        <span style="font-size:12px;color:var(--text2)">Page <strong>${_emailPage+1}</strong> of ${totalPages}</span>
+        <button class="inv-act-btn email-pg-btn" data-pg="${_emailPage+1}" ${_emailPage>=totalPages-1?'disabled':''}>Next →</button>
+        <span style="font-size:11px;color:var(--muted);margin-left:4px">${filtered.length} emails</span>
+      </div>` : '';
+
     return `
       <table class="email-table">
         <thead><tr>
@@ -6320,7 +6334,8 @@ function _renderEmailLog(body, messages, bounces) {
         </tr></thead>
         <tbody>${rows||'<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">No emails match</td></tr>'}</tbody>
       </table>
-      <div style="padding:8px 12px;font-size:11px;color:var(--muted)">${q.length===1?'Type 1 more character to start searching…':filtered.length+' of '+total+' emails'} — click any row to view the email, click an address to see all their emails</div>
+      ${pagerHtml}
+      <div style="padding:${totalPages>1?'0':'8px'} 12px 8px;font-size:11px;color:var(--muted)">${q.length===1?'Type 1 more character to start searching…':'Showing '+((_emailPage*EMAIL_PAGE_SIZE)+1)+'–'+Math.min((_emailPage+1)*EMAIL_PAGE_SIZE,filtered.length)+' of '+filtered.length+' emails'} — click a row to view, click an address to filter</div>
     `;
   };
 
@@ -6352,29 +6367,49 @@ function _renderEmailLog(body, messages, bounces) {
       <div class="email-tbl-wrap" id="email-tbl-wrap">${buildTable()}</div>
     `;
 
-    document.getElementById('email-srch')?.addEventListener('input', e => {
-      _emailSearch = e.target.value;
+    const rebuildTable = () => {
       document.getElementById('email-tbl-wrap').innerHTML = buildTable();
       _wireEmailRows(messages, bounceMap);
+      _wireEmailPager(rebuildTable);
+      _wireAddrLinks(render);
+    };
+    document.getElementById('email-srch')?.addEventListener('input', e => {
+      _emailSearch = e.target.value; _emailPage = 0;
+      rebuildTable();
     });
     body.querySelectorAll('.email-spill').forEach(pill => {
-      pill.addEventListener('click', () => { _emailStatusFilter = pill.dataset.sf; render(); });
+      pill.addEventListener('click', () => { _emailStatusFilter = pill.dataset.sf; _emailPage = 0; render(); });
     });
-    body.querySelectorAll('.email-addr-link').forEach(el => {
-      el.addEventListener('click', () => {
-        const addr = el.dataset.addr;
-        if (!addr) return;
-        _emailSearch = addr;
-        _emailStatusFilter = '';
-        render();
-        // focus search input so user knows what's filtered
-        setTimeout(() => { const s = document.getElementById('email-srch'); if (s) { s.value = addr; s.focus(); s.select(); } }, 0);
-      });
-    });
+    _wireAddrLinks(render);
     _wireEmailRows(messages, bounceMap);
+    _wireEmailPager(rebuildTable);
   };
 
   render();
+}
+
+function _wireEmailPager(rebuildTable) {
+  document.querySelectorAll('.email-pg-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const pg = parseInt(btn.dataset.pg, 10);
+      if (isNaN(pg) || pg < 0) return;
+      _emailPage = pg;
+      rebuildTable();
+      document.getElementById('email-tbl-wrap')?.scrollIntoView({ behavior:'smooth', block:'start' });
+    });
+  });
+}
+
+function _wireAddrLinks(render) {
+  document.querySelectorAll('.email-addr-link').forEach(el => {
+    el.addEventListener('click', () => {
+      const addr = el.dataset.addr;
+      if (!addr) return;
+      _emailSearch = addr; _emailStatusFilter = ''; _emailPage = 0;
+      render();
+      setTimeout(() => { const s = document.getElementById('email-srch'); if (s) { s.value = addr; s.focus(); s.select(); } }, 0);
+    });
+  });
 }
 
 function _wireEmailRows(messages, bounceMap) {
