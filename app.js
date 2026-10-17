@@ -948,6 +948,74 @@ function jobExcelRow(job, engineer, dateISO) {
           refName, refContact, email, invNo, cert, status, invSt].join('\t');
 }
 
+async function exportJobsExcel() {
+  const fromEl = document.getElementById('dfb-from');
+  const toEl   = document.getElementById('dfb-to');
+  const from   = fromEl?.value || curDate;
+  const to     = toEl?.value   || curDate;
+
+  const exportBtn = document.getElementById('dfb-export');
+  if (exportBtn) { exportBtn.textContent = '⏳ Loading…'; exportBtn.disabled = true; }
+
+  try {
+    const mondays = new Set();
+    let d = from;
+    while (d <= to) { mondays.add(mondayOf(d)); d = addDays(d, 1); }
+    const allLanes = await Promise.all([...mondays].map(m => getWeek(m)));
+
+    const HEADERS = ['DATE','ADDRESS','JOB DESCRIPTION','TENANT NAME & CONTACT',
+                     'TIME','ENGINEER','PRICE (£)','JOB REFERRER',
+                     'JOB REFERRER CONTACT DETAILS','EMAIL',
+                     'INVOICE NUMBER','CERTIFICATE','STATUS','INVOICE STATUS'];
+    const rows = [HEADERS];
+
+    const monArr = [...mondays];
+    allLanes.forEach((lanes, wi) => {
+      const days = weekDays(monArr[wi]);
+      lanes.forEach(lane => {
+        lane.days.forEach((dayData, di) => {
+          const iso = days[di];
+          if (iso < from || iso > to) return;
+          (dayData.jobs || []).forEach(job => {
+            const [y,mo,dy] = iso.split('-');
+            const dateFmt = `${dy}/${mo}/${y}`;
+            const addr   = jobAddr(job);
+            const desc   = jobTitle(job) || jobNotes(job);
+            const cust   = jobCustomer(job);
+            const phone  = jobPhone(job);
+            const tenantContact = [cust, phone].filter(Boolean).join(' / ');
+            const time   = jobTime(job);
+            const eng    = lane.engineer?.name || '';
+            const raw    = job.price ?? job.amount ?? job.value ?? null;
+            const price  = raw != null ? Number(raw).toFixed(2) : '';
+            const refName    = job.client?.name || job.agency?.name || job.referrer?.name || job.referredBy || job.property?.agencyName || '';
+            const refContact = job.client?.phone || job.client?.mobile || job.agency?.phone || job.agency?.mobile || job.referrer?.phone || '';
+            const email      = job.email || job.client?.email || job.customer?.email || job.agency?.email || job.property?.email || '';
+            const inv    = jobInvoice(job);
+            const invNo  = inv?.ref || '';
+            const cert   = job.certificate || job.cert || job.cert_no || job.certificateNo || '';
+            const status = STATUS_LABEL[jobStatus(job)] || jobStatus(job);
+            const invSt  = job.invoice?.status || job.invoiceStatus || job.invoice_status || (inv ? (inv.paid ? 'Paid' : 'Unpaid') : '');
+            rows.push([dateFmt, addr, desc, tenantContact, time, eng, price,
+                       refName, refContact, email, invNo, cert, status, invSt]);
+          });
+        });
+      });
+    });
+
+    const csvEsc = v => { const s = String(v ?? ''); return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s.replace(/"/g,'""')}"` : s; };
+    const csv = '﻿' + rows.map(r => r.map(csvEsc).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = from === to ? `jobs-${from}.csv` : `jobs-${from}-to-${to}.csv`;
+    a.click();
+  } catch(ex) {
+    alert('Export failed: ' + (ex.message || ex));
+  }
+  if (exportBtn) { exportBtn.textContent = '⬇ Excel'; exportBtn.disabled = false; }
+}
+
 async function loadDay(force=false) {
   _inAllTimeView = false;
   _dbgLogged = false;
@@ -1020,6 +1088,7 @@ function buildDayFilterBar(lanes) {
       <input type="date" id="dfb-to"   class="dfb-date" value="${dayTo}"   title="To date">
       <button id="dfb-apply" class="dfb-btn dfb-btn-apply">Apply</button>
       <button id="dfb-clear" class="dfb-btn dfb-btn-clear">Clear</button>
+      <button id="dfb-export" class="dfb-btn dfb-btn-export" title="Export visible date range to Excel">⬇ Excel</button>
     </div>
     <span class="dfb-count" id="dfb-count"></span>`;
 
@@ -1038,6 +1107,7 @@ function buildDayFilterBar(lanes) {
     daySearch=''; dayEngFilter=''; dayFrom=''; dayTo=''; dayStatusFilter='';
     loadDay();
   });
+  document.getElementById('dfb-export').addEventListener('click', () => exportJobsExcel());
   renderStatusTabs();
 }
 
