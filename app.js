@@ -6164,6 +6164,17 @@ function _injectEmailCSS() {
     .email-body-frame { width:100%; min-height:320px; border:1px solid var(--border); border-radius:6px; background:#fff; margin-top:8px; }
     .email-addr-link { color:var(--accent); cursor:pointer; text-decoration:underline dotted; }
     .email-addr-link:hover { text-decoration:underline; }
+    .email-daily-wrap { padding:10px 12px 8px; border-bottom:1px solid var(--border); }
+    .email-daily-hdr { display:flex; align-items:center; gap:10px; margin-bottom:8px; font-size:11px; }
+    .email-day-chart { display:flex; gap:3px; overflow-x:auto; padding-bottom:4px; align-items:flex-end; }
+    .email-day-col { display:flex; flex-direction:column; align-items:center; cursor:pointer; min-width:34px; flex-shrink:0; user-select:none; }
+    .email-day-col:hover .email-day-b { opacity:.75; }
+    .email-day-b { width:26px; border-radius:3px 3px 0 0; background:#94a3b8; transition:opacity .12s; }
+    .email-day-col.top .email-day-b { background:#d97706; }
+    .email-day-col.sel .email-day-b { background:var(--accent) !important; }
+    .email-day-cnt { font-size:9px; color:var(--text2); margin-bottom:2px; min-height:12px; }
+    .email-day-lbl { font-size:9px; color:var(--text2); margin-top:3px; white-space:nowrap; }
+    .email-day-col.sel .email-day-lbl { color:var(--accent); font-weight:700; }
     .email-excl-bar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; padding:8px 12px; background:var(--bg3); border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
     .email-excl-lbl { font-size:11px; color:var(--text); font-weight:700; white-space:nowrap; }
     .email-excl-chip { display:inline-flex; align-items:center; gap:3px; background:var(--surface); border:1px solid var(--red); color:var(--red); border-radius:10px; font-size:11px; font-weight:600; padding:2px 4px 2px 8px; }
@@ -6190,7 +6201,7 @@ function _injectEmailCSS() {
   document.head.appendChild(s);
 }
 
-let _emailSearch = '', _emailStatusFilter = '', _emailPage = 0;
+let _emailSearch = '', _emailStatusFilter = '', _emailPage = 0, _emailDateFilter = '';
 const EMAIL_PAGE_SIZE = 30;
 let _emailExcludes = [];
 try { _emailExcludes = JSON.parse(localStorage.getItem('email_excludes') || '[]'); } catch(e) { _emailExcludes = []; }
@@ -6223,7 +6234,7 @@ async function _loadEmailLog() {
 
     const messages = msgRes?.messages || (Array.isArray(msgRes) ? msgRes : []);
     const bounces  = Array.isArray(bounceRes) ? bounceRes : [];
-    _emailSearch = ''; _emailStatusFilter = '';
+    _emailSearch = ''; _emailStatusFilter = ''; _emailPage = 0; _emailDateFilter = '';
     _renderEmailLog(body, messages, bounces);
   } catch(e) {
     body.innerHTML = `<div class="loading-row" style="color:var(--red)">⚠ ${esc(e.message)}</div>`;
@@ -6299,6 +6310,10 @@ function _renderEmailLog(body, messages, bounces) {
         else { if (st !== sf) return false; }
       }
       if (_emailExcludes.length && _emailExcludes.includes((m.to_email||'').toLowerCase())) return false;
+      if (_emailDateFilter) {
+        const msgDay = m.last_event_time ? new Date(m.last_event_time).toISOString().slice(0,10) : '';
+        if (msgDay !== _emailDateFilter) return false;
+      }
       if (q.length >= 2 && ![(m.to_email||''),(m.from_email||''),(m.subject||'')].join(' ').toLowerCase().includes(q)) return false;
       return true;
     });
@@ -6347,8 +6362,40 @@ function _renderEmailLog(body, messages, bounces) {
     `;
   };
 
+  // Build daily grouped counts for chart
+  const _dayGroups = {};
+  messages.forEach(m => {
+    if (!m.last_event_time) return;
+    const k = new Date(m.last_event_time).toISOString().slice(0,10);
+    _dayGroups[k] = (_dayGroups[k]||0) + 1;
+  });
+  const _daySorted = Object.entries(_dayGroups).sort((a,b) => b[0].localeCompare(a[0])); // newest first
+  const _dayMax = Math.max(1, ..._daySorted.map(([,c]) => c));
+  const _dayTop = _daySorted.find(([,c]) => c === _dayMax);
+
   const render = () => {
     const sf = _emailStatusFilter;
+    const dailyChart = _daySorted.length ? `
+      <div class="email-daily-wrap">
+        <div class="email-daily-hdr">
+          <strong>Daily emails</strong>
+          ${_dayTop ? `<span style="color:#d97706;font-weight:700">🏆 Top: ${new Date(_dayTop[0]).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})} (${_dayTop[1]})</span>` : ''}
+          ${_emailDateFilter ? `<button class="inv-act-btn email-day-clear" style="font-size:10px;padding:2px 8px;margin-left:auto">✕ All days</button>` : '<span style="color:var(--text2);margin-left:auto">click a bar to filter</span>'}
+        </div>
+        <div class="email-day-chart">
+          ${_daySorted.map(([date, count]) => {
+            const barH = Math.max(4, Math.round((count / _dayMax) * 64));
+            const isTop = count === _dayMax;
+            const isSel = date === _emailDateFilter;
+            const lbl = new Date(date).toLocaleDateString('en-GB',{day:'2-digit',month:'short'});
+            return `<div class="email-day-col${isTop?' top':''}${isSel?' sel':''}" data-date="${date}" title="${lbl}: ${count} emails">
+              <div class="email-day-cnt">${count}</div>
+              <div class="email-day-b" style="height:${barH}px"></div>
+              <div class="email-day-lbl">${lbl}</div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>` : '';
     body.innerHTML = `
       <div class="email-stats">
         <div class="email-card"><div class="email-card-val">${total}</div><div class="email-card-lbl">Total Sent</div></div>
@@ -6358,6 +6405,7 @@ function _renderEmailLog(body, messages, bounces) {
         <div class="email-card danger"><div class="email-card-val">${bounced}</div><div class="email-card-lbl">Bounced</div></div>
         ${deferred ? `<div class="email-card warn"><div class="email-card-val">${deferred}</div><div class="email-card-lbl">Deferred</div></div>` : ''}
       </div>
+      ${dailyChart}
       <div class="email-filter-bar">
         <input type="text" id="email-srch" class="inp" placeholder="Search address or subject…" value="${esc(_emailSearch)}" style="flex:1;min-width:200px">
         <div class="email-filter-row">
@@ -6394,6 +6442,15 @@ function _renderEmailLog(body, messages, bounces) {
     });
     body.querySelectorAll('.email-spill').forEach(pill => {
       pill.addEventListener('click', () => { _emailStatusFilter = pill.dataset.sf; _emailPage = 0; render(); });
+    });
+    body.querySelectorAll('.email-day-col').forEach(col => {
+      col.addEventListener('click', () => {
+        _emailDateFilter = col.dataset.date === _emailDateFilter ? '' : col.dataset.date;
+        _emailPage = 0; render();
+      });
+    });
+    body.querySelector('.email-day-clear')?.addEventListener('click', () => {
+      _emailDateFilter = ''; _emailPage = 0; render();
     });
     _wireAddrLinks(render);
     _wireEmailRows(messages, bounceMap);
