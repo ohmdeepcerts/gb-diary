@@ -5119,18 +5119,21 @@ async function _loadInvoices(resetPage = false) {
   const topEl  = document.getElementById('inv-top');
   if (bodyEl) bodyEl.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading invoices…</div>';
 
+  const filterParams = {
+    view: _invView,
+    ..._invQuery       ? { query:       _invQuery       } : {},
+    ..._invContactType ? { contactType: _invContactType } : {},
+    ..._invDateFrom    ? { dueDateFrom: _invDateFrom    } : {},
+    ..._invDateTo      ? { dueDateTo:   _invDateTo      } : {},
+  };
   const [totals, list] = await Promise.all([
-    trpcQuery('invoices.totals', {}).catch(() => null),
+    trpcQuery('invoices.totals', filterParams).catch(() => null),
     trpcQuery('invoices.list', {
-      view:        _invView,
-      page:        _invPage,
-      pageSize:    _invPageSize,
-      sortBy:      _invSortBy,
-      sortDir:     _invSortDir,
-      ..._invQuery       ? { query:       _invQuery       } : {},
-      ..._invContactType ? { contactType: _invContactType } : {},
-      ..._invDateFrom    ? { dueDateFrom: _invDateFrom    } : {},
-      ..._invDateTo      ? { dueDateTo:   _invDateTo      } : {},
+      ...filterParams,
+      page:     _invPage,
+      pageSize: _invPageSize,
+      sortBy:   _invSortBy,
+      sortDir:  _invSortDir,
     }).catch(() => null),
   ]);
 
