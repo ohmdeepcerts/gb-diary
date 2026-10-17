@@ -159,6 +159,7 @@ function _setLiveDot(on) {
 }
 
 let _inAllTimeView = false;
+const _jobDescOverride = {}; // jobId → saved description, held until API propagates
 
 async function silentRefresh() {
   // Never interrupt active typing / form use
@@ -736,13 +737,14 @@ function showDescEditor(anchor, job, currentDesc) {
     saveBtn.textContent = '…'; saveBtn.disabled = true;
     try {
       await api.updateNotes(job.id, job, newVal);
+      // Store override so silentRefresh re-renders with new value before API propagates
+      _jobDescOverride[job.id] = newVal;
       const newDisp = newVal.length > 65 ? newVal.slice(0,65)+'…' : (newVal || '—');
       // Update cell text in-place (preserve copy button)
       const copyBtn = anchor.querySelector('.copy-btn');
       Array.from(anchor.childNodes).forEach(n => { if (n !== copyBtn) n.remove(); });
       anchor.insertBefore(document.createTextNode(newDisp), copyBtn || null);
       anchor.title = newVal + ' (click to edit)';
-      clearCache();
       setStatus('Description updated · ' + now());
       pop.remove();
     } catch(ex) {
@@ -1426,7 +1428,12 @@ function dayRow(job, engineer, dateISO) {
   const addr   = jobAddr(job);
   const cust   = jobCustomer(job);
   const phone  = jobPhone(job);
-  const notes  = jobNotes(job);
+  const rawNotes = jobNotes(job);
+  // Use local override while API propagates the saved value; clear once API catches up
+  const notes = _jobDescOverride[job.id] !== undefined ? _jobDescOverride[job.id] : rawNotes;
+  if (_jobDescOverride[job.id] !== undefined && rawNotes === _jobDescOverride[job.id]) {
+    delete _jobDescOverride[job.id];
+  }
   const time   = jobTime(job);
   const access = jobAccess(job);
   const stamps = jobStamps(job);
@@ -1534,7 +1541,8 @@ function dayRow(job, engineer, dateISO) {
     descTd.addEventListener('click', e => {
       if (e.target.classList.contains('copy-btn')) return;
       e.stopPropagation();
-      showDescEditor(descTd, job, desc === '—' ? '' : desc);
+      const currentDesc = _jobDescOverride[job.id] !== undefined ? _jobDescOverride[job.id] : (desc === '—' ? '' : desc);
+      showDescEditor(descTd, job, currentDesc);
     });
   }
 
