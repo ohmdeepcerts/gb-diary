@@ -5070,6 +5070,7 @@ let _stmtContactName = '';
 let _stmtContactType = '';
 let _invCSSInjected  = false;
 let _invDescCache    = {};
+let _invJobDateCache = {};
 
 // ── INVOICE CSS ────────────────────────────────────────────────────────────────
 
@@ -5318,6 +5319,17 @@ async function _loadInvoices(resetPage = false) {
     // Update the description cell in the DOM directly
     const cell = document.querySelector(`[data-desc-id="${inv.id}"]`);
     if (cell) cell.textContent = _invDescCache[inv.id].desc || '—';
+
+    // Fetch job date in background if not already cached
+    if (inv.jobId && _invJobDateCache[inv.jobId] === undefined) {
+      try {
+        const jd = await trpcQuery('jobs.get', { id: inv.jobId });
+        const d = jd?.job?.scheduled_date || jd?.job?.scheduledDate || jd?.scheduled_date || '';
+        _invJobDateCache[inv.jobId] = d ? new Date(d).toLocaleDateString('en-GB') : '—';
+      } catch(e) { _invJobDateCache[inv.jobId] = '—'; }
+      const jdCell = document.querySelector(`[data-jobdate-id="${inv.id}"]`);
+      if (jdCell) jdCell.textContent = _invJobDateCache[inv.jobId];
+    }
   });
 }
 
@@ -5517,6 +5529,7 @@ function _buildInvBodyHTML() {
         <td style="width:30px;padding:6px 8px" onclick="event.stopPropagation()"><input type="checkbox" class="inv-sel-cb inv-row-cb" data-invid="${esc(inv.id||'')}"></td>
         <td style="font-weight:700;font-size:11px;white-space:nowrap">${esc(inv.invoiceNo||'—')}</td>
         <td style="font-size:11px;white-space:nowrap">${esc(inv.jobNo||'—')}</td>
+        <td data-jobdate-id="${inv.id}" style="font-size:11px;white-space:nowrap;color:var(--muted)">${inv.jobId&&_invJobDateCache[inv.jobId]?_invJobDateCache[inv.jobId]:'⏳'}</td>
         <td style="font-size:11px;max-width:160px">
           <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(inv.contactName||'—')}</div>
           ${inv.contactPhone?`<a href="tel:${esc(inv.contactPhone)}" onclick="event.stopPropagation()" style="font-size:10px;color:var(--accent);text-decoration:none;white-space:nowrap">📞 ${esc(inv.contactPhone)}</a>`:''}
@@ -5525,11 +5538,12 @@ function _buildInvBodyHTML() {
         <td data-desc-id="${inv.id}" style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">${descVal}</td>
         <td style="white-space:nowrap">${inv.dueAt?new Date(inv.dueAt).toLocaleDateString('en-GB'):'—'}${aging.pill?`<span class="inv-age ${aging.pillCls}" style="margin-left:4px">${aging.pill}</span>`:''}
         </td>
+        <td style="font-size:11px;white-space:nowrap;color:var(--muted)">${inv.issuedAt?new Date(inv.issuedAt).toLocaleDateString('en-GB'):'—'}</td>
         <td style="text-align:right;font-weight:700;color:${balance<=0?'#16a34a':'inherit'}">${_invFmt(balance<=0 ? (inv.total||0) : balance)}</td>
         <td>${_invStatusBadge(status)}</td>
       </tr>
       <tr class="inv-detail-row" data-detail="${idx}">
-        <td class="inv-detail-cell" colspan="9">${detailHTML}</td>
+        <td class="inv-detail-cell" colspan="11">${detailHTML}</td>
       </tr>
     `;
   }).join('');
@@ -5555,10 +5569,12 @@ function _buildInvBodyHTML() {
           <th style="width:30px;padding:6px 8px"><input type="checkbox" class="inv-sel-cb" id="inv-sel-all" title="Select all"></th>
           <th style="min-width:90px">Invoice #</th>
           <th style="min-width:80px">Job #</th>
+          <th style="min-width:85px">Job Date</th>
           <th style="min-width:150px">Contact</th>
           <th style="min-width:160px">Address</th>
           <th style="min-width:160px">Description</th>
           <th class="sortable" data-sort="dueAt" style="min-width:100px">Due${_invSortBy==='dueAt'?(_invSortDir==='asc'?' ↑':' ↓'):''}</th>
+          <th style="min-width:85px">Sent</th>
           <th style="text-align:right;min-width:90px">Balance</th>
           <th style="min-width:90px">Status</th>
         </tr></thead>
