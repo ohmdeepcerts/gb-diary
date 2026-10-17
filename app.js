@@ -4807,8 +4807,17 @@ function _injectInvoiceCSS() {
     .inv-detail-item span:first-child{color:var(--muted);display:block;font-size:10px}
     .inv-pay-history{margin-top:8px}
     .inv-pay-history-title{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
-    .inv-pay-row{display:flex;gap:10px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)}
+    .inv-pay-row{display:flex;gap:10px;font-size:11px;padding:5px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:flex-start}
     .inv-pay-row:last-child{border:none}
+    .inv-pay-method{font-weight:700;padding:1px 7px;border-radius:10px;font-size:10px;background:var(--bg3);border:1px solid var(--border)}
+    .inv-pay-who{font-size:10px;color:var(--muted);margin-top:2px}
+    .inv-sel-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--accent)}
+    .inv-bulk-bar{display:none;align-items:center;gap:10px;padding:6px 12px;background:var(--accent);color:#fff;font-size:12px;font-weight:600;border-radius:6px;margin:6px 12px 0}
+    .inv-bulk-bar.visible{display:flex}
+    .inv-bulk-dl{padding:4px 12px;border-radius:4px;border:1px solid rgba(255,255,255,.6);background:rgba(255,255,255,.15);color:#fff;cursor:pointer;font-size:12px;font-weight:600}
+    .inv-bulk-dl:hover{background:rgba(255,255,255,.3)}
+    .inv-bulk-clear{padding:4px 8px;border-radius:4px;border:none;background:transparent;color:rgba(255,255,255,.8);cursor:pointer;font-size:12px}
+    .inv-pay-loading{color:var(--muted);font-size:11px;font-style:italic}
     .inv-detail-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
     .inv-act-btn{padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;text-decoration:none;display:inline-block}
     .inv-act-btn:hover{border-color:var(--accent);color:var(--accent)}
@@ -4901,6 +4910,37 @@ function _invStatusBadge(status) {
   return `<span class="inv-badge ${cls}">${labels[status] || status}</span>`;
 }
 
+function _buildPaymentHTML(payments) {
+  if (!payments || !payments.length) return '<span class="inv-pay-loading">No payment records found</span>';
+  const METHOD_ICON = { cash:'💵', card:'💳', bank:'🏦', bank_transfer:'🏦', stripe:'⚡', cheque:'📝', bacs:'🏦', online:'🌐' };
+  return `
+    <div class="inv-pay-history">
+      <div class="inv-pay-history-title">Payment History (${payments.length})</div>
+      ${payments.map(p => {
+        const method  = (p.method || p.paymentMethod || '').toLowerCase();
+        const icon    = METHOD_ICON[method] || '💰';
+        const amount  = _invFmt(p.amount || 0);
+        const recvd   = p.receivedAt || p.paidAt || p.date || '';
+        const recorded= p.createdAt  || p.recordedAt || p.settledAt || '';
+        const who     = p.recordedBy?.name || p.createdBy?.name || p.settledBy?.name || p.user?.name || p.staffName || '';
+        const ref     = p.reference  || p.stripePaymentRef || p.transactionId || '';
+        const note    = p.notes      || p.note || '';
+        return `<div class="inv-pay-row">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+              <span class="inv-pay-method">${icon} ${esc(p.method || p.paymentMethod || 'Unknown')}</span>
+              <strong style="font-size:12px;color:#16a34a">${amount}</strong>
+              ${recvd?`<span style="font-size:11px;color:var(--muted)">${new Date(recvd).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</span>`:''}
+            </div>
+            ${who?`<div class="inv-pay-who">✍ Marked paid by <strong>${esc(who)}</strong>${recorded?` on ${new Date(recorded).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}`:''}</div>`:''}
+            ${ref?`<div class="inv-pay-who">Ref: ${esc(ref)}</div>`:''}
+            ${note?`<div class="inv-pay-who">💬 ${esc(note)}</div>`:''}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
 // ── INVOICES VIEW ──────────────────────────────────────────────────────────────
 
 async function openInvoices() {
@@ -4944,9 +4984,13 @@ async function _loadInvoices(resetPage = false) {
       const detail = await trpcQuery('invoices.get', { invoiceId: inv.id });
       const lineItems = detail?.items || [];
       const desc = lineItems.map(li => li.description).filter(Boolean).join(' • ');
-      _invDescCache[inv.id] = { desc: desc || inv.notes || '', lineItems };
+      const payments = detail?.payments || [];
+      _invDescCache[inv.id] = { desc: desc || inv.notes || '', lineItems, payments };
+      // Update payment section in DOM if detail row is open
+      const payEl = document.getElementById(`inv-pay-${inv.id}`);
+      if (payEl) payEl.innerHTML = _buildPaymentHTML(payments);
     } catch(e) {
-      _invDescCache[inv.id] = { desc: inv.notes || '', lineItems: [] };
+      _invDescCache[inv.id] = { desc: inv.notes || '', lineItems: [], payments: [] };
     }
     // Update the description cell in the DOM directly
     const cell = document.querySelector(`[data-desc-id="${inv.id}"]`);
@@ -5114,19 +5158,14 @@ function _buildInvBodyHTML() {
           </table>
         </div>
       ` : ''}
-      ${inv.payments?.length ? `
-        <div class="inv-pay-history">
-          <div class="inv-pay-history-title">Payments (${inv.payments.length})</div>
-          ${inv.payments.map(p=>`
-            <div class="inv-pay-row">
-              <span style="flex:1">${p.receivedAt?new Date(p.receivedAt).toLocaleDateString('en-GB'):'—'}</span>
-              <span style="flex:1;color:var(--muted)">${esc(p.method||'')}</span>
-              <span style="font-weight:600;color:#16a34a">${_invFmt(p.amount)}</span>
-              ${p.stripePaymentRef?`<span style="font-size:10px;color:var(--muted)">${esc(p.stripePaymentRef)}</span>`:''}
-            </div>
-          `).join('')}
-        </div>
-      ` : ''}
+      <div id="inv-pay-${inv.id}">
+        ${(() => {
+          const cached = _invDescCache[inv.id];
+          const pays = cached?.payments || inv.payments;
+          if (pays) return _buildPaymentHTML(pays);
+          return '<span class="inv-pay-loading">⏳ Loading payment details…</span>';
+        })()}
+      </div>
       <div class="inv-detail-actions">
         ${status!=='paid'&&status!=='void'&&status!=='draft'?`<button class="inv-act-btn primary" data-rpay="${inv.id}" data-rbal="${balance}" data-rno="${esc(inv.invoiceNo||'')}">₤ Record Payment</button>`:''}
         ${status==='draft'?`<button class="inv-act-btn" data-issue="${inv.id}">Issue Invoice</button>`:''}
@@ -5151,7 +5190,8 @@ function _buildInvBodyHTML() {
     `;
 
     return `
-      <tr class="inv-row st-${status}" data-idx="${idx}" data-jobid="${esc(inv.jobId||'')}"  data-jobno="${esc(inv.jobNo||'')}"  data-cname="${esc(inv.contactName||'')}"  data-invno="${esc(inv.invoiceNo||'')}"  >
+      <tr class="inv-row st-${status}" data-idx="${idx}" data-jobid="${esc(inv.jobId||'')}"  data-jobno="${esc(inv.jobNo||'')}"  data-cname="${esc(inv.contactName||'')}"  data-invno="${esc(inv.invoiceNo||'')}" data-invid="${esc(inv.id||'')}" data-pdfpath="${esc(inv.pdfPath||'')}">
+        <td style="width:30px;padding:6px 8px" onclick="event.stopPropagation()"><input type="checkbox" class="inv-sel-cb inv-row-cb" data-invid="${esc(inv.id||'')}"></td>
         <td style="font-weight:700;font-size:11px;white-space:nowrap">${esc(inv.invoiceNo||'—')}</td>
         <td style="font-size:11px;white-space:nowrap">${esc(inv.jobNo||'—')}</td>
         <td style="font-size:11px;max-width:160px">
@@ -5166,7 +5206,7 @@ function _buildInvBodyHTML() {
         <td>${_invStatusBadge(status)}</td>
       </tr>
       <tr class="inv-detail-row" data-detail="${idx}">
-        <td class="inv-detail-cell" colspan="8">${detailHTML}</td>
+        <td class="inv-detail-cell" colspan="9">${detailHTML}</td>
       </tr>
     `;
   }).join('');
@@ -5180,9 +5220,15 @@ function _buildInvBodyHTML() {
     : `<div class="inv-pager"><span class="inv-pager-info">${items.length} invoices</span></div>`;
 
   return `
+    <div class="inv-bulk-bar" id="inv-bulk-bar">
+      <span id="inv-bulk-count">0 selected</span>
+      <button class="inv-bulk-dl" id="inv-bulk-dl">⬇ Download PDFs</button>
+      <button class="inv-bulk-clear" id="inv-bulk-clear">✕ Clear</button>
+    </div>
     <div style="overflow-x:auto">
       <table class="inv-table">
         <thead><tr>
+          <th style="width:30px;padding:6px 8px"><input type="checkbox" class="inv-sel-cb" id="inv-sel-all" title="Select all"></th>
           <th style="min-width:90px">Invoice #</th>
           <th style="min-width:80px">Job #</th>
           <th style="min-width:150px">Contact</th>
@@ -5261,6 +5307,68 @@ function _wireInvControls() {
     _invSortBy = by; _invSortDir = dir;
     await _loadInvoices(true);
   });
+
+  // ── Checkbox select + bulk download ──
+  const bulkBar   = document.getElementById('inv-bulk-bar');
+  const bulkCount = document.getElementById('inv-bulk-count');
+  const selAll    = document.getElementById('inv-sel-all');
+  const rowCbs    = document.querySelectorAll('.inv-row-cb');
+
+  function _updateBulkBar() {
+    const n = document.querySelectorAll('.inv-row-cb:checked').length;
+    if (bulkBar)   bulkBar.classList.toggle('visible', n > 0);
+    if (bulkCount) bulkCount.textContent = `${n} selected`;
+    if (selAll)    selAll.indeterminate = n > 0 && n < rowCbs.length;
+    if (selAll)    selAll.checked = n > 0 && n === rowCbs.length;
+  }
+
+  if (selAll) {
+    selAll.addEventListener('change', () => {
+      rowCbs.forEach(cb => cb.checked = selAll.checked);
+      _updateBulkBar();
+    });
+  }
+  rowCbs.forEach(cb => cb.addEventListener('change', _updateBulkBar));
+
+  const bulkDlBtn = document.getElementById('inv-bulk-dl');
+  if (bulkDlBtn) {
+    bulkDlBtn.addEventListener('click', async () => {
+      const checked = [...document.querySelectorAll('.inv-row-cb:checked')];
+      if (!checked.length) return;
+      const orig = bulkDlBtn.textContent;
+      bulkDlBtn.disabled = true;
+      let done = 0;
+      for (const cb of checked) {
+        const invId = cb.dataset.invid;
+        const row   = cb.closest('.inv-row');
+        const invNo = row?.dataset.invno || invId;
+        bulkDlBtn.textContent = `Downloading ${++done}/${checked.length}…`;
+        try {
+          const { fetchUrl } = await _invGetPdfUrl(invId);
+          const resp = await fetch(fetchUrl, { credentials: 'include' });
+          const blob = await resp.blob();
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = (invNo || invId) + '.pdf';
+          a.click();
+          await new Promise(r => setTimeout(r, 600));
+        } catch(err) {
+          console.warn('PDF download failed for', invNo, err);
+        }
+      }
+      bulkDlBtn.textContent = orig;
+      bulkDlBtn.disabled = false;
+    });
+  }
+
+  const bulkClear = document.getElementById('inv-bulk-clear');
+  if (bulkClear) {
+    bulkClear.addEventListener('click', () => {
+      rowCbs.forEach(cb => cb.checked = false);
+      if (selAll) selAll.checked = false;
+      _updateBulkBar();
+    });
+  }
 
   document.querySelectorAll('.inv-table th.sortable').forEach(th => {
     th.addEventListener('click', async () => {
