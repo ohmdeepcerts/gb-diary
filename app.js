@@ -1357,6 +1357,7 @@ function buildUnassignedPanel(jobs, targetDate) {
         <span class="day-upool-card-status" style="color:${stColor}">${esc(stLabel)}</span>
         <div class="day-upool-card-drag">⣿ drag to assign</div>`;
 
+      card.addEventListener('click', () => openJobDetail(job.id));
       card.addEventListener('dragstart', e => {
         job._date = targetDate;
         _dragPoolJob = job;
@@ -1850,6 +1851,121 @@ function _jdBuildActions(actDiv, job, jobId) {
   qbBtn.textContent = '📋 Build Quotation';
   qbBtn.addEventListener('click', () => { closeJobDetail(); openQuotationBuilder(jobId); });
   actDiv.appendChild(qbBtn);
+
+  // Assign engineer button
+  const assignBtn = document.createElement('button');
+  assignBtn.className = 'jd-btn';
+  assignBtn.textContent = '👤 Assign Engineer';
+  assignBtn.addEventListener('click', () => _jdShowAssignEngineer(actDiv, job, jobId));
+  actDiv.appendChild(assignBtn);
+}
+
+function _jdShowAssignEngineer(actDiv, job, jobId) {
+  actDiv.innerHTML = '';
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;flex-direction:column;gap:8px;width:100%;max-width:420px';
+
+  const lbl = document.createElement('div');
+  lbl.style.cssText = 'font-size:12px;font-weight:600;color:var(--text2)';
+  lbl.textContent = 'Search and select an engineer:';
+  wrap.appendChild(lbl);
+
+  // Search input (same style as add-job client search)
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.placeholder = 'Type engineer name…';
+  inp.style.cssText = 'padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text);font-size:12px;width:100%;font-family:inherit';
+  wrap.appendChild(inp);
+
+  const list = document.createElement('div');
+  list.style.cssText = 'display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto';
+  wrap.appendChild(list);
+
+  const msg = document.createElement('div');
+  msg.style.cssText = 'font-size:11px;color:var(--muted);min-height:14px';
+  wrap.appendChild(msg);
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'jd-btn';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.addEventListener('click', () => _jdBuildActions(actDiv, job, jobId));
+  wrap.appendChild(cancelBtn);
+
+  actDiv.appendChild(wrap);
+  inp.focus();
+
+  // Collect engineers from loaded cache lanes
+  function _getCachedEngineers() {
+    const seen = new Map();
+    Object.values(cache).forEach(lanes => {
+      if (!Array.isArray(lanes)) return;
+      lanes.forEach(lane => {
+        if (lane.engineer?.id && !seen.has(lane.engineer.id)) {
+          seen.set(lane.engineer.id, lane.engineer);
+        }
+      });
+    });
+    return [...seen.values()].sort((a,b) => (a.name||'').localeCompare(b.name||''));
+  }
+
+  let allEngineers = _getCachedEngineers();
+
+  function renderList(filter) {
+    list.innerHTML = '';
+    const q = filter.toLowerCase().trim();
+    const filtered = q ? allEngineers.filter(e => (e.name||'').toLowerCase().includes(q)) : allEngineers;
+    if (!filtered.length) {
+      list.innerHTML = `<div style="font-size:11px;color:var(--muted);padding:6px">No engineers found</div>`;
+      return;
+    }
+    filtered.forEach(eng => {
+      const row = document.createElement('button');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:12px;cursor:pointer;text-align:left;font-family:inherit;width:100%';
+      const dot = document.createElement('span');
+      dot.style.cssText = `width:8px;height:8px;border-radius:50%;background:${engColor(eng.id)};flex-shrink:0`;
+      row.appendChild(dot);
+      row.appendChild(document.createTextNode(eng.name || eng.id));
+      row.addEventListener('click', async () => {
+        row.disabled = true; row.textContent = 'Assigning…';
+        msg.textContent = '';
+        try {
+          const date = job.scheduled_date || job.scheduledDate || job.date || curDate;
+          await api.reschedule(jobId, date, eng.id);
+          clearCache();
+          setStatus(`Assigned to ${eng.name} ✓`);
+          const modal = document.getElementById('jd-modal');
+          modal.innerHTML = '<div class="jd-spinner"><div class="spinner"></div>Refreshing…</div>';
+          const nd = await api.getJob(jobId);
+          modal.innerHTML = ''; modal.appendChild(buildJobDetail(nd, jobId));
+          await loadDay(true);
+        } catch(e) {
+          msg.style.color = '#ef4444';
+          msg.textContent = '⚠ ' + e.message;
+          row.disabled = false;
+          renderList(inp.value);
+        }
+      });
+      list.appendChild(row);
+    });
+  }
+
+  // Load from API if cache is thin
+  if (allEngineers.length < 2) {
+    msg.textContent = 'Loading engineers…';
+    trpcQuery('engineers.list', { pageSize: 50 })
+      .catch(() => trpcQuery('staff.list', { pageSize: 50 }))
+      .catch(() => trpcQuery('users.list',  { pageSize: 50 }))
+      .then(res => {
+        const items = res?.items || res?.engineers || res?.staff || res?.users || (Array.isArray(res)?res:[]);
+        allEngineers = items.filter(e => e.id && e.name).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+        msg.textContent = '';
+        renderList(inp.value);
+      }).catch(() => { msg.textContent = 'Could not load engineer list'; });
+  }
+
+  renderList('');
+  inp.addEventListener('input', e => renderList(e.target.value));
 }
 
 function _jdShowReason(actDiv, job, jobId, btnDef) {
