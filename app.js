@@ -5895,21 +5895,25 @@ async function _loadStatement(contactId, contactName) {
   const contentEl = document.getElementById('stmt-content');
   if (contentEl) contentEl.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading statement…</div>';
 
-  const _fetchInv = params =>
-    trpcQuery('invoices.list', { view:'all', pageSize:200, sortBy:'dueAt', sortDir:'asc', ...params }).catch(() => null);
   const _extInv = r => r?.invoices || r?.items || (Array.isArray(r) ? r : []);
 
-  const [invById, payList, totals] = await Promise.all([
-    _fetchInv({ contactId }),
+  // Fetch without 'view' — adding view:'all' alongside contactId breaks the filter on some API versions
+  const [invById, invByIdPaid, payList, totals] = await Promise.all([
+    trpcQuery('invoices.list', { contactId, pageSize:200, sortBy:'dueAt', sortDir:'asc' }).catch(() => null),
+    trpcQuery('invoices.list', { contactId, view:'paid', pageSize:200, sortBy:'dueAt', sortDir:'asc' }).catch(() => null),
     trpcQuery('payments.list', { contactId, pageSize:200 }).catch(() => null),
     trpcQuery('invoices.totals', { contactId }).catch(() => null),
   ]);
 
-  let invoices = _extInv(invById);
+  // Merge outstanding + paid, deduplicate by id
+  const _seen = new Set();
+  let invoices = [..._extInv(invById), ..._extInv(invByIdPaid)].filter(i => {
+    if (_seen.has(i.id)) return false; _seen.add(i.id); return true;
+  });
 
-  // contactId filter not supported by API — fall back to name search
+  // If contactId filter returned nothing, fall back to view:'all' with name search
   if (!invoices.length && contactName) {
-    const invByName = await _fetchInv({ query: contactName });
+    const invByName = await trpcQuery('invoices.list', { view:'all', query: contactName, pageSize:200, sortBy:'dueAt', sortDir:'asc' }).catch(() => null);
     invoices = _extInv(invByName);
   }
 
