@@ -6158,12 +6158,17 @@ function _injectEmailCSS() {
     .email-card.danger .email-card-val { color:var(--red); }
     .email-filter-bar { display:flex; gap:6px; padding:10px 12px; flex-wrap:wrap; align-items:center; }
     .email-filter-row { display:flex; gap:4px; flex-wrap:wrap; width:100%; }
-    .email-spill { padding:3px 10px; border-radius:10px; font-size:11px; font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--surface); color:var(--text2); white-space:nowrap; }
+    .email-spill { padding:3px 10px; border-radius:10px; font-size:11px; font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--surface); color:var(--text); white-space:nowrap; }
     .email-spill.active { background:var(--accent); color:#fff; border-color:var(--accent); }
     .email-spill-sm { padding:2px 7px; font-size:10px; border-radius:8px; font-weight:500; }
     .email-body-frame { width:100%; min-height:320px; border:1px solid var(--border); border-radius:6px; background:#fff; margin-top:8px; }
     .email-addr-link { color:var(--accent); cursor:pointer; text-decoration:underline dotted; }
     .email-addr-link:hover { text-decoration:underline; }
+    .email-excl-bar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; padding:8px 12px; background:var(--bg3); border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
+    .email-excl-lbl { font-size:11px; color:var(--text); font-weight:700; white-space:nowrap; }
+    .email-excl-chip { display:inline-flex; align-items:center; gap:3px; background:var(--surface); border:1px solid var(--red); color:var(--red); border-radius:10px; font-size:11px; font-weight:600; padding:2px 4px 2px 8px; }
+    .email-excl-rm { border:none; background:none; color:var(--red); cursor:pointer; font-size:14px; font-weight:700; padding:0 3px; line-height:1; }
+    .email-excl-rm:hover { opacity:.7; }
     .email-tbl-wrap { overflow-x:auto; padding:0 12px; }
     .email-table { width:100%; border-collapse:collapse; font-size:12px; min-width:700px; }
     .email-table th { text-align:left; padding:7px 10px; background:var(--bg3); color:var(--text2); font-size:10px; letter-spacing:.4px; text-transform:uppercase; border-bottom:1px solid var(--border); position:sticky; top:0; z-index:2; }
@@ -6187,6 +6192,8 @@ function _injectEmailCSS() {
 
 let _emailSearch = '', _emailStatusFilter = '', _emailPage = 0;
 const EMAIL_PAGE_SIZE = 30;
+let _emailExcludes = [];
+try { _emailExcludes = JSON.parse(localStorage.getItem('email_excludes') || '[]'); } catch(e) { _emailExcludes = []; }
 
 async function openEmails() {
   _injectEmailCSS();
@@ -6291,6 +6298,7 @@ function _renderEmailLog(body, messages, bounces) {
         if (sf.startsWith('__')) { if (!GROUP_FN[sf]?.(st)) return false; }
         else { if (st !== sf) return false; }
       }
+      if (_emailExcludes.length && _emailExcludes.includes((m.to_email||'').toLowerCase())) return false;
       if (q.length >= 2 && ![(m.to_email||''),(m.from_email||''),(m.subject||'')].join(' ').toLowerCase().includes(q)) return false;
       return true;
     });
@@ -6360,9 +6368,16 @@ function _renderEmailLog(body, messages, bounces) {
           ${bounced ? `<span class="email-spill${sf==='__bounced'?' active':''}" data-sf="__bounced">⚠ Bounced (${bounced})</span>` : ''}
           ${deferred? `<span class="email-spill${sf==='__deferred'?' active':''}" data-sf="__deferred">⏳ Deferred (${deferred})</span>` : ''}
         </div>
-        <div class="email-filter-row" style="opacity:.8">
+        <div class="email-filter-row">
           ${statuses.map(s => `<span class="email-spill email-spill-sm${sf===s?' active':''}" data-sf="${esc(s)}">${esc(s)} (${statusCounts[s]})</span>`).join('')}
         </div>
+      </div>
+      <div class="email-excl-bar">
+        <span class="email-excl-lbl">🚫 Exclude:</span>
+        ${_emailExcludes.map(e => `<span class="email-excl-chip">${esc(e)}<button class="email-excl-rm" data-addr="${esc(e)}">×</button></span>`).join('')}
+        <input type="text" id="email-excl-inp" class="inp" placeholder="paste address to exclude…" style="font-size:11px;padding:3px 8px;flex:1;min-width:180px;max-width:300px">
+        <button class="inv-act-btn" id="email-excl-add" style="font-size:11px;padding:3px 10px">+ Exclude</button>
+        ${_emailExcludes.length ? `<button class="inv-act-btn" id="email-excl-clear" style="font-size:11px;padding:3px 10px;color:var(--red)">Clear all</button>` : ''}
       </div>
       <div class="email-tbl-wrap" id="email-tbl-wrap">${buildTable()}</div>
     `;
@@ -6383,6 +6398,25 @@ function _renderEmailLog(body, messages, bounces) {
     _wireAddrLinks(render);
     _wireEmailRows(messages, bounceMap);
     _wireEmailPager(rebuildTable);
+
+    const saveExcludes = () => { try { localStorage.setItem('email_excludes', JSON.stringify(_emailExcludes)); } catch(e) {} };
+    document.getElementById('email-excl-add')?.addEventListener('click', () => {
+      const val = (document.getElementById('email-excl-inp')?.value || '').trim().toLowerCase();
+      if (!val || _emailExcludes.includes(val)) return;
+      _emailExcludes.push(val); saveExcludes(); _emailPage = 0; render();
+    });
+    document.getElementById('email-excl-inp')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('email-excl-add')?.click();
+    });
+    document.getElementById('email-excl-clear')?.addEventListener('click', () => {
+      _emailExcludes = []; saveExcludes(); _emailPage = 0; render();
+    });
+    body.querySelectorAll('.email-excl-rm').forEach(btn => {
+      btn.addEventListener('click', () => {
+        _emailExcludes = _emailExcludes.filter(a => a !== btn.dataset.addr);
+        saveExcludes(); _emailPage = 0; render();
+      });
+    });
   };
 
   render();
