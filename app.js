@@ -4823,16 +4823,25 @@ async function _qbGeminiGenerateQuote(jobContext, apiKey) {
     throw new Error(ed?.error?.message || `HTTP ${resp.status}`);
   }
   const data = await resp.json();
-  const raw  = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '[]';
+  let raw = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '[]';
+  // strip markdown code fences if model wraps response
+  raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  // extract first [...] array in case there's extra text around it
+  const arrMatch = raw.match(/\[[\s\S]*\]/);
+  if (arrMatch) raw = arrMatch[0];
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map((l, i) => ({
+    if (!Array.isArray(parsed) || !parsed.length) throw new Error('Empty or non-array response from Gemini');
+    return parsed.map((l, i) => ({
       position: i + 1,
       description: String(l.description || ''),
       qty: Number(l.qty) || 1,
       unit_price: Number(l.unit_price) || 0,
-    })) : null;
-  } catch { return null; }
+    }));
+  } catch(parseErr) {
+    console.error('Gemini parse error:', parseErr.message, '\nRaw:', raw.slice(0, 300));
+    throw new Error('Gemini returned unexpected format — ' + parseErr.message);
+  }
 }
 
 // ── GLOBAL SEARCH ─────────────────────────────────────────────────────────────
