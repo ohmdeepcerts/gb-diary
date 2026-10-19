@@ -1351,9 +1351,12 @@ function renderDay(lanes, dateLabel) {
   }
 
   const topScroll = _attachTopScrollbar(tableArea, 1330);
+  const tableCol = document.createElement('div');
+  tableCol.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden';
+  tableCol.appendChild(topScroll);
+  tableCol.appendChild(tableArea);
   body.innerHTML = '';
-  body.appendChild(topScroll);
-  body.appendChild(tableArea);
+  body.appendChild(tableCol);
   body.appendChild(buildUnassignedPanel(unassignedJobs, curDate));
 
   applyDayFilter();
@@ -1467,9 +1470,12 @@ function renderDayRange(merged) {
   }
 
   const topScroll = _attachTopScrollbar(tableArea, 1270);
+  const tableCol = document.createElement('div');
+  tableCol.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden';
+  tableCol.appendChild(topScroll);
+  tableCol.appendChild(tableArea);
   body.innerHTML = '';
-  body.appendChild(topScroll);
-  body.appendChild(tableArea);
+  body.appendChild(tableCol);
   body.appendChild(buildUnassignedPanel(unassignedJobs, curDate));
   applyDayFilter();
 }
