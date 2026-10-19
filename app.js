@@ -1221,10 +1221,10 @@ function applyDayViewStyles() {
      .day-topscroll::-webkit-scrollbar-track{background:#d1d5db;border-radius:8px}
      .day-topscroll::-webkit-scrollbar-thumb{background:#6b7280;border-radius:8px;border:2px solid #d1d5db}
      .day-topscroll::-webkit-scrollbar-thumb:hover{background:#374151}
-     .day-table-area::-webkit-scrollbar{height:16px}
-     .day-table-area::-webkit-scrollbar-track{background:#d1d5db;border-radius:8px}
-     .day-table-area::-webkit-scrollbar-thumb{background:#6b7280;border-radius:8px;border:2px solid #d1d5db}
-     .day-table-area::-webkit-scrollbar-thumb:hover{background:#374151}`;
+     .day-table-wrap::-webkit-scrollbar{height:16px}
+     .day-table-wrap::-webkit-scrollbar-track{background:#d1d5db;border-radius:8px}
+     .day-table-wrap::-webkit-scrollbar-thumb{background:#6b7280;border-radius:8px;border:2px solid #d1d5db}
+     .day-table-wrap::-webkit-scrollbar-thumb:hover{background:#374151}`;
 }
 
 function _attachTopScrollbar(tableArea, minWidth) {
@@ -1234,8 +1234,15 @@ function _attachTopScrollbar(tableArea, minWidth) {
   inner.style.cssText = `height:1px;min-width:${minWidth}px`;
   top.appendChild(inner);
   let syncing = false;
-  top.addEventListener('scroll', () => { if (!syncing) { syncing=true; tableArea.scrollLeft=top.scrollLeft; syncing=false; } });
-  tableArea.addEventListener('scroll', () => { if (!syncing) { syncing=true; top.scrollLeft=tableArea.scrollLeft; syncing=false; } });
+  // Sync with the actual scroll container (.day-table-wrap), falling back to tableArea
+  const getWrap = () => tableArea.querySelector('.day-table-wrap') || tableArea;
+  top.addEventListener('scroll', () => { if (!syncing) { syncing=true; getWrap().scrollLeft=top.scrollLeft; syncing=false; } });
+  tableArea.addEventListener('scroll', () => { if (!syncing) { syncing=true; top.scrollLeft=getWrap().scrollLeft; syncing=false; } }, true);
+  // Also listen on the wrap directly once it's available
+  requestAnimationFrame(() => {
+    const wrap = tableArea.querySelector('.day-table-wrap');
+    if (wrap) wrap.addEventListener('scroll', () => { if (!syncing) { syncing=true; top.scrollLeft=wrap.scrollLeft; syncing=false; } });
+  });
   return top;
 }
 
@@ -1338,7 +1345,6 @@ function renderDay(lanes, dateLabel) {
 
   const tableArea = document.createElement('div');
   tableArea.className = 'day-table-area';
-  tableArea.style.overflowX = 'scroll';
 
   if (!total && !unassignedJobs.length) {
     tableArea.innerHTML = '<div class="loading-row"><div style="font-size:36px">📅</div>No jobs scheduled for this day</div>';
@@ -1456,7 +1462,6 @@ function renderDayRange(merged) {
 
   const tableArea = document.createElement('div');
   tableArea.className = 'day-table-area';
-  tableArea.style.overflowX = 'scroll';
 
   if (!total && !unassignedJobs.length) {
     tableArea.innerHTML = '<div class="loading-row"><div style="font-size:36px">📅</div>No jobs in this date range</div>';
