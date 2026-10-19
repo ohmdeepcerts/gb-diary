@@ -2648,7 +2648,7 @@ function _qbBuildPhotosPanel() {
   const grid = document.createElement('div');
   grid.className = 'qb-photo-grid';
 
-  photos.forEach(a => {
+  photos.forEach((a, i) => {
     const wrap = document.createElement('div');
     wrap.className = 'qb-photo-item';
     wrap.dataset.photoid = a.id;
@@ -2664,7 +2664,7 @@ function _qbBuildPhotosPanel() {
       wrap.querySelector('img').addEventListener('click', e => {
         e.stopPropagation();
         if (_qbActiveDesc) { _qbTagPhoto(a.id); return; }
-        window.open(fullUrl, '_blank');
+        _qbOpenLightbox(photos, i, panel, grid);
       });
     } else {
       wrap.innerHTML = `
@@ -2734,6 +2734,98 @@ function _qbBuildPhotosPanel() {
   }));
   panel.appendChild(selRow);
   return panel;
+}
+
+function _qbOpenLightbox(photos, startIdx, panel, grid) {
+  const imgPhotos = photos.filter(a => a.meta?.mime?.startsWith('image/') || a.kind === 'signature');
+  if (!imgPhotos.length) return;
+  let idx = imgPhotos.findIndex(a => a === photos[startIdx]);
+  if (idx < 0) idx = 0;
+
+  const lb = document.createElement('div');
+  lb.className = 'qb-lb';
+  lb.style.cssText = 'display:flex;flex-direction:column;flex:1;min-height:0;gap:5px';
+
+  // Large photo area
+  const mainArea = document.createElement('div');
+  mainArea.style.cssText = 'position:relative;flex:1;min-height:0;background:#111;border-radius:7px;overflow:hidden;display:flex;align-items:center;justify-content:center';
+
+  const mainImg = document.createElement('img');
+  mainImg.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;display:block;user-select:none';
+  mainArea.appendChild(mainImg);
+
+  const mkOvBtn = (html, css) => {
+    const b = document.createElement('button');
+    b.innerHTML = html;
+    b.style.cssText = `position:absolute;border:none;background:rgba(0,0,0,.62);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:background .12s;${css}`;
+    b.onmouseenter = () => b.style.background = 'rgba(0,0,0,.88)';
+    b.onmouseleave = () => b.style.background = 'rgba(0,0,0,.62)';
+    mainArea.appendChild(b);
+    return b;
+  };
+  const prevBtn  = mkOvBtn('&#8249;', 'left:7px;top:50%;transform:translateY(-50%);width:34px;height:34px;font-size:22px');
+  const nextBtn  = mkOvBtn('&#8250;', 'right:7px;top:50%;transform:translateY(-50%);width:34px;height:34px;font-size:22px');
+  const closeBtn = mkOvBtn('&#10005;', 'top:7px;right:7px;width:26px;height:26px;font-size:12px;border-radius:50%');
+
+  const infoBar = document.createElement('div');
+  infoBar.style.cssText = 'position:absolute;bottom:0;left:0;right:0;padding:5px 10px;background:rgba(0,0,0,.55);color:#fff;font-size:11px;text-align:center;pointer-events:none';
+  mainArea.appendChild(infoBar);
+
+  // Thumbnail strip
+  const thumbStrip = document.createElement('div');
+  thumbStrip.style.cssText = 'display:flex;gap:4px;overflow-x:auto;flex-shrink:0;padding-bottom:3px;scrollbar-width:thin';
+
+  imgPhotos.forEach((a, i) => {
+    const kindLabel = { photo_before:'Before', photo_after:'After', signature:'Signature' }[a.kind] || a.kind || '';
+    const t = document.createElement('div');
+    t.className = 'qb-lb-thumb';
+    t.style.cssText = 'flex-shrink:0;width:54px;height:54px;border-radius:5px;overflow:hidden;cursor:pointer;border:2px solid transparent;box-sizing:border-box;transition:border-color .12s,opacity .12s;opacity:.55';
+    t.innerHTML = `<img src="${esc(BASE + a.url)}" alt="${esc(kindLabel)}" style="width:100%;height:100%;object-fit:cover;display:block" loading="lazy">`;
+    t.addEventListener('click', () => loadPhoto(i));
+    thumbStrip.appendChild(t);
+  });
+
+  const loadPhoto = (i) => {
+    idx = i;
+    const a = imgPhotos[i];
+    const kindLabel = { photo_before:'Before', photo_after:'After', signature:'Signature' }[a.kind] || a.kind || '';
+    mainImg.src = BASE + a.url;
+    infoBar.textContent = `${kindLabel}  ·  ${i + 1} / ${imgPhotos.length}`;
+    prevBtn.style.display = i > 0 ? '' : 'none';
+    nextBtn.style.display = i < imgPhotos.length - 1 ? '' : 'none';
+    thumbStrip.querySelectorAll('.qb-lb-thumb').forEach((t, ti) => {
+      t.style.borderColor = ti === i ? '#E1251B' : 'transparent';
+      t.style.opacity     = ti === i ? '1' : '.55';
+    });
+    const activeThumb = thumbStrip.children[i];
+    if (activeThumb) activeThumb.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  };
+
+  prevBtn.addEventListener('click', () => { if (idx > 0) loadPhoto(idx - 1); });
+  nextBtn.addEventListener('click', () => { if (idx < imgPhotos.length - 1) loadPhoto(idx + 1); });
+
+  const closeGallery = () => {
+    if (lb.parentNode) lb.parentNode.removeChild(lb);
+    grid.style.display = '';
+    document.removeEventListener('keydown', onKey);
+  };
+  closeBtn.addEventListener('click', closeGallery);
+
+  const onKey = e => {
+    if (!document.body.contains(lb)) { document.removeEventListener('keydown', onKey); return; }
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); if (idx > 0) loadPhoto(idx - 1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); if (idx < imgPhotos.length - 1) loadPhoto(idx + 1); }
+    if (e.key === 'Escape')     { e.preventDefault(); closeGallery(); }
+  };
+  document.addEventListener('keydown', onKey);
+
+  lb.appendChild(mainArea);
+  lb.appendChild(thumbStrip);
+
+  grid.style.display = 'none';
+  grid.parentNode.insertBefore(lb, grid.nextSibling);
+
+  loadPhoto(idx);
 }
 
 function _qbBuildEditorPanel() {
