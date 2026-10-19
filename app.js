@@ -2624,7 +2624,11 @@ function _qbBuildPhotosPanel() {
         <div class="qb-photo-ref-badge" style="display:none"></div>
         <img src="${esc(fullUrl)}" alt="${esc(kindLabel)}" loading="lazy">
         <div class="qb-photo-lbl">${esc(kindLabel)}</div>`;
-      wrap.querySelector('img').addEventListener('click', e => { e.stopPropagation(); window.open(fullUrl, '_blank'); });
+      wrap.querySelector('img').addEventListener('click', e => {
+        e.stopPropagation();
+        if (_qbActiveDesc) { _qbTagPhoto(a.id); return; }
+        window.open(fullUrl, '_blank');
+      });
     } else {
       wrap.innerHTML = `
         <div class="qb-photo-sel-tick">✓</div>
@@ -3053,27 +3057,32 @@ function _qbBuildEditorPanel() {
     panel.appendChild(sendRow);
   }
 
-  // Gemini key link
+  // Gemini key input
   const aiRow = document.createElement('div');
-  aiRow.style.cssText = 'margin-top:8px;font-size:11px;color:var(--text3)';
-  aiRow.innerHTML = `<a href="#" id="qb-ai-key-link" style="color:var(--text3);text-decoration:underline">Set Gemini AI key</a>
-    <span style="margin-left:6px" id="qb-ai-key-status"></span>`;
-  aiRow.querySelector('#qb-ai-key-link').addEventListener('click', async e => {
-    e.preventDefault();
-    const stored = await store.get('gemini_key');
-    const cur    = stored.gemini_key || '';
-    const key    = prompt('Enter your Gemini API key\n(free at aistudio.google.com/apikey):\n\nLeave blank to clear.', cur);
-    if (key === null) return;
-    await store.set({ gemini_key: key.trim() });
-    const statusEl = document.getElementById('qb-ai-key-status');
-    if (statusEl) statusEl.textContent = key.trim() ? '✓ Key saved' : '(cleared)';
-    setStatus(key.trim() ? 'Gemini AI key saved' : 'Gemini key cleared');
-  });
-  // Show if key already set
+  aiRow.style.cssText = 'margin-top:10px;padding:8px 10px;background:rgba(124,58,237,.06);border-radius:6px;border:1px solid rgba(124,58,237,.2)';
+  aiRow.innerHTML = `
+    <div style="font-size:11px;font-weight:600;color:#7c3aed;margin-bottom:5px">✨ Gemini AI Key</div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <input id="qb-gemini-key-input" type="text" placeholder="Paste your Gemini API key here…"
+        style="flex:1;font-size:11px;padding:4px 7px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text1);font-family:monospace">
+      <button id="qb-gemini-key-save" class="jd-btn" style="font-size:11px;padding:4px 10px;white-space:nowrap;flex-shrink:0">Save</button>
+    </div>
+    <div id="qb-ai-key-status" style="font-size:10px;color:var(--text3);margin-top:3px">Get a free key at aistudio.google.com/apikey</div>`;
+  const keyInp  = aiRow.querySelector('#qb-gemini-key-input');
+  const saveBtn = aiRow.querySelector('#qb-gemini-key-save');
+  const aiSt    = aiRow.querySelector('#qb-ai-key-status');
   store.get('gemini_key').then(s => {
-    const statusEl = document.getElementById('qb-ai-key-status');
-    if (statusEl && s.gemini_key) statusEl.textContent = '✓ Key set';
+    if (s.gemini_key) { keyInp.value = s.gemini_key; aiSt.textContent = '✓ Key already saved'; aiSt.style.color = 'var(--green,#16a34a)'; }
   }).catch(() => {});
+  const _saveGeminiKey = async () => {
+    const v = keyInp.value.trim();
+    await store.set({ gemini_key: v });
+    aiSt.textContent = v ? '✓ Key saved' : '(cleared)';
+    aiSt.style.color = v ? 'var(--green,#16a34a)' : 'var(--text3)';
+    setStatus(v ? 'Gemini AI key saved ✓' : 'Gemini key cleared');
+  };
+  saveBtn.addEventListener('click', _saveGeminiKey);
+  keyInp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); _saveGeminiKey(); } });
   panel.appendChild(aiRow);
 
   _qbUpdateTotals();
@@ -3096,16 +3105,14 @@ function _qbUpdateTotals() {
 async function _qbGetGeminiKey() {
   const stored = await store.get('gemini_key');
   if (stored.gemini_key) return stored.gemini_key;
-  const key = prompt('Enter your Gemini API key (free at aistudio.google.com/apikey):');
-  if (!key?.trim()) return null;
-  await store.set({ gemini_key: key.trim() });
-  return key.trim();
+  setStatus('No Gemini key set — open a quotation, scroll to the ✨ Gemini AI Key box and paste your key', false);
+  return null;
 }
 
 async function _qbGeminiRewrite(text, apiKey) {
   const prompt = `You are helping GB Electrical / OHM Electrical Engineering write a professional client quotation. Rewrite this as clear, professional text for a client-facing quotation line item. Keep all technical detail. Be concise. Output the rewritten text only:\n\n${text}`;
   const resp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -4801,7 +4808,7 @@ async function init() {
 async function _qbGeminiGenerateQuote(jobContext, apiKey) {
   const prompt = `You are helping GB Electrical write a professional client quotation. Based on the job details below, generate a complete set of line items. Each item should have a clear professional description, a quantity (usually 1), and a realistic UK market price in GBP. Return ONLY a JSON array in this exact format, no other text:\n[{"description":"Work description","qty":1,"unit_price":250.00}]\n\nJob details:\n${jobContext}`;
   const resp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
