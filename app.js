@@ -2766,6 +2766,9 @@ function _qbOpenLightbox(photos, startIdx, panel, grid) {
   const prevBtn  = mkOvBtn('&#8249;', 'left:7px;top:50%;transform:translateY(-50%);width:34px;height:34px;font-size:22px');
   const nextBtn  = mkOvBtn('&#8250;', 'right:7px;top:50%;transform:translateY(-50%);width:34px;height:34px;font-size:22px');
   const closeBtn = mkOvBtn('&#10005;', 'top:7px;right:7px;width:26px;height:26px;font-size:12px;border-radius:50%');
+  const zoomBtn  = mkOvBtn('&#128269;', 'top:7px;left:7px;width:26px;height:26px;font-size:13px;border-radius:50%');
+  zoomBtn.title = 'Open full size';
+  zoomBtn.addEventListener('click', () => window.open(mainImg.src, '_blank'));
 
   const infoBar = document.createElement('div');
   infoBar.style.cssText = 'position:absolute;bottom:0;left:0;right:0;padding:5px 10px;background:rgba(0,0,0,.55);color:#fff;font-size:11px;text-align:center;pointer-events:none';
