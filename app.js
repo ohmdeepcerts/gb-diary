@@ -39,7 +39,11 @@ async function trpcMutate(proc, input = {}) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ json: input })
   });
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  if (!resp.ok) {
+    let detail = '';
+    try { const j = await resp.json(); detail = j?.error?.message || j?.message || JSON.stringify(j); } catch {}
+    throw new Error(`HTTP ${resp.status}${detail ? ': ' + detail : ''}`);
+  }
   return extractData(await resp.json());
 }
 
@@ -3041,13 +3045,24 @@ function _qbBuildEditorPanel() {
   const btnRow = document.createElement('div');
   btnRow.className = 'qb-btn-row';
 
+  const qbStatus = document.createElement('div');
+  qbStatus.style.cssText = 'font-size:12px;padding:4px 6px;border-radius:5px;display:none;word-break:break-word';
+  const showQbStatus = (msg, ok) => {
+    qbStatus.textContent = msg;
+    qbStatus.style.display = '';
+    qbStatus.style.background = ok ? '#dcfce7' : '#fee2e2';
+    qbStatus.style.color      = ok ? '#166534' : '#991b1b';
+    setStatus(msg, ok);
+  };
+
   const saveBtn = document.createElement('button');
   saveBtn.className = 'jd-btn jd-btn-success';
   saveBtn.textContent = '💾 Save to Portal';
   saveBtn.addEventListener('click', async () => {
     const lines = _qbLines.filter(l => l.description?.trim() || l.unit_price > 0);
-    if (!lines.length) { setStatus('Add at least one line item', false); return; }
+    if (!lines.length) { showQbStatus('Add at least one line item first.', false); return; }
     saveBtn.disabled = true; saveBtn.textContent = '…';
+    qbStatus.style.display = 'none';
     try {
       const vatR    = Number(document.getElementById('qb-vat')?.value ?? 0);
       const msg     = document.getElementById('qb-message')?.value?.trim() || null;
@@ -3075,12 +3090,12 @@ function _qbBuildEditorPanel() {
         const _nt = document.getElementById('qb-title');
         if (_nt) _nt.innerHTML = `Build Quotation${result?.quote_no ? ' · ' + esc(result.quote_no) : ''} <span style="font-weight:400;color:var(--text2)">— ${esc(job.job_no || '')}</span>`;
       }
-      setStatus(`Quotation ${result?.quote_no || ''} saved · ${now()}`);
+      showQbStatus(`✓ Quotation ${result?.quote_no || ''} saved · ${now()}`, true);
       saveBtn.textContent = '✓ Saved!';
       setTimeout(() => { saveBtn.disabled = false; saveBtn.textContent = '💾 Save to Portal'; }, 2000);
     } catch(e) {
       saveBtn.disabled = false; saveBtn.textContent = '💾 Save to Portal';
-      setStatus('Save failed: ' + e.message, false);
+      showQbStatus('Save failed: ' + e.message, false);
     }
   });
 
@@ -3156,6 +3171,7 @@ function _qbBuildEditorPanel() {
   btnRow.appendChild(pdfBtn);
   btnRow.appendChild(waQbBtn);
   panel.appendChild(btnRow);
+  panel.appendChild(qbStatus);
 
   // Send to Client (only when quote has been saved to portal)
   if (_qbQuotation?.id) {
