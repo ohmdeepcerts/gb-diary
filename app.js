@@ -1216,35 +1216,12 @@ function applyDayViewStyles() {
      table.day-table tbody tr.drow-insert-after td{box-shadow:0 3px 0 var(--red);}
      table.day-table tbody tr.row-in-review td{background:rgba(139,92,246,.09);}
      table.day-table tbody tr.row-in-review td:first-child{border-left:3px solid #8B5CF6;}
-     .day-topscroll{overflow-x:scroll;overflow-y:hidden;height:20px;margin-bottom:3px}
-     .day-topscroll::-webkit-scrollbar{height:16px}
-     .day-topscroll::-webkit-scrollbar-track{background:#d1d5db;border-radius:8px}
-     .day-topscroll::-webkit-scrollbar-thumb{background:#6b7280;border-radius:8px;border:2px solid #d1d5db}
-     .day-topscroll::-webkit-scrollbar-thumb:hover{background:#374151}
      .day-table-wrap::-webkit-scrollbar{height:16px}
      .day-table-wrap::-webkit-scrollbar-track{background:#d1d5db;border-radius:8px}
      .day-table-wrap::-webkit-scrollbar-thumb{background:#6b7280;border-radius:8px;border:2px solid #d1d5db}
      .day-table-wrap::-webkit-scrollbar-thumb:hover{background:#374151}`;
 }
 
-function _attachTopScrollbar(tableArea, minWidth) {
-  const top = document.createElement('div');
-  top.className = 'day-topscroll';
-  const inner = document.createElement('div');
-  inner.style.cssText = `height:1px;min-width:${minWidth}px`;
-  top.appendChild(inner);
-  let syncing = false;
-  // Sync with the actual scroll container (.day-table-wrap), falling back to tableArea
-  const getWrap = () => tableArea.querySelector('.day-table-wrap') || tableArea;
-  top.addEventListener('scroll', () => { if (!syncing) { syncing=true; getWrap().scrollLeft=top.scrollLeft; syncing=false; } });
-  tableArea.addEventListener('scroll', () => { if (!syncing) { syncing=true; top.scrollLeft=getWrap().scrollLeft; syncing=false; } }, true);
-  // Also listen on the wrap directly once it's available
-  requestAnimationFrame(() => {
-    const wrap = tableArea.querySelector('.day-table-wrap');
-    if (wrap) wrap.addEventListener('scroll', () => { if (!syncing) { syncing=true; top.scrollLeft=wrap.scrollLeft; syncing=false; } });
-  });
-  return top;
-}
 
 function renderDay(lanes, dateLabel) {
   _dayRowMeta = [];
@@ -1356,13 +1333,8 @@ function renderDay(lanes, dateLabel) {
     applyDayViewStyles();
   }
 
-  const topScroll = _attachTopScrollbar(tableArea, 1330);
-  const tableCol = document.createElement('div');
-  tableCol.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column';
-  tableCol.appendChild(topScroll);
-  tableCol.appendChild(tableArea);
   body.innerHTML = '';
-  body.appendChild(tableCol);
+  body.appendChild(tableArea);
   body.appendChild(buildUnassignedPanel(unassignedJobs, curDate));
 
   applyDayFilter();
@@ -1474,13 +1446,8 @@ function renderDayRange(merged) {
     applyDayViewStyles();
   }
 
-  const topScroll = _attachTopScrollbar(tableArea, 1270);
-  const tableCol = document.createElement('div');
-  tableCol.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column';
-  tableCol.appendChild(topScroll);
-  tableCol.appendChild(tableArea);
   body.innerHTML = '';
-  body.appendChild(tableCol);
+  body.appendChild(tableArea);
   body.appendChild(buildUnassignedPanel(unassignedJobs, curDate));
   applyDayFilter();
 }
