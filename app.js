@@ -294,6 +294,44 @@ function showView(name) {
   if (el) el.classList.add('active');
   view = name;
   document.querySelectorAll('.vbtn').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+  if (name !== 'day') _initStickyScroll(null);
+}
+
+function _initStickyScroll(wrap) {
+  const existing = document.getElementById('_sticky-hscroll');
+  if (existing) { if (existing._cleanup) existing._cleanup(); existing.remove(); }
+  if (!wrap) return;
+
+  const bar = document.createElement('div');
+  bar.id = '_sticky-hscroll';
+  bar.style.cssText = 'position:fixed;bottom:0;left:0;z-index:9999;height:14px;overflow-x:auto;overflow-y:hidden;box-sizing:border-box;background:var(--bg,#fff);border-top:2px solid var(--border,#e5e7eb)';
+  const inner = document.createElement('div');
+  inner.style.height = '1px';
+  bar.appendChild(inner);
+  document.body.appendChild(bar);
+
+  let syncing = false;
+  bar.addEventListener('scroll', () => { if (syncing) return; syncing=true; wrap.scrollLeft=bar.scrollLeft; syncing=false; });
+  wrap.addEventListener('scroll', () => { if (syncing) return; syncing=true; bar.scrollLeft=wrap.scrollLeft; syncing=false; });
+
+  let raf = null;
+  const update = () => {
+    if (!document.body.contains(wrap)) { bar.remove(); return; }
+    const rect = wrap.getBoundingClientRect();
+    inner.style.width = wrap.scrollWidth + 'px';
+    bar.style.left  = rect.left + 'px';
+    bar.style.width = rect.width + 'px';
+    if (!syncing) bar.scrollLeft = wrap.scrollLeft;
+  };
+  const trigger = () => { if (raf) cancelAnimationFrame(raf); raf = requestAnimationFrame(update); };
+
+  window.addEventListener('scroll', trigger, {passive:true});
+  window.addEventListener('resize', trigger);
+  const ro = new ResizeObserver(trigger);
+  ro.observe(wrap);
+  update();
+
+  bar._cleanup = () => { window.removeEventListener('scroll', trigger); window.removeEventListener('resize', trigger); ro.disconnect(); };
 }
 
 async function switchView(name) {
@@ -1341,7 +1379,7 @@ function renderDay(lanes, dateLabel) {
   body.innerHTML = '';
   body.appendChild(tableArea);
   body.appendChild(buildUnassignedPanel(unassignedJobs, curDate));
-
+  _initStickyScroll(wrap);
   applyDayFilter();
 }
 
@@ -1454,6 +1492,7 @@ function renderDayRange(merged) {
   body.innerHTML = '';
   body.appendChild(tableArea);
   body.appendChild(buildUnassignedPanel(unassignedJobs, curDate));
+  _initStickyScroll(fakeWrap);
   applyDayFilter();
 }
 
