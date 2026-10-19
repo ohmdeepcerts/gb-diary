@@ -4721,6 +4721,9 @@ async function init() {
   document.getElementById('day-logout').addEventListener('click', logout);
   document.getElementById('day-add').addEventListener('click', openAddJob);
   document.getElementById('day-alltime-btn').addEventListener('click', loadAllTimeView);
+  document.getElementById('day-failed-btn').addEventListener('click', loadFailedJobsView);
+  document.getElementById('week-failed-btn').addEventListener('click', loadFailedJobsView);
+  document.getElementById('month-failed-btn').addEventListener('click', loadFailedJobsView);
 
   // Month nav
   document.getElementById('month-prev').addEventListener('click', async () => {
@@ -5079,6 +5082,127 @@ async function loadAllTimeView() {
   body.innerHTML = '';
   body.appendChild(wrap);
 
+  applyDayFilter();
+}
+
+async function loadFailedJobsView() {
+  showView('day');
+  _inAllTimeView = true;
+  _injectAllTimeCSS();
+  applyDayViewStyles();
+  const body = document.getElementById('day-body');
+  body.style.display = 'block';
+  body.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading failed jobs…</div>';
+  const dayLabel = document.getElementById('day-label');
+  if (dayLabel) dayLabel.textContent = 'Failed Jobs';
+
+  const PAGE = 50, PAGES = 10;
+  let results;
+  try {
+    results = await Promise.allSettled(
+      Array.from({ length: PAGES }, (_, i) => trpcQuery('jobs.list', { pageSize: PAGE, offset: i * PAGE }))
+    );
+  } catch(e) {
+    body.innerHTML = `<div class="loading-row" style="color:#ef4444">⚠ ${esc(e.message)}</div>`; return;
+  }
+
+  const allJobs = results.flatMap(r => {
+    if (r.status !== 'fulfilled') return [];
+    const d = r.value;
+    return Array.isArray(d) ? d : (d?.jobs || d?.items || []);
+  });
+
+  const failedJobs = allJobs.filter(j => jobStatus(j) === 'failed');
+  if (!failedJobs.length) { body.innerHTML = '<div class="loading-row">No failed jobs found ✓</div>'; return; }
+
+  daySearch = ''; dayEngFilter = ''; dayStatusFilter = '';
+  const filterBar = document.getElementById('day-filter-bar');
+  if (filterBar) {
+    filterBar.innerHTML = `
+      <div class="dfb-search">
+        <input type="text" id="dfb-q" class="dfb-inp" placeholder="Search address, client, ref, description, phone…">
+      </div>
+      <span style="font-size:11px;color:#ef4444;white-space:nowrap;flex-shrink:0;font-weight:700">
+        ⚠ ${failedJobs.length} failed job${failedJobs.length !== 1 ? 's' : ''}
+      </span>
+      <span class="dfb-count" id="dfb-count"></span>`;
+    document.getElementById('dfb-q').addEventListener('input', e => { daySearch = e.target.value; applyDayFilter(); });
+  }
+  const statusTabsEl = document.getElementById('day-status-tabs');
+  if (statusTabsEl) statusTabsEl.innerHTML = '';
+
+  const byDate = new Map();
+  failedJobs.forEach(job => {
+    const date = (job.date || job.scheduledDate || job.scheduled_date || job.visitPlan?.date || '').slice(0, 10);
+    const key = date || 'unscheduled';
+    if (!byDate.has(key)) byDate.set(key, []);
+    byDate.get(key).push(job);
+  });
+  const sortedDates = [...byDate.keys()]
+    .sort((a, b) => b === 'unscheduled' ? -1 : a === 'unscheduled' ? 1 : b.localeCompare(a));
+
+  _dayRowMeta = [];
+  const table = document.createElement('table');
+  table.className = 'day-table';
+  table.style.minWidth = '1270px';
+  const thead = document.createElement('thead');
+  thead.innerHTML = `<tr>
+    <th style="width:130px">Engineer</th>
+    <th style="width:120px">Job / Type</th>
+    <th style="width:220px">Address</th>
+    <th>Description</th>
+    <th style="width:80px">Access</th>
+    <th style="width:100px">Time</th>
+    <th style="width:74px;text-align:right">Amount</th>
+    <th style="width:110px">Client</th>
+    <th style="width:130px">Phone</th>
+    <th style="width:110px">Status</th>
+    <th style="width:96px"></th>
+  </tr>`;
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  sortedDates.forEach(dateKey => {
+    const jobs = byDate.get(dateKey);
+    const bannerTr = document.createElement('tr');
+    bannerTr.className = 'at-date-banner-row';
+    const bannerTd = document.createElement('td');
+    bannerTd.colSpan = 11;
+    if (dateKey === 'unscheduled') {
+      bannerTd.innerHTML = `Unscheduled <span class="at-date-banner-cnt">${jobs.length}</span>`;
+    } else {
+      const d = new Date(dateKey + 'T00:00:00');
+      const dateStr = d.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+      bannerTd.innerHTML = `${esc(dateStr)}&nbsp;<span class="at-date-banner-cnt">${jobs.length}</span>`;
+    }
+    bannerTr.appendChild(bannerTd);
+    tbody.appendChild(bannerTr);
+
+    jobs.forEach(job => {
+      const eng   = job.engineer || job.assignedEngineer || null;
+      const engId = eng?.id || '';
+      const tr = dayRow(job, eng, null);
+      tr.draggable = false;
+      const engTd = document.createElement('td');
+      const engName = eng?.name || 'Unassigned';
+      const color   = engColor(engId);
+      engTd.style.cssText = 'width:130px;vertical-align:middle;padding:4px 8px';
+      engTd.innerHTML = `<span style="display:inline-flex;align-items:center;gap:5px;max-width:120px;overflow:hidden">
+        <span class="eng-dot" style="background:${color};flex-shrink:0"></span>
+        <span style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(engName)}</span>
+      </span>`;
+      tr.insertBefore(engTd, tr.firstChild);
+      tbody.appendChild(tr);
+      _dayRowMeta.push({ tr, gtr: bannerTr, engId, searchText: buildSearchText(job, eng), status: jobStatus(job) });
+    });
+  });
+
+  table.appendChild(tbody);
+  const wrap = document.createElement('div');
+  wrap.className = 'at-wrap';
+  wrap.appendChild(table);
+  body.innerHTML = '';
+  body.appendChild(wrap);
   applyDayFilter();
 }
 
