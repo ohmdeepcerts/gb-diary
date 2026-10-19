@@ -1486,7 +1486,7 @@ function buildUnassignedPanel(jobs, targetDate) {
     dragJob = null; dragDate2 = null; dragEng = null;
     try {
       setStatus('Unassigning…');
-      await api.reschedule(jid, fromDate, null);
+      await trpcMutate('diary.reschedule', { jobId: jid, date: fromDate, engineerId: null });
       setStatus('Moved to unassigned ✓');
       clearCache(); await loadDay(true);
     } catch(er) { setStatus('Failed: ' + er.message, false); }
