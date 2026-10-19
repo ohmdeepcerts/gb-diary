@@ -3068,9 +3068,9 @@ function _qbBuildEditorPanel() {
       <button id="qb-gemini-key-save" class="jd-btn" style="font-size:11px;padding:4px 10px;white-space:nowrap;flex-shrink:0">Save</button>
     </div>
     <div id="qb-ai-key-status" style="font-size:10px;color:var(--text3);margin-top:3px">Get a free key at aistudio.google.com/apikey</div>`;
-  const keyInp  = aiRow.querySelector('#qb-gemini-key-input');
-  const saveBtn = aiRow.querySelector('#qb-gemini-key-save');
-  const aiSt    = aiRow.querySelector('#qb-ai-key-status');
+  const keyInp    = aiRow.querySelector('#qb-gemini-key-input');
+  const keySaveBtn = aiRow.querySelector('#qb-gemini-key-save');
+  const aiSt      = aiRow.querySelector('#qb-ai-key-status');
   store.get('gemini_key').then(s => {
     if (s.gemini_key) { keyInp.value = s.gemini_key; aiSt.textContent = '✓ Key already saved'; aiSt.style.color = 'var(--green,#16a34a)'; }
   }).catch(() => {});
@@ -3081,7 +3081,7 @@ function _qbBuildEditorPanel() {
     aiSt.style.color = v ? 'var(--green,#16a34a)' : 'var(--text3)';
     setStatus(v ? 'Gemini AI key saved ✓' : 'Gemini key cleared');
   };
-  saveBtn.addEventListener('click', _saveGeminiKey);
+  keySaveBtn.addEventListener('click', _saveGeminiKey);
   keyInp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); _saveGeminiKey(); } });
   panel.appendChild(aiRow);
 
