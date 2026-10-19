@@ -1352,7 +1352,7 @@ function renderDay(lanes, dateLabel) {
 
   const topScroll = _attachTopScrollbar(tableArea, 1330);
   const tableCol = document.createElement('div');
-  tableCol.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden';
+  tableCol.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column';
   tableCol.appendChild(topScroll);
   tableCol.appendChild(tableArea);
   body.innerHTML = '';
@@ -1471,7 +1471,7 @@ function renderDayRange(merged) {
 
   const topScroll = _attachTopScrollbar(tableArea, 1270);
   const tableCol = document.createElement('div');
-  tableCol.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden';
+  tableCol.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column';
   tableCol.appendChild(topScroll);
   tableCol.appendChild(tableArea);
   body.innerHTML = '';
