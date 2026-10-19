@@ -2506,18 +2506,16 @@ function _qbBuildActivityPanel() {
   panel.appendChild(info);
 
   if (events.length) {
-    const sub = document.createElement('div');
-    sub.className = 'qb-sub-title';
-    sub.textContent = 'Activity';
-    panel.appendChild(sub);
-
     const ICONS = {
       status_changed:'🔄', note:'💬', photos_added:'📷',
       signature_added:'✍️', reassigned:'👤', comments_check_tagged:'🏷️',
     };
-    events.forEach(ev => {
+
+    // Build event divs with type metadata
+    const eventDivs = events.map(ev => {
       const div = document.createElement('div');
       div.className = 'qb-event';
+      div.dataset.evType = ev.event_type || '';
       const icon = ICONS[ev.event_type] || '📋';
       const ts   = ev.created_at
         ? new Date(ev.created_at).toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })
@@ -2526,7 +2524,7 @@ function _qbBuildActivityPanel() {
         <span class="qb-ev-icon">${icon}</span>
         <div class="qb-ev-body">
           <div class="qb-ev-actor">${esc(ev.actor_name || 'System')}</div>
-          ${ev.message ? `<div class="qb-ev-msg">${esc(ev.message)}</div>` : ''}
+          ${ev.message ? `<div class="qb-ev-msg" style="font-size:12px;white-space:pre-wrap;word-break:break-word;line-height:1.5">${esc(ev.message)}</div>` : ''}
           <div class="qb-ev-time">${esc(ts)}</div>
         </div>`;
       if (ev.message && ev.event_type === 'note') {
@@ -2538,8 +2536,47 @@ function _qbBuildActivityPanel() {
           setTimeout(() => { div.style.outline = ''; }, 1200);
         });
       }
-      panel.appendChild(div);
+      return div;
     });
+
+    // Filter tabs header row
+    const subRow = document.createElement('div');
+    subRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-shrink:0';
+    const sub = document.createElement('div');
+    sub.className = 'qb-sub-title';
+    sub.style.margin = '0';
+    sub.textContent = 'Activity';
+
+    const notesOnlyCount = eventDivs.filter(d => d.dataset.evType === 'note').length;
+    const tabsWrap = document.createElement('div');
+    tabsWrap.style.cssText = 'display:flex;gap:2px';
+
+    let actFilter = 'all';
+    const applyActFilter = () => {
+      eventDivs.forEach(d => {
+        d.style.display = (actFilter === 'notes' && d.dataset.evType !== 'note') ? 'none' : '';
+      });
+      tabsWrap.querySelectorAll('[data-af]').forEach(b => {
+        b.style.background = b.dataset.af === actFilter ? 'var(--red)' : 'var(--bg3)';
+        b.style.color      = b.dataset.af === actFilter ? '#fff'       : 'var(--text2)';
+      });
+    };
+
+    [{ key:'all', label:'All' }, { key:'notes', label:`💬 Notes (${notesOnlyCount})` }].forEach(t => {
+      const b = document.createElement('button');
+      b.dataset.af = t.key;
+      b.textContent = t.label;
+      b.style.cssText = 'font-size:9px;padding:2px 6px;border-radius:3px;border:1px solid var(--border);cursor:pointer;font-family:inherit;font-weight:600;transition:all .12s';
+      b.addEventListener('click', () => { actFilter = t.key; applyActFilter(); });
+      tabsWrap.appendChild(b);
+    });
+
+    subRow.appendChild(sub);
+    subRow.appendChild(tabsWrap);
+    panel.appendChild(subRow);
+
+    eventDivs.forEach(d => panel.appendChild(d));
+    applyActFilter(); // set initial state
   }
 
   // Add Note form
