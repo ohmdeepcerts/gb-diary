@@ -920,7 +920,7 @@ function jobReviewer(job) {
 }
 
 function jobExcelRow(job, engineer, dateISO) {
-  const md = v => { const s = String(v ?? '').trim(); return s || 'MD'; };
+  const md = v => { const s = String(v ?? '').trim(); return s || ''; };
   const d = dateISO || job.scheduled_date || '';
   let dateFmt = d;
   if (d && d.includes('-')) { const [y,m,dy] = d.split('-'); dateFmt = `${dy}/${m}/${y}`; }
@@ -971,7 +971,7 @@ async function exportJobsExcel() {
           const iso = days[di];
           if (iso < from || iso > to) return;
           (dayData.jobs || []).forEach(job => {
-            const md = v => { const s = String(v ?? '').trim(); return s || 'MD'; };
+            const md = v => { const s = String(v ?? '').trim(); return s || ''; };
             const [y,mo,dy] = iso.split('-');
             const dateFmt   = `${dy}/${mo}/${y}`;
             const addr      = jobAddr(job);
