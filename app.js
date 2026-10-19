@@ -1215,7 +1215,28 @@ function applyDayViewStyles() {
      table.day-table tbody tr.drow-insert-before td{box-shadow:0 -3px 0 var(--red);}
      table.day-table tbody tr.drow-insert-after td{box-shadow:0 3px 0 var(--red);}
      table.day-table tbody tr.row-in-review td{background:rgba(139,92,246,.09);}
-     table.day-table tbody tr.row-in-review td:first-child{border-left:3px solid #8B5CF6;}`;
+     table.day-table tbody tr.row-in-review td:first-child{border-left:3px solid #8B5CF6;}
+     .day-topscroll{overflow-x:scroll;overflow-y:hidden;height:12px;margin-bottom:2px}
+     .day-topscroll::-webkit-scrollbar{height:8px}
+     .day-topscroll::-webkit-scrollbar-track{background:var(--bg2);border-radius:4px}
+     .day-topscroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+     .day-topscroll::-webkit-scrollbar-thumb:hover{background:var(--text2)}
+     .day-table-area::-webkit-scrollbar{height:8px}
+     .day-table-area::-webkit-scrollbar-track{background:var(--bg2);border-radius:4px}
+     .day-table-area::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+     .day-table-area::-webkit-scrollbar-thumb:hover{background:var(--text2)}`;
+}
+
+function _attachTopScrollbar(tableArea, minWidth) {
+  const top = document.createElement('div');
+  top.className = 'day-topscroll';
+  const inner = document.createElement('div');
+  inner.style.cssText = `height:1px;min-width:${minWidth}px`;
+  top.appendChild(inner);
+  let syncing = false;
+  top.addEventListener('scroll', () => { if (!syncing) { syncing=true; tableArea.scrollLeft=top.scrollLeft; syncing=false; } });
+  tableArea.addEventListener('scroll', () => { if (!syncing) { syncing=true; top.scrollLeft=tableArea.scrollLeft; syncing=false; } });
+  return top;
 }
 
 function renderDay(lanes, dateLabel) {
@@ -1317,7 +1338,7 @@ function renderDay(lanes, dateLabel) {
 
   const tableArea = document.createElement('div');
   tableArea.className = 'day-table-area';
-  tableArea.style.overflowX = 'auto';
+  tableArea.style.overflowX = 'scroll';
 
   if (!total && !unassignedJobs.length) {
     tableArea.innerHTML = '<div class="loading-row"><div style="font-size:36px">📅</div>No jobs scheduled for this day</div>';
@@ -1329,7 +1350,9 @@ function renderDay(lanes, dateLabel) {
     applyDayViewStyles();
   }
 
+  const topScroll = _attachTopScrollbar(tableArea, 1330);
   body.innerHTML = '';
+  body.appendChild(topScroll);
   body.appendChild(tableArea);
   body.appendChild(buildUnassignedPanel(unassignedJobs, curDate));
 
@@ -1430,7 +1453,7 @@ function renderDayRange(merged) {
 
   const tableArea = document.createElement('div');
   tableArea.className = 'day-table-area';
-  tableArea.style.overflowX = 'auto';
+  tableArea.style.overflowX = 'scroll';
 
   if (!total && !unassignedJobs.length) {
     tableArea.innerHTML = '<div class="loading-row"><div style="font-size:36px">📅</div>No jobs in this date range</div>';
@@ -1443,7 +1466,9 @@ function renderDayRange(merged) {
     applyDayViewStyles();
   }
 
+  const topScroll = _attachTopScrollbar(tableArea, 1270);
   body.innerHTML = '';
+  body.appendChild(topScroll);
   body.appendChild(tableArea);
   body.appendChild(buildUnassignedPanel(unassignedJobs, curDate));
   applyDayFilter();
