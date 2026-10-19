@@ -3140,20 +3140,13 @@ async function _qbFetchImageAsBase64(url) {
 }
 
 async function _qbDownloadPdf(meta, selectedPhotos, opts = {}) {
-  setStatus('Fetching photos for PDF…');
-  const photoData = [];
-  for (const a of selectedPhotos) {
-    try {
-      const dataUrl = await _qbFetchImageAsBase64(BASE + a.url);
-      photoData.push({
-        photoId: a.id,
-        dataUrl,
-        kind: { photo_before:'Before', photo_after:'After', signature:'Signature' }[a.kind] || a.kind || '',
-        by: a.uploaded_by_name || '',
-      });
-    } catch(e) { console.warn('Skipped photo:', a.id, e.message); }
-  }
   setStatus('Opening PDF…');
+  const photoData = selectedPhotos.map(a => ({
+    photoId: a.id,
+    imageUrl: BASE + a.url,
+    kind: { photo_before:'Before', photo_after:'After', signature:'Signature' }[a.kind] || a.kind || '',
+    by: a.uploaded_by_name || '',
+  }));
 
   const subtotal = meta.lines.reduce((s, l) => s + (l.qty || 1) * (l.unit_price || 0), 0);
   const vat      = subtotal * meta.vatRate / 100;
@@ -3189,7 +3182,7 @@ async function _qbDownloadPdf(meta, selectedPhotos, opts = {}) {
   const photoMap = new Map(photoData.map(p => [p.photoId, p]));
 
   const orderedPhotos = [
-    ...taggedOrder.map(([id, label]) => ({ ...(photoMap.get(id) || {}), label })).filter(p => p.dataUrl),
+    ...taggedOrder.map(([id, label]) => ({ ...(photoMap.get(id) || {}), label })).filter(p => p.imageUrl),
     ...photoData.filter(p => !taggedIds.has(p.photoId)),
   ];
 
@@ -3201,7 +3194,7 @@ async function _qbDownloadPdf(meta, selectedPhotos, opts = {}) {
         ${orderedPhotos.map(p => {
           const anchorId = p.label ? `pic-${p.label.replace('Pic ', '')}` : '';
           return `<div${anchorId ? ` id="${anchorId}"` : ''} style="scroll-margin-top:20px">
-            <img src="${p.dataUrl}" style="width:100%;border:1px solid #e5e7eb;display:block">
+            <img src="${p.imageUrl}" style="width:100%;border:1px solid #e5e7eb;display:block">
             <div style="font-size:11px;color:#1a1a1a;margin-top:5px;font-weight:${p.label ? '700' : '400'}">
               ${p.label ? `<span style="color:#E1251B;font-size:13px">[${esc(p.label)}]</span> — ` : ''}${esc(p.kind || '')}${p.by ? ` · ${esc(p.by)}` : ''}
             </div>
