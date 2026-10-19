@@ -5115,22 +5115,105 @@ async function loadFailedJobsView() {
   const failedJobs = allJobs.filter(j => jobStatus(j) === 'failed');
   if (!failedJobs.length) { body.innerHTML = '<div class="loading-row">No failed jobs found ✓</div>'; return; }
 
+  // Fetch quotation meta for jobs marked as quotation jobs
+  const quotedJobsList = failedJobs.filter(j => j.quotation);
+  const quoteMetaMap   = new Map(); // jobId → { isSent, isApproved }
+  if (quotedJobsList.length) {
+    const qr = await Promise.allSettled(
+      quotedJobsList.map(j =>
+        trpcQuery('quotations.listForJob', { jobId: j.id }).then(qs => ({ jobId: j.id, qs: qs || [] }))
+      )
+    );
+    qr.forEach(r => {
+      if (r.status !== 'fulfilled') return;
+      const { jobId, qs } = r.value;
+      quoteMetaMap.set(jobId, {
+        isSent:     qs.some(q => q.status && q.status !== ''),
+        isApproved: qs.some(q => q.status === 'approved'),
+      });
+    });
+  }
+
+  let failedFilter = 'all';  // 'all' | 'quoted' | 'not_quoted'
+  let quoteFilter  = 'all';  // 'all' | 'accepted' | 'not_accepted' | 'sent' | 'not_sent'
+
   daySearch = ''; dayEngFilter = ''; dayStatusFilter = '';
-  const filterBar = document.getElementById('day-filter-bar');
-  if (filterBar) {
+  const filterBar   = document.getElementById('day-filter-bar');
+  const statusTabEl = document.getElementById('day-status-tabs');
+
+  const applyFailedFilter = () => {
+    const q = daySearch.toLowerCase().trim();
+    const gtrVisible = new Map();
+    _dayRowMeta.forEach(({ tr, gtr, searchText, job: jb }) => {
+      let show = true;
+      if (q && !searchText.includes(q)) show = false;
+      if (show) {
+        if (failedFilter === 'quoted')     show = !!jb.quotation;
+        if (failedFilter === 'not_quoted') show = !jb.quotation;
+        if (show && failedFilter === 'quoted') {
+          const meta = quoteMetaMap.get(jb.id);
+          if (quoteFilter === 'accepted')     show = !!meta?.isApproved;
+          if (quoteFilter === 'not_accepted') show = !meta?.isApproved;
+          if (quoteFilter === 'sent')         show = !!meta?.isSent;
+          if (quoteFilter === 'not_sent')     show = !meta?.isSent;
+        }
+      }
+      tr.style.visibility = show ? '' : 'collapse';
+      if (gtr) { if (show) gtrVisible.set(gtr, true); else if (!gtrVisible.has(gtr)) gtrVisible.set(gtr, false); }
+    });
+    _dayRowMeta.forEach(({ gtr }) => { if (gtr) gtr.style.display = gtrVisible.get(gtr) ? '' : 'none'; });
+  };
+
+  const renderQuoteSubs = () => {
+    if (!statusTabEl) return;
+    if (failedFilter !== 'quoted') { statusTabEl.innerHTML = ''; return; }
+    const sentCnt     = quotedJobsList.filter(j => quoteMetaMap.get(j.id)?.isSent).length;
+    const acceptedCnt = quotedJobsList.filter(j => quoteMetaMap.get(j.id)?.isApproved).length;
+    const tabs = [
+      { key: 'all',          label: 'All Quoted',     cnt: quotedJobsList.length          },
+      { key: 'accepted',     label: '✓ Accepted',      cnt: acceptedCnt                    },
+      { key: 'not_accepted', label: '✗ Not Accepted',  cnt: quotedJobsList.length - acceptedCnt },
+      { key: 'sent',         label: '📧 Sent',          cnt: sentCnt                        },
+      { key: 'not_sent',     label: '📋 Not Sent',      cnt: quotedJobsList.length - sentCnt },
+    ];
+    statusTabEl.innerHTML = tabs.map(t =>
+      `<button class="dst${quoteFilter === t.key ? ' dst-active' : ''}" data-qflt="${t.key}">${esc(t.label)} <span class="dst-badge">${t.cnt}</span></button>`
+    ).join('');
+    statusTabEl.querySelectorAll('[data-qflt]').forEach(btn =>
+      btn.addEventListener('click', () => { quoteFilter = btn.dataset.qflt; renderQuoteSubs(); applyFailedFilter(); })
+    );
+  };
+
+  const renderTopFilters = () => {
+    if (!filterBar) return;
+    const topTabs = [
+      { key: 'all',        label: 'All',       cnt: failedJobs.length                       },
+      { key: 'quoted',     label: '💼 Quoted',  cnt: quotedJobsList.length                   },
+      { key: 'not_quoted', label: 'No Quote',  cnt: failedJobs.length - quotedJobsList.length },
+    ];
     filterBar.innerHTML = `
       <div class="dfb-search">
         <input type="text" id="dfb-q" class="dfb-inp" placeholder="Search address, client, ref, description, phone…">
       </div>
-      <span style="font-size:11px;color:#ef4444;white-space:nowrap;flex-shrink:0;font-weight:700">
-        ⚠ ${failedJobs.length} failed job${failedJobs.length !== 1 ? 's' : ''}
-      </span>
-      <span class="dfb-count" id="dfb-count"></span>`;
-    document.getElementById('dfb-q').addEventListener('input', e => { daySearch = e.target.value; applyDayFilter(); });
-  }
-  const statusTabsEl = document.getElementById('day-status-tabs');
-  if (statusTabsEl) statusTabsEl.innerHTML = '';
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        ${topTabs.map(t => `<button class="dst${failedFilter === t.key ? ' dst-active' : ''}" data-fflt="${t.key}">${esc(t.label)} <span class="dst-badge">${t.cnt}</span></button>`).join('')}
+      </div>`;
+    document.getElementById('dfb-q').addEventListener('input', e => { daySearch = e.target.value; applyFailedFilter(); });
+    filterBar.querySelectorAll('[data-fflt]').forEach(btn =>
+      btn.addEventListener('click', () => {
+        failedFilter = btn.dataset.fflt;
+        if (failedFilter !== 'quoted') quoteFilter = 'all';
+        renderTopFilters();
+        renderQuoteSubs();
+        applyFailedFilter();
+      })
+    );
+  };
 
+  renderTopFilters();
+  renderQuoteSubs();
+
+  // Build table
   const byDate = new Map();
   failedJobs.forEach(job => {
     const date = (job.date || job.scheduledDate || job.scheduled_date || job.visitPlan?.date || '').slice(0, 10);
@@ -5193,7 +5276,7 @@ async function loadFailedJobsView() {
       </span>`;
       tr.insertBefore(engTd, tr.firstChild);
       tbody.appendChild(tr);
-      _dayRowMeta.push({ tr, gtr: bannerTr, engId, searchText: buildSearchText(job, eng), status: jobStatus(job) });
+      _dayRowMeta.push({ tr, gtr: bannerTr, engId, searchText: buildSearchText(job, eng), status: jobStatus(job), job });
     });
   });
 
@@ -5203,7 +5286,7 @@ async function loadFailedJobsView() {
   wrap.appendChild(table);
   body.innerHTML = '';
   body.appendChild(wrap);
-  applyDayFilter();
+  applyFailedFilter();
 }
 
 // ── INVOICE / STATEMENT STATE ─────────────────────────────────────────────────
