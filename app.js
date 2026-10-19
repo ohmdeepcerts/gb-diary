@@ -1216,6 +1216,7 @@ function applyDayViewStyles() {
      table.day-table tbody tr.drow-insert-after td{box-shadow:0 3px 0 var(--red);}
      table.day-table tbody tr.row-in-review td{background:rgba(139,92,246,.09);}
      table.day-table tbody tr.row-in-review td:first-child{border-left:3px solid #8B5CF6;}
+     .day-upool.day-upool-droptarget{outline:2px dashed var(--red);background:rgba(239,68,68,.06)}
      .day-table-wrap::-webkit-scrollbar{height:16px}
      .day-table-wrap::-webkit-scrollbar-track{background:#d1d5db;border-radius:8px}
      .day-table-wrap::-webkit-scrollbar-thumb{background:#6b7280;border-radius:8px;border:2px solid #d1d5db}
@@ -1469,6 +1470,27 @@ function buildUnassignedPanel(jobs, targetDate) {
     hdr.querySelector('#day-upool-toggle').textContent = _poolOpen ? '›' : '‹';
   });
   panel.appendChild(hdr);
+
+  // Accept drops from assigned table rows → unassign the engineer
+  panel.addEventListener('dragover', e => {
+    if (dragJob) { e.preventDefault(); panel.classList.add('day-upool-droptarget'); }
+  });
+  panel.addEventListener('dragleave', e => {
+    if (!panel.contains(e.relatedTarget)) panel.classList.remove('day-upool-droptarget');
+  });
+  panel.addEventListener('drop', async e => {
+    e.preventDefault();
+    panel.classList.remove('day-upool-droptarget');
+    if (!dragJob) return;
+    const jid = dragJob; const fromDate = dragDate2 || curDate;
+    dragJob = null; dragDate2 = null; dragEng = null;
+    try {
+      setStatus('Unassigning…');
+      await api.reschedule(jid, fromDate, null);
+      setStatus('Moved to unassigned ✓');
+      clearCache(); await loadDay(true);
+    } catch(er) { setStatus('Failed: ' + er.message, false); }
+  });
 
   const list = document.createElement('div');
   list.className = 'day-upool-list';
