@@ -770,7 +770,7 @@ function weekCard(job, iso, engId) {
     e.dataTransfer.setData('text/plain', job.id);
   });
   div.addEventListener('dragend', () => { div.classList.remove('dragging'); setTimeout(()=>{ _dragged=false; }, 100); });
-  div.addEventListener('click', () => { if (_dragged) return; window.open(`${BASE}/office/jobs/${job.id}`, '_blank'); });
+  div.addEventListener('click', () => { if (_dragged) return; window.open(`${BASE}/office/jobs/${job.id}`, '_blank'); window.focus(); });
   return div;
 }
 
@@ -1973,6 +1973,7 @@ function dayRow(job, engineer, dateISO) {
   tr.querySelector('.day-act-btn').addEventListener('click', e => {
     e.stopPropagation();
     window.open(`${BASE}/office/jobs/${job.id}`, '_blank');
+    window.focus();
   });
   const _dayWaBtn = tr.querySelector('.day-wa-btn');
   if (_dayWaBtn) {
