@@ -114,6 +114,14 @@ let colorIdx    = 0;
 let isDark      = true;
 let dragJob     = null, dragDate2 = null, dragEng = null;
 
+function openBg(url) {
+  const a = document.createElement('a');
+  a.href = url; a.target = '_blank'; a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
+  document.body.removeChild(a);
+}
+
 // ── Cert keyword auto-detect ─────────────────────────────────────────────────
 const _CKW_KEY = 'gb_cert_keywords';
 const _CKW_DEFAULTS = {
@@ -770,7 +778,7 @@ function weekCard(job, iso, engId) {
     e.dataTransfer.setData('text/plain', job.id);
   });
   div.addEventListener('dragend', () => { div.classList.remove('dragging'); setTimeout(()=>{ _dragged=false; }, 100); });
-  div.addEventListener('click', () => { if (_dragged) return; const t=window.open(`${BASE}/office/jobs/${job.id}`,'_blank'); if(t)t.blur(); window.focus(); });
+  div.addEventListener('click', () => { if (_dragged) return; openBg(`${BASE}/office/jobs/${job.id}`); });
   return div;
 }
 
@@ -1972,9 +1980,7 @@ function dayRow(job, engineer, dateISO) {
 
   tr.querySelector('.day-act-btn').addEventListener('click', e => {
     e.stopPropagation();
-    const t = window.open(`${BASE}/office/jobs/${job.id}`, '_blank');
-    if (t) t.blur();
-    window.focus();
+    openBg(`${BASE}/office/jobs/${job.id}`);
   });
   const _dayWaBtn = tr.querySelector('.day-wa-btn');
   if (_dayWaBtn) {
