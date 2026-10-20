@@ -1835,7 +1835,7 @@ function dayRow(job, engineer, dateISO) {
     : '';
   const _rowEntry = getRowColorEntry(String(job.id));
   const _rowBg = _rowEntry?.bg || '';
-  cells.push(`<td><div class="day-act-wrap"><button class="day-excel-copy" title="Copy row for Excel">📋</button><button class="day-act-btn" title="Open in portal">↗</button>${_waCell}<button class="day-paint-btn" title="Highlight row colour" style="background:${_rowBg||''};border:1px solid var(--border);width:18px;height:18px;border-radius:3px;cursor:pointer;font-size:10px;padding:0;flex-shrink:0">${_rowBg?'':'🎨'}</button></div></td>`);
+  cells.push(`<td><div class="day-act-wrap"><button class="day-excel-copy" title="Copy row for Excel">📋</button><a class="day-act-btn" href="${BASE}/office/jobs/${job.id}" target="_blank" rel="noopener" title="Open in portal (Ctrl+click = background tab)" style="display:flex;align-items:center;justify-content:center;text-decoration:none;color:inherit">↗</a>${_waCell}<button class="day-paint-btn" title="Highlight row colour" style="background:${_rowBg||''};border:1px solid var(--border);width:18px;height:18px;border-radius:3px;cursor:pointer;font-size:10px;padding:0;flex-shrink:0">${_rowBg?'':'🎨'}</button></div></td>`);
 
   tr.innerHTML = cells.join('');
   if (_rowBg) { tr.style.background = _rowBg; tr.querySelectorAll('td').forEach(td => { td.style.background = _rowBg; if (_rowEntry?.text) td.style.color = _rowEntry.text; }); }
@@ -1978,10 +1978,7 @@ function dayRow(job, engineer, dateISO) {
     });
   });
 
-  tr.querySelector('.day-act-btn').addEventListener('click', e => {
-    e.stopPropagation();
-    openBg(`${BASE}/office/jobs/${job.id}`);
-  });
+  tr.querySelector('.day-act-btn').addEventListener('click', e => { e.stopPropagation(); });
   const _dayWaBtn = tr.querySelector('.day-wa-btn');
   if (_dayWaBtn) {
     _dayWaBtn.addEventListener('click', e => {
