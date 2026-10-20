@@ -114,6 +114,108 @@ let colorIdx    = 0;
 let isDark      = true;
 let dragJob     = null, dragDate2 = null, dragEng = null;
 
+// ── Cert keyword auto-detect ─────────────────────────────────────────────────
+const _CKW_KEY = 'gb_cert_keywords';
+const _CKW_DEFAULTS = {
+  'eicr':               ['eicr','electrical installation condition'],
+  'gas-safety':         ['gas cert','cp12','gas safety','boiler service','boiler'],
+  'pat':                ['pat test','pat testing','pat'],
+  'fire-alarm':         ['fire alarm','fire alarms'],
+  'emergency-lighting': ['emergency lighting','em lighting'],
+  'epc':                ['epc'],
+};
+function _loadCertKeywords() {
+  try { const s = localStorage.getItem(_CKW_KEY); if (s) return JSON.parse(s); } catch {}
+  return JSON.parse(JSON.stringify(_CKW_DEFAULTS));
+}
+function _saveCertKeywords(map) {
+  try { localStorage.setItem(_CKW_KEY, JSON.stringify(map)); } catch {}
+}
+function _autoDetectCerts() {
+  const titleEl = document.getElementById('aj-title');
+  const descEl  = document.getElementById('aj-desc');
+  if (!titleEl) return;
+  const text = ((titleEl.value || '') + ' ' + (descEl?.value || '')).toLowerCase();
+  const kw = _loadCertKeywords();
+  document.querySelectorAll('#aj-cert-grid .aj-cert').forEach(el => {
+    const cid = el.dataset.id;
+    const words = kw[cid] || [];
+    if (words.some(w => text.includes(w.toLowerCase()))) {
+      if (!_addJobCertTypes.has(cid)) { _addJobCertTypes.add(cid); el.classList.add('on'); }
+    }
+  });
+}
+
+function _openCertKwModal() {
+  const modal = document.getElementById('cert-kw-modal');
+  if (!modal) return;
+  const FALLBACK_CERTS = [
+    {id:'gas-safety',name:'Gas Safety (CP12)'},{id:'eicr',name:'EICR'},
+    {id:'pat',name:'PAT Testing'},{id:'fire-alarm',name:'Fire Alarm'},
+    {id:'emergency-lighting',name:'Emergency Lighting'},{id:'epc',name:'EPC'},
+    {id:'periodic',name:'Periodic'},{id:'installation',name:'Installation'},
+    {id:'deic',name:'D.EIC'},
+  ];
+  const kw = _loadCertKeywords();
+  const rows = document.getElementById('cert-kw-rows');
+  rows.innerHTML = '';
+  FALLBACK_CERTS.forEach(ct => {
+    const words = kw[ct.id] || [];
+    const row = document.createElement('div');
+    row.style.cssText = 'border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px';
+    row.dataset.certId = ct.id;
+    row.innerHTML = `
+      <div style="font-size:12px;font-weight:700;color:var(--text1)">${ct.name}</div>
+      <div class="ckw-chips" style="display:flex;flex-wrap:wrap;gap:4px;min-height:22px"></div>
+      <div style="display:flex;gap:6px">
+        <input class="inp ckw-inp" placeholder="Add keyword…" style="flex:1;font-size:12px;padding:4px 7px;height:28px">
+        <button class="btn ckw-add-btn" style="font-size:11px;padding:3px 10px;height:28px">Add</button>
+      </div>`;
+    const chipsEl = row.querySelector('.ckw-chips');
+    const inp = row.querySelector('.ckw-inp');
+    const addBtn = row.querySelector('.ckw-add-btn');
+    const renderChips = (arr) => {
+      chipsEl.innerHTML = '';
+      arr.forEach((w, i) => {
+        const chip = document.createElement('span');
+        chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;background:var(--bg4);border:1px solid var(--border);border-radius:20px;padding:2px 8px 2px 8px;font-size:11px;color:var(--text2)';
+        chip.innerHTML = `${w} <button data-i="${i}" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:11px;padding:0;line-height:1">✕</button>`;
+        chip.querySelector('button').addEventListener('click', () => {
+          arr.splice(i, 1); renderChips(arr);
+        });
+        chipsEl.appendChild(chip);
+      });
+    };
+    renderChips(words);
+    const doAdd = () => {
+      const v = inp.value.trim().toLowerCase();
+      if (v && !words.includes(v)) { words.push(v); renderChips(words); }
+      inp.value = '';
+    };
+    addBtn.addEventListener('click', doAdd);
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } });
+    rows.appendChild(row);
+    kw[ct.id] = words;
+  });
+
+  document.getElementById('cert-kw-save').onclick = () => {
+    const out = {};
+    rows.querySelectorAll('[data-cert-id]').forEach(row => {
+      const cid = row.dataset.certId;
+      out[cid] = [...row.querySelectorAll('.ckw-chips span')].map(ch => ch.childNodes[0].textContent.trim());
+    });
+    _saveCertKeywords(out);
+    modal.style.display = 'none';
+  };
+  document.getElementById('cert-kw-reset').onclick = () => {
+    _saveCertKeywords(JSON.parse(JSON.stringify(_CKW_DEFAULTS)));
+    _openCertKwModal();
+  };
+  document.getElementById('cert-kw-close').onclick = () => { modal.style.display = 'none'; };
+  modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
+  modal.style.display = 'flex';
+}
+
 // ── Auto-refresh ─────────────────────────────────────────────────────────────
 let _refreshTimer    = null;
 let _refreshInterval = 20;   // seconds between auto-refreshes
@@ -4018,6 +4120,9 @@ async function openAddJob() {
   document.getElementById('btn-add-cancel').addEventListener('click', closeAddJob);
   document.getElementById('btn-add-save').addEventListener('click', saveJob);
 
+  document.getElementById('aj-title').addEventListener('input', _autoDetectCerts);
+  document.getElementById('aj-desc').addEventListener('input', _autoDetectCerts);
+
   const pcBtn    = document.getElementById('aj-pc-btn');
   const pcInp    = document.getElementById('aj-pc');
   const addrInp  = document.getElementById('aj-addr');
@@ -4899,6 +5004,7 @@ async function init() {
   document.getElementById('week-refresh').addEventListener('click', async () => { clearCache(); await loadWeek(true); });
   document.getElementById('week-logout').addEventListener('click', logout);
   document.getElementById('week-add').addEventListener('click', openAddJob);
+  document.querySelectorAll('.cert-kw-open-btn').forEach(b => b.addEventListener('click', _openCertKwModal));
 
   // Day nav
   document.getElementById('day-prev').addEventListener('click', async () => { curDate=addDays(curDate,-1); await loadDay(); });
