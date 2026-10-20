@@ -54,7 +54,7 @@ const api = {
   me:       ()                   => trpcQuery('auth.officeMe'),
   logout:   ()                   => trpcMutate('auth.officeLogout'),
   week:     (weekOf)             => trpcQuery('diary.week', { weekOf }),
-  reschedule:(jobId, date, engId)=> trpcMutate('diary.reschedule', { jobId, date, ...(engId != null ? { engineerId: engId } : {}) }),
+  reschedule:(jobId, date, engId)=> trpcMutate('jobs.update', { id: jobId, scheduledDate: date, ...(engId != null ? { engineerIds: [engId] } : {}) }),
   createJob: async (data) => {
     const attempts = [
       () => trpcMutate('jobs.create',    data),
