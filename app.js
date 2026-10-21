@@ -4713,19 +4713,31 @@ async function _loadContactInsights(contactId, panel) {
   });
 }
 
+function _fmtNominatim(item) {
+  const a = item.address || {};
+  const num  = a.house_number || '';
+  const road = a.road || a.pedestrian || a.footway || '';
+  const town = a.town || a.city || a.village || a.suburb || a.county || '';
+  const pc   = a.postcode || '';
+  const line1 = [num, road].filter(Boolean).join(' ');
+  const line2 = [town, pc].filter(Boolean).join(', ');
+  return { line1: line1 || item.display_name.split(',')[0], line2, pc };
+}
+
 async function _searchAddress(q, addrInp, drop, pcInp) {
   drop.innerHTML = '<div class="aj-dn">Searching…</div>';
   drop.style.display = 'block';
 
-  const [pRes, pcRes] = await Promise.allSettled([
+  const [pRes, nmRes] = await Promise.allSettled([
     trpcQuery('properties.list', { query: q, pageSize: 8 }),
-    fetch(`https://api.postcodes.io/postcodes?q=${encodeURIComponent(q)}&limit=8`).then(r => r.json()),
+    fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q+', UK')}&format=json&limit=8&countrycodes=gb&addressdetails=1`)
+      .then(r => r.json()),
   ]);
 
-  const properties = pRes.status  === 'fulfilled' ? (pRes.value?.items   || []) : [];
-  const postcodes  = pcRes.status === 'fulfilled' ? (pcRes.value?.result  || []) : [];
+  const properties = pRes.status  === 'fulfilled' ? (pRes.value?.items || []) : [];
+  const nmResults  = nmRes.status === 'fulfilled' ? (Array.isArray(nmRes.value) ? nmRes.value : []) : [];
 
-  if (!properties.length && !postcodes.length) {
+  if (!properties.length && !nmResults.length) {
     drop.innerHTML = '<div class="aj-dn">No suggestions found</div>';
     return;
   }
@@ -4754,19 +4766,20 @@ async function _searchAddress(q, addrInp, drop, pcInp) {
     });
   }
 
-  if (postcodes.length) {
+  if (nmResults.length) {
     const hdr = document.createElement('div');
     hdr.className = 'aj-dh';
-    hdr.textContent = 'UK Postcodes';
+    hdr.textContent = 'UK Addresses';
     drop.appendChild(hdr);
-    postcodes.forEach(pc => {
-      const li  = document.createElement('div');
+    nmResults.forEach(item => {
+      const { line1, line2, pc } = _fmtNominatim(item);
+      const li = document.createElement('div');
       li.className = 'aj-di';
-      const loc = [pc.admin_ward, pc.admin_district].filter(Boolean).join(', ');
-      li.innerHTML = `<div class="aj-di-nm">${esc(pc.postcode)}</div>${loc ? `<div class="aj-di-sb">${esc(loc)}</div>` : ''}`;
+      li.innerHTML = `<div class="aj-di-nm">${esc(line1)}</div>${line2 ? `<div class="aj-di-sb">${esc(line2)}</div>` : ''}`;
       li.addEventListener('mousedown', e => {
         e.preventDefault();
-        if (pcInp) pcInp.value = pc.postcode;
+        addrInp.value = line1;
+        if (pc && pcInp) pcInp.value = pc;
         drop.style.display = 'none';
       });
       drop.appendChild(li);
@@ -4777,26 +4790,52 @@ async function _searchAddress(q, addrInp, drop, pcInp) {
 async function _lookupPostcode(pc, addrInp, pcInp) {
   const clean = pc.replace(/\s+/g, '').toUpperCase();
   if (clean.length < 3) return;
-  const btn = document.getElementById('aj-pc-btn');
+  const btn  = document.getElementById('aj-pc-btn');
+  const drop = document.getElementById('aj-addr-drop');
   if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
   try {
+    // Validate postcode
     const r = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(clean)}`);
     const d = await r.json();
     if (d.status === 200 && d.result) {
       if (pcInp) pcInp.value = d.result.postcode;
-      if (addrInp && !addrInp.value) {
-        const loc = [d.result.admin_ward, d.result.admin_district].filter(Boolean).join(', ');
-        if (loc) addrInp.placeholder = loc;
-      }
-    } else {
-      const r2 = await fetch(`https://api.postcodes.io/postcodes?q=${encodeURIComponent(clean)}&limit=5`);
-      const d2 = await r2.json();
-      if (d2.result?.length) {
-        const errEl = document.getElementById('aj-err');
-        if (errEl) { errEl.textContent = 'Did you mean: ' + d2.result.map(x => x.postcode).join(', ') + '?'; errEl.style.display = 'block'; }
-      }
     }
-  } catch(e) { /* network error, ignore */ }
+
+    // Fetch addresses at this postcode via Nominatim
+    if (drop) {
+      drop.innerHTML = '<div class="aj-dn">Looking up addresses…</div>';
+      drop.style.display = 'block';
+    }
+    const nmR = await fetch(
+      `https://nominatim.openstreetmap.org/search?postalcode=${encodeURIComponent(clean)}&country=gb&format=json&limit=20&addressdetails=1`
+    );
+    const nmD = await nmR.json();
+    const results = Array.isArray(nmD) ? nmD : [];
+
+    if (!drop) return;
+    if (!results.length) {
+      drop.innerHTML = '<div class="aj-dn">No addresses found for this postcode</div>';
+      return;
+    }
+    drop.innerHTML = '';
+    const hdr = document.createElement('div');
+    hdr.className = 'aj-dh';
+    hdr.textContent = `Addresses for ${clean}`;
+    drop.appendChild(hdr);
+    results.forEach(item => {
+      const { line1, line2, pc: itemPc } = _fmtNominatim(item);
+      const li = document.createElement('div');
+      li.className = 'aj-di';
+      li.innerHTML = `<div class="aj-di-nm">${esc(line1)}</div>${line2 ? `<div class="aj-di-sb">${esc(line2)}</div>` : ''}`;
+      li.addEventListener('mousedown', e => {
+        e.preventDefault();
+        addrInp.value = line1;
+        if (itemPc && pcInp) pcInp.value = itemPc;
+        drop.style.display = 'none';
+      });
+      drop.appendChild(li);
+    });
+  } catch(e) { if (drop) drop.style.display = 'none'; }
   finally {
     if (btn) { btn.textContent = '🔍'; btn.disabled = false; }
   }
