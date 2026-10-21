@@ -301,6 +301,9 @@ async function silentRefresh() {
   // Save scroll positions before re-render
   const _scrollY = window.scrollY;
   const _wrapScrollX = document.querySelector('.day-table-wrap')?.scrollLeft || 0;
+  const _wb = document.getElementById('week-body');
+  const _wbST = _wb ? _wb.scrollTop  : 0;
+  const _wbSL = _wb ? _wb.scrollLeft : 0;
 
   clearCache();
   try {
@@ -316,6 +319,8 @@ async function silentRefresh() {
       window.scrollTo(0, _scrollY);
       const newWrap = document.querySelector('.day-table-wrap');
       if (newWrap) newWrap.scrollLeft = _wrapScrollX;
+      const wb = document.getElementById('week-body');
+      if (wb) { wb.scrollTop = _wbST; wb.scrollLeft = _wbSL; }
     });
 
     setStatus(`Loaded · ${now()}`);
@@ -541,9 +546,11 @@ function buildLanes(jobs, days) {
 // ── WEEK VIEW ─────────────────────────────────────────────────────────────────
 
 async function loadWeekKeepScroll(force=false) {
-  const _sy = window.scrollY;
-  await loadWeek(force, true); // silent: skip spinner so page height stays stable
-  requestAnimationFrame(() => window.scrollTo(0, _sy));
+  const wb = document.getElementById('week-body');
+  const _st = wb ? wb.scrollTop  : 0;
+  const _sl = wb ? wb.scrollLeft : 0;
+  await loadWeek(force, true);
+  requestAnimationFrame(() => { if (wb) { wb.scrollTop = _st; wb.scrollLeft = _sl; } });
 }
 
 async function loadWeek(force=false, silent=false) {
