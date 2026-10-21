@@ -623,8 +623,10 @@ function renderWeek(lanes) {
   });
 
   const body = document.getElementById('week-body');
-  body.innerHTML = '';
+  // Atomic swap: add new grid first so page height never collapses, then remove old
+  const old = body.firstChild;
   body.appendChild(grid);
+  if (old) old.remove();
 }
 
 // ── Job field helpers ─────────────────────────────────────────────────────────
