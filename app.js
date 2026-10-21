@@ -282,6 +282,11 @@ async function silentRefresh() {
     return;
   }
   if (_inAllTimeView) return; // don't overwrite the all-time scroll view
+
+  // Save scroll positions before re-render
+  const _scrollY = window.scrollY;
+  const _wrapScrollX = document.querySelector('.day-table-wrap')?.scrollLeft || 0;
+
   clearCache();
   try {
     if (view === 'day') {
@@ -290,6 +295,12 @@ async function silentRefresh() {
       renderDay(lanes, null);
     } else if (view === 'week')  { await loadWeek(true); }
     else if (view === 'month') { await loadMonth(true); }
+
+    // Restore scroll positions after re-render
+    window.scrollTo(0, _scrollY);
+    const newWrap = document.querySelector('.day-table-wrap');
+    if (newWrap) newWrap.scrollLeft = _wrapScrollX;
+
     setStatus(`Loaded · ${now()}`);
     ['w','d','m'].forEach(s => {
       const el = document.getElementById(`sdot-${s}`);
