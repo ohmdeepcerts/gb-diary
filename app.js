@@ -5,6 +5,7 @@
 const BASE  = 'https://gbelectricals.co.uk';
 const PROXY = 'https://gb-proxy.gbmandeep.workers.dev';
 const TRPC  = `${PROXY}/trpc`;
+const GETADDRESS_KEY = 'YOUR_KEY_HERE'; // ← paste your getaddress.io API key
 
 // localStorage polyfill matching chrome.storage.local shape
 const store = {
@@ -4793,44 +4794,50 @@ async function _lookupPostcode(pc, addrInp, pcInp) {
   const btn  = document.getElementById('aj-pc-btn');
   const drop = document.getElementById('aj-addr-drop');
   if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+  if (drop) { drop.innerHTML = '<div class="aj-dn">Looking up addresses…</div>'; drop.style.display = 'block'; }
   try {
-    // Validate postcode
-    const r = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(clean)}`);
-    const d = await r.json();
-    if (d.status === 200 && d.result) {
-      if (pcInp) pcInp.value = d.result.postcode;
-    }
+    let addresses = [];
 
-    // Fetch addresses at this postcode via Nominatim
-    if (drop) {
-      drop.innerHTML = '<div class="aj-dn">Looking up addresses…</div>';
-      drop.style.display = 'block';
+    if (GETADDRESS_KEY && GETADDRESS_KEY !== 'YOUR_KEY_HERE') {
+      // Use getaddress.io — returns full door-number addresses
+      const r = await fetch(`https://api.getaddress.io/find/${encodeURIComponent(clean)}?api-key=${GETADDRESS_KEY}&expand=true`);
+      const d = await r.json();
+      if (d.addresses) {
+        if (pcInp) pcInp.value = clean.replace(/([A-Z\d]+)([A-Z\d]{3})$/, '$1 $2'); // format postcode
+        addresses = d.addresses.map(a => {
+          const parts = typeof a === 'string' ? a.split(',').map(s=>s.trim()).filter(Boolean)
+                                              : [a.line_1, a.line_2, a.town_or_city].filter(Boolean);
+          return { line1: parts[0] || '', line2: parts.slice(1).join(', ') };
+        });
+      }
+    } else {
+      // Fallback: Nominatim (no door numbers)
+      const r = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(clean)}`);
+      const d = await r.json();
+      if (d.status === 200 && d.result && pcInp) pcInp.value = d.result.postcode;
+      const nmR = await fetch(`https://nominatim.openstreetmap.org/search?postalcode=${encodeURIComponent(clean)}&country=gb&format=json&limit=20&addressdetails=1`);
+      const nmD = await nmR.json();
+      addresses = (Array.isArray(nmD) ? nmD : []).map(item => {
+        const { line1, line2 } = _fmtNominatim(item);
+        return { line1, line2 };
+      });
     }
-    const nmR = await fetch(
-      `https://nominatim.openstreetmap.org/search?postalcode=${encodeURIComponent(clean)}&country=gb&format=json&limit=20&addressdetails=1`
-    );
-    const nmD = await nmR.json();
-    const results = Array.isArray(nmD) ? nmD : [];
 
     if (!drop) return;
-    if (!results.length) {
-      drop.innerHTML = '<div class="aj-dn">No addresses found for this postcode</div>';
-      return;
-    }
+    if (!addresses.length) { drop.innerHTML = '<div class="aj-dn">No addresses found for this postcode</div>'; return; }
     drop.innerHTML = '';
     const hdr = document.createElement('div');
     hdr.className = 'aj-dh';
     hdr.textContent = `Addresses for ${clean}`;
     drop.appendChild(hdr);
-    results.forEach(item => {
-      const { line1, line2, pc: itemPc } = _fmtNominatim(item);
+    addresses.forEach(({ line1, line2 }) => {
+      if (!line1) return;
       const li = document.createElement('div');
       li.className = 'aj-di';
       li.innerHTML = `<div class="aj-di-nm">${esc(line1)}</div>${line2 ? `<div class="aj-di-sb">${esc(line2)}</div>` : ''}`;
       li.addEventListener('mousedown', e => {
         e.preventDefault();
         addrInp.value = line1;
-        if (itemPc && pcInp) pcInp.value = itemPc;
         drop.style.display = 'none';
       });
       drop.appendChild(li);
