@@ -308,13 +308,15 @@ async function silentRefresh() {
       const lanes = await getWeek(mondayOf(curDate), true);
       // Don't rebuild filter bar — preserves search text & engineer selection
       renderDay(lanes, null);
-    } else if (view === 'week')  { await loadWeek(true); }
+    } else if (view === 'week')  { await loadWeek(true, true); } // silent: no spinner flash
     else if (view === 'month') { await loadMonth(true); }
 
     // Restore scroll positions after re-render
-    window.scrollTo(0, _scrollY);
-    const newWrap = document.querySelector('.day-table-wrap');
-    if (newWrap) newWrap.scrollLeft = _wrapScrollX;
+    requestAnimationFrame(() => {
+      window.scrollTo(0, _scrollY);
+      const newWrap = document.querySelector('.day-table-wrap');
+      if (newWrap) newWrap.scrollLeft = _wrapScrollX;
+    });
 
     setStatus(`Loaded · ${now()}`);
     ['w','d','m'].forEach(s => {
@@ -540,19 +542,19 @@ function buildLanes(jobs, days) {
 
 async function loadWeekKeepScroll(force=false) {
   const _sy = window.scrollY;
-  await loadWeek(force);
-  window.scrollTo(0, _sy);
+  await loadWeek(force, true); // silent: skip spinner so page height stays stable
+  requestAnimationFrame(() => window.scrollTo(0, _sy));
 }
 
-async function loadWeek(force=false) {
+async function loadWeek(force=false, silent=false) {
   const body = document.getElementById('week-body');
-  body.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading…</div>';
+  if (!silent) body.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading…</div>';
   document.getElementById('week-label').textContent = fmtWeek(curWeek);
-  setStatus('Loading…');
+  if (!silent) setStatus('Loading…');
   try {
     const lanes = await getWeek(curWeek, force);
     renderWeek(lanes);
-    setStatus(`Loaded · ${now()}`);
+    if (!silent) setStatus(`Loaded · ${now()}`);
   } catch(e) {
     body.innerHTML = err(e.message);
     setStatus(e.message, false);
