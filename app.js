@@ -5,7 +5,7 @@
 const BASE  = 'https://gbelectricals.co.uk';
 const PROXY = 'https://gb-proxy.gbmandeep.workers.dev';
 const TRPC  = `${PROXY}/trpc`;
-const GETADDRESS_KEY = 'YOUR_KEY_HERE'; // ← paste your getaddress.io API key
+let GETADDRESS_KEY = (() => { try { return localStorage.getItem('gb_getaddress_key') || ''; } catch { return ''; } })();
 
 // localStorage polyfill matching chrome.storage.local shape
 const store = {
@@ -207,6 +207,14 @@ function _openCertKwModal() {
     kw[ct.id] = words;
   });
 
+  // Load saved API key into field
+  const keyInp = document.getElementById('ckw-getaddr-key');
+  const keyToggle = document.getElementById('ckw-getaddr-toggle');
+  if (keyInp) keyInp.value = GETADDRESS_KEY;
+  if (keyToggle && keyInp) keyToggle.onclick = () => {
+    keyInp.type = keyInp.type === 'password' ? 'text' : 'password';
+  };
+
   document.getElementById('cert-kw-save').onclick = () => {
     const out = {};
     rows.querySelectorAll('[data-cert-id]').forEach(row => {
@@ -214,6 +222,12 @@ function _openCertKwModal() {
       out[cid] = [...row.querySelectorAll('.ckw-chips span')].map(ch => ch.childNodes[0].textContent.trim());
     });
     _saveCertKeywords(out);
+    // Save API key
+    if (keyInp) {
+      const k = keyInp.value.trim();
+      GETADDRESS_KEY = k;
+      try { if (k) localStorage.setItem('gb_getaddress_key', k); else localStorage.removeItem('gb_getaddress_key'); } catch {}
+    }
     modal.style.display = 'none';
   };
   document.getElementById('cert-kw-reset').onclick = () => {

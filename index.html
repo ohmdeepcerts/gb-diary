@@ -1132,7 +1132,14 @@
     </div>
     <p style="font-size:12px;color:var(--text3);margin:0">When a job title or description contains one of these keywords, the matching certificate type is automatically ticked. Keywords are case-insensitive.</p>
     <div id="cert-kw-rows" style="display:flex;flex-direction:column;gap:8px"></div>
-    <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px;border-top:1px solid var(--border)">
+    <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px">
+      <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:4px">getaddress.io API Key <span style="font-weight:400;color:var(--text3)">(for door-number address lookup by postcode)</span></div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input id="ckw-getaddr-key" type="password" placeholder="Paste your API key here…" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;background:var(--bg2);color:var(--text1)">
+        <button id="ckw-getaddr-toggle" type="button" style="background:none;border:none;cursor:pointer;font-size:14px;color:var(--text2)" title="Show/hide key">👁</button>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:8px;border-top:1px solid var(--border)">
       <button id="cert-kw-reset" class="btn" style="font-size:12px">Reset to defaults</button>
       <button id="cert-kw-save" class="btn-primary" style="font-size:12px">Save</button>
     </div>
@@ -1140,6 +1147,6 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-<script src="app.js?v=20261021c"></script>
+<script src="app.js?v=20261021d"></script>
 </body>
 </html>
