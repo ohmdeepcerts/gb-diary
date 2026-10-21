@@ -538,6 +538,12 @@ function buildLanes(jobs, days) {
 
 // ── WEEK VIEW ─────────────────────────────────────────────────────────────────
 
+async function loadWeekKeepScroll(force=false) {
+  const _sy = window.scrollY;
+  await loadWeek(force);
+  window.scrollTo(0, _sy);
+}
+
 async function loadWeek(force=false) {
   const body = document.getElementById('week-body');
   body.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading…</div>';
@@ -607,7 +613,7 @@ function renderWeek(lanes) {
         const toEng  = cell.dataset.engId || null;
         if (!dragJob || (dragDate2===toDate && dragEng===toEng)) return;
         setStatus('Moving…');
-        try { await api.reschedule(dragJob, toDate, toEng); clearCache(); await loadWeek(true); setStatus('Moved ✓'); }
+        try { await api.reschedule(dragJob, toDate, toEng); clearCache(); await loadWeekKeepScroll(true); setStatus('Moved ✓'); }
         catch(ex) { setStatus('Move failed: '+ex.message, false); }
       });
       grid.appendChild(cell);
@@ -775,7 +781,7 @@ function weekCard(job, iso, engId) {
       const nd = new Date(iso); nd.setDate(nd.getDate() + opt.days);
       const newDate = nd.toISOString().slice(0, 10);
       setStatus('Moving…');
-      try { await api.reschedule(job.id, newDate, engId||null); clearCache(); await loadWeek(true); setStatus('Moved ✓'); }
+      try { await api.reschedule(job.id, newDate, engId||null); clearCache(); await loadWeekKeepScroll(true); setStatus('Moved ✓'); }
       catch(ex) { setStatus('Move failed: ' + (ex.message||ex), false); }
     });
     mvDrop.appendChild(b);
