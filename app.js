@@ -1097,6 +1097,14 @@ function jobReviewer(job) {
   return job.comments_check?.user_name || '';
 }
 
+function fmtPhoneExcel(p) {
+  const digits = String(p || '').replace(/\D/g, '');
+  // UK 11-digit number: insert space after 5th digit (07XXX XXXXXX)
+  if (digits.length === 11) return digits.slice(0, 5) + ' ' + digits.slice(5);
+  // UK 10-digit (01XXX XXXXXX): space after 4th digit
+  if (digits.length === 10) return digits.slice(0, 4) + ' ' + digits.slice(4);
+  return p; // non-standard: return as-is (already has spaces/symbols)
+}
 function jobExcelRow(job, engineer, dateISO) {
   const md = v => { const s = String(v ?? '').trim(); return s || ''; };
   const d = dateISO || job.scheduled_date || '';
@@ -1110,7 +1118,7 @@ function jobExcelRow(job, engineer, dateISO) {
   const raw     = job.price ?? job.amount ?? job.value ?? null;
   const price   = raw != null ? Number(raw).toFixed(2) : '';
   const custName  = md(jobCustomer(job));
-  const custPhone = md(jobPhone(job));
+  const custPhone = fmtPhoneExcel(md(jobPhone(job)));
   const email     = md(job.email || job.customer?.email || job.property?.email || '');
   const inv    = jobInvoice(job);
   const invNo  = inv?.ref || '';
