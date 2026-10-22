@@ -495,6 +495,8 @@ async function switchView(name) {
     await openStatements();
   } else if (name === 'emails') {
     await openEmails();
+  } else if (name === 'directory') {
+    await openDirectory();
   }
 }
 
@@ -5148,6 +5150,12 @@ async function init() {
   document.getElementById('email-logout-btn')?.addEventListener('click', logout);
   document.getElementById('email-refresh-btn')?.addEventListener('click', () => _loadEmailLog());
 
+  // Directory view
+  document.getElementById('dir-back-btn')?.addEventListener('click', () => switchView('day'));
+  document.getElementById('dir-logout-btn')?.addEventListener('click', logout);
+  document.getElementById('dir-theme-btn')?.addEventListener('click', toggleTheme);
+  document.getElementById('dir-refresh-btn')?.addEventListener('click', () => _loadDirectory(true));
+
   // Add job overlay
   document.getElementById('btn-add-cancel').addEventListener('click', closeAddJob);
   document.getElementById('btn-add-save').addEventListener('click', saveJob);
@@ -7370,3 +7378,258 @@ document.addEventListener('click', () => {
 });
 
 document.addEventListener('DOMContentLoaded', init);
+
+// ── DIRECTORY VIEW ─────────────────────────────────────────────────────────────
+
+let _dirContacts = null; // cached contact list
+let _dirTypeFilter = ''; // '' = all
+let _dirMissingOnly = true;
+let _dirSearch = '';
+
+const DIR_WA_MSG = encodeURIComponent("Hi, if you don't mind could you please share your email address with me again, I lost that. I need to send some invoices and certificates.");
+
+const DIR_TYPES = [
+  { key: '', label: 'All' },
+  { key: 'landlord', label: 'Landlord' },
+  { key: 'agency',   label: 'Agency' },
+  { key: 'agent',    label: 'Agent' },
+  { key: 'developer',label: 'Developer' },
+];
+
+function _dirFormatWA(phone) {
+  if (!phone) return '';
+  let p = phone.replace(/[\s\-\(\)]/g, '');
+  if (p.startsWith('+44')) p = '44' + p.slice(3);
+  else if (p.startsWith('+')) return '';
+  else if (p.startsWith('07')) p = '44' + p.slice(1);
+  else if (/^7\d{9}$/.test(p)) p = '44' + p; // 10 digits starting 7
+  else if (!p.startsWith('44')) return '';
+  if (!p.startsWith('447')) return ''; // must be mobile
+  return p;
+}
+
+async function _dirFetchAll(force) {
+  if (_dirContacts && !force) return _dirContacts;
+  const letters = ['a','e','i','o','u','b','c','d','f','g','h','j','k','l','m','n','p','r','s','t','w','y','0','1','2','3','4','5','6','7','8','9'];
+  const types = ['landlord','agency','agent','developer'];
+  const seen = new Map();
+  for (const q of letters) {
+    try {
+      const results = await Promise.all(types.map(t =>
+        trpcQuery('directory.contacts.list', { query: q, pageSize: 50, type: t, page: 1 }).catch(() => null)
+      ));
+      for (let ti = 0; ti < types.length; ti++) {
+        const items = results[ti]?.items || [];
+        for (const c of items) if (!seen.has(c.id)) seen.set(c.id, c);
+        // handle hasMore pages
+        if (results[ti]?.hasMore) {
+          for (let pg = 2; pg <= 20; pg++) {
+            const rx = await trpcQuery('directory.contacts.list', { query: q, pageSize: 50, type: types[ti], page: pg }).catch(() => null);
+            for (const c of (rx?.items || [])) if (!seen.has(c.id)) seen.set(c.id, c);
+            if (!rx?.hasMore) break;
+          }
+        }
+      }
+    } catch(e) { /* skip */ }
+  }
+  _dirContacts = Array.from(seen.values()).sort((a, b) => (a.name||'').localeCompare(b.name||''));
+  return _dirContacts;
+}
+
+async function openDirectory() {
+  showView('directory');
+  _renderDirTypeTabs();
+  _renderDirControls();
+  await _loadDirectory(false);
+}
+
+async function _loadDirectory(force) {
+  const body = document.getElementById('dir-body');
+  if (!body) return;
+  body.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading contacts…</div>';
+  document.getElementById('stxt-dir').textContent = 'Loading…';
+  try {
+    await _dirFetchAll(force);
+    _renderDirTable();
+    document.getElementById('stxt-dir').textContent = `Loaded · ${_dirContacts.length} contacts`;
+  } catch(e) {
+    body.innerHTML = `<div class="loading-row" style="color:var(--red)">⚠ ${esc(e.message)}</div>`;
+    document.getElementById('stxt-dir').textContent = e.message;
+  }
+}
+
+function _renderDirTypeTabs() {
+  const wrap = document.getElementById('dir-type-tabs');
+  if (!wrap || wrap._wired) return;
+  wrap._wired = true;
+  wrap.innerHTML = '';
+  DIR_TYPES.forEach(({ key, label }) => {
+    const b = document.createElement('button');
+    b.className = 'vbtn' + (key === _dirTypeFilter ? ' active' : '');
+    b.textContent = label;
+    b.style.cssText = 'font-size:11px;padding:4px 10px';
+    b.addEventListener('click', () => {
+      _dirTypeFilter = key;
+      wrap.querySelectorAll('.vbtn').forEach(x => x.classList.toggle('active', x.textContent.toLowerCase() === (label.toLowerCase())));
+      _renderDirTable();
+    });
+    wrap.appendChild(b);
+  });
+
+  const chk = document.getElementById('dir-missing-chk');
+  if (chk && !chk._wired) {
+    chk._wired = true;
+    chk.addEventListener('change', () => { _dirMissingOnly = chk.checked; _renderDirTable(); });
+  }
+  const srch = document.getElementById('dir-search');
+  if (srch && !srch._wired) {
+    srch._wired = true;
+    let _t;
+    srch.addEventListener('input', () => { clearTimeout(_t); _t = setTimeout(() => { _dirSearch = srch.value.trim().toLowerCase(); _renderDirTable(); }, 250); });
+  }
+}
+
+function _renderDirControls() {
+  const chk = document.getElementById('dir-missing-chk');
+  if (chk) chk.checked = _dirMissingOnly;
+  const tabs = document.getElementById('dir-type-tabs');
+  if (tabs) tabs.querySelectorAll('.vbtn').forEach(b => {
+    const k = DIR_TYPES.find(d => d.label === b.textContent)?.key ?? '';
+    b.classList.toggle('active', k === _dirTypeFilter);
+  });
+}
+
+function _renderDirTable() {
+  const body = document.getElementById('dir-body');
+  if (!body || !_dirContacts) return;
+
+  let rows = _dirContacts;
+  if (_dirTypeFilter) rows = rows.filter(c => c.type === _dirTypeFilter);
+  if (_dirMissingOnly) rows = rows.filter(c => !c.email || !c.email.trim());
+  if (_dirSearch) rows = rows.filter(c => (c.name||'').toLowerCase().includes(_dirSearch) || (c.phone||'').toLowerCase().includes(_dirSearch));
+
+  document.getElementById('dir-count').textContent = `${rows.length} contact${rows.length !== 1 ? 's' : ''}`;
+
+  if (!rows.length) {
+    body.innerHTML = `<div style="text-align:center;padding:60px 20px;color:var(--text3);font-size:14px">
+      ${_dirMissingOnly ? '✓ No contacts missing email' + (_dirTypeFilter ? ' in this category' : '') : 'No contacts found'}
+    </div>`;
+    return;
+  }
+
+  const typeBadgeStyle = {
+    landlord: 'background:#fef3c7;color:#92400e',
+    agency:   'background:#e0e7ff;color:#3730a3',
+    agent:    'background:#fce7f3;color:#9d174d',
+    developer:'background:#d1fae5;color:#065f46',
+  };
+
+  const tbl = document.createElement('table');
+  tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:13px';
+  tbl.innerHTML = `<thead style="position:sticky;top:0;z-index:1;background:var(--bg)">
+    <tr style="border-bottom:2px solid var(--border)">
+      <th style="padding:9px 14px;text-align:left;font-size:12px;color:var(--text2);font-weight:600;white-space:nowrap">Name</th>
+      <th style="padding:9px 8px;text-align:left;font-size:12px;color:var(--text2);font-weight:600">Type</th>
+      <th style="padding:9px 8px;text-align:left;font-size:12px;color:var(--text2);font-weight:600">Phone</th>
+      <th style="padding:9px 8px;text-align:left;font-size:12px;color:var(--text2);font-weight:600">Email</th>
+      <th style="padding:9px 8px;text-align:left;font-size:12px;color:var(--text2);font-weight:600">WhatsApp</th>
+    </tr>
+  </thead>`;
+
+  const tbody = document.createElement('tbody');
+  rows.forEach(c => {
+    const tr = document.createElement('tr');
+    tr.style.borderBottom = '1px solid var(--border)';
+    tr.dataset.id = c.id;
+
+    const waPhone = _dirFormatWA(c.phone || '');
+    const typeStyle = typeBadgeStyle[c.type] || 'background:var(--bg3);color:var(--text2)';
+    const typeBadge = c.type ? `<span style="display:inline-block;padding:2px 7px;border-radius:8px;font-size:10px;font-weight:600;${typeStyle}">${esc(c.type)}</span>` : '—';
+
+    const emailCell = c.email && c.email.trim()
+      ? `<span style="color:var(--text2);font-size:12px">${esc(c.email)}</span>`
+      : `<div style="display:flex;gap:6px;align-items:center">
+           <input class="dir-email-inp" type="email" placeholder="Enter email…"
+             style="padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text1);width:180px;min-width:120px"
+             data-id="${esc(c.id)}">
+           <button class="dir-save-btn" data-id="${esc(c.id)}"
+             style="padding:4px 10px;font-size:11px;background:var(--red);color:#fff;border:none;border-radius:6px;cursor:pointer;white-space:nowrap;font-weight:600">
+             Save
+           </button>
+         </div>`;
+
+    const waCell = waPhone
+      ? `<a href="https://wa.me/${waPhone}?text=${DIR_WA_MSG}" target="_blank"
+           style="display:inline-flex;align-items:center;gap:5px;background:#25d366;color:#fff;text-decoration:none;padding:4px 11px;border-radius:14px;font-size:11px;font-weight:600;white-space:nowrap">
+           💬 Message
+         </a>`
+      : `<span style="color:var(--muted);font-size:11px">${c.phone && !waPhone ? 'Landline' : 'No phone'}</span>`;
+
+    tr.innerHTML = `
+      <td style="padding:9px 14px;font-weight:600;color:var(--text1)">${esc(c.name || '—')}</td>
+      <td style="padding:9px 8px">${typeBadge}</td>
+      <td style="padding:9px 8px;color:var(--text2);font-size:12px;white-space:nowrap">${esc(c.phone || '—')}</td>
+      <td style="padding:9px 8px" class="dir-email-cell">${emailCell}</td>
+      <td style="padding:9px 8px">${waCell}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  tbl.appendChild(tbody);
+  body.innerHTML = '';
+  body.appendChild(tbl);
+
+  // Wire save buttons
+  body.querySelectorAll('.dir-save-btn').forEach(btn => {
+    btn.addEventListener('click', () => _dirSaveEmail(btn));
+  });
+  body.querySelectorAll('.dir-email-inp').forEach(inp => {
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { const btn = inp.parentElement.querySelector('.dir-save-btn'); if (btn) btn.click(); } });
+  });
+}
+
+async function _dirSaveEmail(btn) {
+  const id  = btn.dataset.id;
+  const inp = btn.parentElement.querySelector('.dir-email-inp');
+  const email = inp?.value?.trim();
+  if (!email) { inp.style.border = '1px solid var(--red)'; return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { inp.style.border = '1px solid var(--red)'; inp.title = 'Invalid email'; return; }
+
+  btn.disabled = true;
+  btn.textContent = '…';
+  const origTxt = 'Save';
+
+  try {
+    await trpcMutate('directory.contacts.update', { id, email });
+    // Update local cache
+    if (_dirContacts) {
+      const c = _dirContacts.find(x => x.id === id);
+      if (c) c.email = email;
+    }
+    // Update cell in DOM
+    const tr = document.querySelector(`tr[data-id="${id}"]`);
+    if (tr) {
+      const cell = tr.querySelector('.dir-email-cell');
+      if (cell) cell.innerHTML = `<span style="color:var(--green,#16a34a);font-size:12px">✓ ${esc(email)}</span>`;
+      // If missing-only mode, fade out the row after a moment
+      if (_dirMissingOnly) {
+        tr.style.transition = 'opacity .4s';
+        tr.style.opacity = '0.4';
+        setTimeout(() => { tr.remove(); _updateDirCount(); }, 800);
+      }
+    }
+    document.getElementById('stxt-dir').textContent = `Saved ${email} ✓`;
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = origTxt;
+    inp.style.border = '1px solid var(--red)';
+    inp.title = e.message;
+    document.getElementById('stxt-dir').textContent = `⚠ ${e.message}`;
+  }
+}
+
+function _updateDirCount() {
+  const body = document.getElementById('dir-body');
+  if (!body) return;
+  const rows = body.querySelectorAll('tbody tr');
+  document.getElementById('dir-count').textContent = `${rows.length} contact${rows.length !== 1 ? 's' : ''}`;
+}
