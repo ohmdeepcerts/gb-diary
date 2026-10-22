@@ -7583,32 +7583,69 @@ function _renderDirTable() {
     emailInp.dataset.id = c.id;
     emailTd.appendChild(emailInp);
 
-    // WhatsApp cell — live-updating anchor
+    // WhatsApp cell — live-updating with sent tracking
     const waTd = document.createElement('td');
-    waTd.style.cssText = 'padding:9px 8px;white-space:nowrap';
-    const waAnchor = document.createElement('a');
-    waAnchor.target = '_blank';
-    waAnchor.className = 'dir-wa-link';
-    waAnchor.style.cssText = 'display:inline-flex;align-items:center;gap:5px;background:#25d366;color:#fff;text-decoration:none;padding:4px 11px;border-radius:14px;font-size:11px;font-weight:600;white-space:nowrap';
-    waAnchor.textContent = '💬 Message';
-    const waBlank = document.createElement('span');
-    waBlank.style.cssText = 'color:var(--muted);font-size:11px';
-    waBlank.textContent = 'No mobile';
+    waTd.style.cssText = 'padding:9px 8px;min-width:130px';
 
-    const setWA = (phoneVal) => {
-      const wa = _dirFormatWA(phoneVal);
-      if (wa) {
-        waAnchor.href = `https://wa.me/${wa}?text=${DIR_WA_MSG}`;
-        if (!waTd.contains(waAnchor)) { waTd.innerHTML = ''; waTd.appendChild(waAnchor); }
-      } else {
-        if (!waTd.contains(waBlank)) { waTd.innerHTML = ''; waTd.appendChild(waBlank); }
-        waBlank.textContent = phoneVal && phoneVal.trim() ? 'Landline' : 'No mobile';
-      }
+    const _waKey = () => 'wa_sent_' + c.id;
+    const _waSentTime = () => { try { return localStorage.getItem(_waKey()); } catch(e) { return null; } };
+    const _waSetSent  = () => { try { localStorage.setItem(_waKey(), new Date().toISOString()); } catch(e) {} };
+
+    const _fmtSentTime = (iso) => {
+      if (!iso) return '';
+      const d = new Date(iso), now = new Date();
+      const diffMs = now - d;
+      const diffMin = Math.floor(diffMs / 60000);
+      const diffH   = Math.floor(diffMs / 3600000);
+      const diffD   = Math.floor(diffMs / 86400000);
+      if (diffMin < 1)  return 'just now';
+      if (diffMin < 60) return `${diffMin}m ago`;
+      if (diffH < 24)   return `${diffH}h ago`;
+      if (diffD < 7)    return `${diffD}d ago`;
+      return d.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
     };
-    setWA(c.phone || '');
+
+    const _rebuildWATd = (phoneVal) => {
+      waTd.innerHTML = '';
+      const wa = _dirFormatWA(phoneVal);
+      if (!wa) {
+        const span = document.createElement('span');
+        span.style.cssText = 'color:var(--muted);font-size:11px';
+        span.textContent = phoneVal && phoneVal.trim() ? 'Landline' : 'No mobile';
+        waTd.appendChild(span);
+        return;
+      }
+      const sentISO = _waSentTime();
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'display:flex;flex-direction:column;gap:3px;align-items:flex-start';
+
+      const btn = document.createElement('a');
+      btn.href = `https://wa.me/${wa}?text=${DIR_WA_MSG}`;
+      btn.target = '_blank';
+      btn.style.cssText = 'display:inline-flex;align-items:center;gap:5px;text-decoration:none;padding:4px 11px;border-radius:14px;font-size:11px;font-weight:600;white-space:nowrap;' +
+        (sentISO ? 'background:#128c5e;color:#fff' : 'background:#25d366;color:#fff');
+      btn.textContent = sentISO ? '↩ Resend' : '💬 Message';
+      btn.addEventListener('click', () => {
+        _waSetSent();
+        btn.textContent = '↩ Resend';
+        btn.style.background = '#128c5e';
+        if (!sentLbl.parentElement) wrap.appendChild(sentLbl);
+        sentLbl.textContent = 'Sent just now';
+      });
+
+      const sentLbl = document.createElement('span');
+      sentLbl.style.cssText = 'font-size:10px;color:var(--text3);padding-left:4px';
+      sentLbl.textContent = sentISO ? `Last sent: ${_fmtSentTime(sentISO)}` : '';
+
+      wrap.appendChild(btn);
+      if (sentISO) wrap.appendChild(sentLbl);
+      waTd.appendChild(wrap);
+    };
+
+    _rebuildWATd(c.phone || '');
 
     // Phone input → live update WA link
-    phoneInp.addEventListener('input', () => setWA(phoneInp.value));
+    phoneInp.addEventListener('input', () => _rebuildWATd(phoneInp.value));
 
     // Save button
     const saveTd = document.createElement('td');
