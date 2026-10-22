@@ -7384,6 +7384,7 @@ document.addEventListener('DOMContentLoaded', init);
 let _dirContacts = null; // cached contact list
 let _dirTypeFilter = ''; // '' = all
 let _dirMissingOnly = true;
+let _dirMissingPhone = false;
 let _dirSearch = '';
 
 const DIR_WA_MSG = encodeURIComponent("Hi, if you don't mind could you please share your email address with me again, I lost that. I need to send some invoices and certificates.");
@@ -7481,6 +7482,11 @@ function _renderDirTypeTabs() {
     chk._wired = true;
     chk.addEventListener('change', () => { _dirMissingOnly = chk.checked; _renderDirTable(); });
   }
+  const phChk = document.getElementById('dir-missing-phone-chk');
+  if (phChk && !phChk._wired) {
+    phChk._wired = true;
+    phChk.addEventListener('change', () => { _dirMissingPhone = phChk.checked; _renderDirTable(); });
+  }
   const srch = document.getElementById('dir-search');
   if (srch && !srch._wired) {
     srch._wired = true;
@@ -7492,6 +7498,8 @@ function _renderDirTypeTabs() {
 function _renderDirControls() {
   const chk = document.getElementById('dir-missing-chk');
   if (chk) chk.checked = _dirMissingOnly;
+  const phChk = document.getElementById('dir-missing-phone-chk');
+  if (phChk) phChk.checked = _dirMissingPhone;
   const tabs = document.getElementById('dir-type-tabs');
   if (tabs) tabs.querySelectorAll('.vbtn').forEach(b => {
     const k = DIR_TYPES.find(d => d.label === b.textContent)?.key ?? '';
@@ -7506,13 +7514,14 @@ function _renderDirTable() {
   let rows = _dirContacts;
   if (_dirTypeFilter) rows = rows.filter(c => c.type === _dirTypeFilter);
   if (_dirMissingOnly) rows = rows.filter(c => !c.email || !c.email.trim());
+  if (_dirMissingPhone) rows = rows.filter(c => !c.phone || !c.phone.trim());
   if (_dirSearch) rows = rows.filter(c => (c.name||'').toLowerCase().includes(_dirSearch) || (c.phone||'').toLowerCase().includes(_dirSearch));
 
   document.getElementById('dir-count').textContent = `${rows.length} contact${rows.length !== 1 ? 's' : ''}`;
 
   if (!rows.length) {
     body.innerHTML = `<div style="text-align:center;padding:60px 20px;color:var(--text3);font-size:14px">
-      ${_dirMissingOnly ? '✓ No contacts missing email' + (_dirTypeFilter ? ' in this category' : '') : 'No contacts found'}
+      ${_dirMissingOnly && _dirMissingPhone ? '✓ No contacts missing both email and phone' : _dirMissingOnly ? '✓ No contacts missing email' + (_dirTypeFilter ? ' in this category' : '') : _dirMissingPhone ? '✓ No contacts missing phone' + (_dirTypeFilter ? ' in this category' : '') : 'No contacts found'}
     </div>`;
     return;
   }
