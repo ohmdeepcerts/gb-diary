@@ -7938,7 +7938,10 @@ function _renderCerts() {
 
   list.forEach(function(c, i) {
     const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
     if (i % 2 !== 0) tr.style.background = 'var(--bg3)';
+    tr.addEventListener('mouseover',  function(){ tr.style.background = 'var(--today-bg)'; });
+    tr.addEventListener('mouseout',   function(){ tr.style.background = i % 2 !== 0 ? 'var(--bg3)' : ''; });
 
     const addr = [(c.property && c.property.address), (c.property && c.property.postcode)].filter(Boolean).join(', ') || '—';
     const clientName = (c.contact && c.contact.name) ? c.contact.name : '—';
@@ -7957,6 +7960,7 @@ function _renderCerts() {
       '<td style="padding:8px 12px;font-size:12px;white-space:nowrap;' + BD + ';' + expStyle + '">' + esc(expiryTxt) + '</td>' +
       '<td style="padding:8px 12px;' + BD + '">' + _certStatusBadge(c) + '</td>';
 
+    tr.addEventListener('click', function(){ _openCertDetail(c); });
     tbody.appendChild(tr);
   });
 
@@ -7970,5 +7974,142 @@ function _renderCerts() {
   wrap.appendChild(inner);
   body.innerHTML = '';
   body.appendChild(wrap);
+}
+
+function _openCertDetail(c) {
+  // Remove any existing cert detail overlay
+  const existing = document.getElementById('cert-detail-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'cert-detail-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:2500;background:rgba(0,0,0,.65);display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto';
+  overlay.addEventListener('click', function(e){ if (e.target === overlay) overlay.remove(); });
+
+  const addr = [(c.property && c.property.address), (c.property && c.property.postcode)].filter(Boolean).join(', ') || '—';
+  const clientName = (c.contact && c.contact.name) ? c.contact.name : '—';
+  const clientPhone = (c.contact && c.contact.phone) ? c.contact.phone : '';
+  const clientEmail = (c.contact && c.contact.email) ? c.contact.email : '';
+  const jobNo  = (c.job && c.job.job_no)  ? c.job.job_no  : '—';
+  const jobId  = (c.job && c.job.id)      ? c.job.id      : null;
+  const jobStatus = (c.job && c.job.status) ? c.job.status : '';
+  const expiryTxt  = c.no_expiry ? 'No expiry' : _fmtCertDate(c.expiry_date);
+  const expStyle   = _expiryStyle(c);
+
+  // Build issues list
+  const issues = [];
+  if (c.status !== 'issued') issues.push({ icon: '❌', text: 'Status: ' + c.status + ' (not yet issued)' });
+  if (!c.has_pdf)            issues.push({ icon: '❌', text: 'No PDF attached' });
+  if (c.locked)              issues.push({ icon: '\u{1f512}', text: 'Locked' + (c.lock_reason ? ': ' + c.lock_reason : '') });
+  if (c.not_responding)      issues.push({ icon: '⚠', text: 'Not responding' });
+  if (c.integrity_issues && c.integrity_issues.length) {
+    c.integrity_issues.forEach(function(iss){ issues.push({ icon: '⚠', text: typeof iss === 'string' ? iss : (iss.message || JSON.stringify(iss)) }); });
+  }
+  if (c.expiry_bucket === 'expired')       issues.push({ icon: '❌', text: 'Certificate has EXPIRED (' + expiryTxt + ')' });
+  else if (c.expiry_bucket === 'expiring_soon') issues.push({ icon: '⚠', text: 'Expiring soon (' + expiryTxt + ')' });
+
+  const issuesHtml = issues.length
+    ? '<div style="margin-top:14px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:6px">Issues Found</div>' +
+      issues.map(function(iss){ return '<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 10px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:6px;margin-bottom:4px;font-size:12px;color:var(--text)">' +
+        '<span style="flex-shrink:0">' + iss.icon + '</span><span>' + esc(iss.text) + '</span></div>'; }).join('') + '</div>'
+    : '<div style="margin-top:14px;padding:10px 14px;background:rgba(22,163,74,.08);border:1px solid rgba(22,163,74,.2);border-radius:6px;font-size:12px;color:#16a34a">✓ No issues found — certificate looks good</div>';
+
+  const modal = document.createElement('div');
+  modal.style.cssText = 'background:var(--bg2);border-radius:12px;width:100%;max-width:640px;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.5);margin:auto;position:relative';
+
+  // Header
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'display:flex;align-items:flex-start;justify-content:space-between;padding:16px 20px 14px;border-bottom:1px solid var(--border);background:var(--bg3)';
+  hdr.innerHTML =
+    '<div>' +
+      '<div style="font-size:11px;color:var(--text3);font-family:monospace;margin-bottom:3px">' + esc(c.cert_no || '') + '</div>' +
+      '<div style="font-size:17px;font-weight:700;color:var(--text)">' + esc(c.cert_type_name || c.cert_type_id || 'Certificate') + '</div>' +
+      '<div style="font-size:12px;color:var(--text2);margin-top:2px">' + esc(addr) + '</div>' +
+    '</div>' +
+    '<button id="cert-detail-close" style="background:none;border:1px solid var(--border);color:var(--text2);cursor:pointer;font-size:16px;padding:4px 10px;border-radius:6px;line-height:1;margin-left:12px;flex-shrink:0">✕</button>';
+  modal.appendChild(hdr);
+
+  // Body
+  const bdy = document.createElement('div');
+  bdy.style.cssText = 'padding:16px 20px 20px';
+
+  // Info grid
+  const infoItems = [
+    { label: 'Client',      val: clientName },
+    { label: 'Phone',       val: clientPhone || '—' },
+    { label: 'Email',       val: clientEmail || '—' },
+    { label: 'Job',         val: jobNo + (jobStatus ? ' · ' + jobStatus : '') },
+    { label: 'Issue Date',  val: _fmtCertDate(c.issue_date) },
+    { label: 'Expiry',      val: expiryTxt, style: expStyle },
+    { label: 'Outcome',     val: c.outcome || '—' },
+    { label: 'Engineer',    val: c.engineer_name || (c.data && c.data.engineer && c.data.engineer.name) || '—' },
+    { label: 'PDF',         val: c.has_pdf ? '✓ Attached' : '✗ Missing' },
+    { label: 'Status',      val: c.status || '—' },
+  ];
+
+  const grid = document.createElement('div');
+  grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(175px,1fr));gap:8px 16px;padding:12px 14px;background:var(--bg3);border-radius:8px;border:1px solid var(--border)';
+  infoItems.forEach(function(item) {
+    const cell = document.createElement('div');
+    cell.style.cssText = 'display:flex;flex-direction:column;gap:2px';
+    cell.innerHTML = '<span style="font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-weight:700">' + item.label + '</span>' +
+      '<span style="font-size:12px;font-weight:500;color:var(--text);word-break:break-word;' + (item.style || '') + '">' + esc(item.val) + '</span>';
+    grid.appendChild(cell);
+  });
+  bdy.appendChild(grid);
+
+  // Issues
+  bdy.innerHTML += issuesHtml;
+
+  // Action buttons
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin-top:16px';
+
+  if (jobId) {
+    const jobBtn = document.createElement('button');
+    jobBtn.textContent = '💼 Open Job ' + jobNo;
+    jobBtn.style.cssText = 'padding:8px 16px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;cursor:pointer';
+    jobBtn.addEventListener('mouseover', function(){ jobBtn.style.background = 'var(--bg4)'; });
+    jobBtn.addEventListener('mouseout',  function(){ jobBtn.style.background = 'var(--bg3)'; });
+    jobBtn.addEventListener('click', function(){
+      overlay.remove();
+      openJobDetail(jobId);
+    });
+    btnRow.appendChild(jobBtn);
+  }
+
+  const invBtn = document.createElement('button');
+  invBtn.textContent = '£ Go to Invoices';
+  invBtn.style.cssText = 'padding:8px 16px;border-radius:6px;border:1px solid rgba(37,99,235,.35);background:rgba(37,99,235,.08);color:#2563eb;font-size:13px;font-weight:600;cursor:pointer';
+  invBtn.addEventListener('click', function(){
+    overlay.remove();
+    switchView('invoices');
+  });
+  btnRow.appendChild(invBtn);
+
+  if (c.has_pdf && c.downloadable) {
+    const pdfBtn = document.createElement('a');
+    pdfBtn.href = c.downloadable;
+    pdfBtn.target = '_blank';
+    pdfBtn.textContent = '📄 Download PDF';
+    pdfBtn.style.cssText = 'padding:8px 16px;border-radius:6px;border:1px solid rgba(22,163,74,.35);background:rgba(22,163,74,.08);color:#16a34a;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block';
+    btnRow.appendChild(pdfBtn);
+  }
+
+  const closeBtn2 = document.createElement('button');
+  closeBtn2.textContent = 'Close';
+  closeBtn2.style.cssText = 'padding:8px 16px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:13px;cursor:pointer;margin-left:auto';
+  closeBtn2.addEventListener('click', function(){ overlay.remove(); });
+  btnRow.appendChild(closeBtn2);
+
+  bdy.appendChild(btnRow);
+  modal.appendChild(bdy);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  document.getElementById('cert-detail-close').addEventListener('click', function(){ overlay.remove(); });
+  document.addEventListener('keydown', function escHandler(e){
+    if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', escHandler); }
+  });
 }
 
