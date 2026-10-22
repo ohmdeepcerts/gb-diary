@@ -7394,7 +7394,7 @@ const DIR_TYPES = [
   { key: 'landlord', label: 'Landlord' },
   { key: 'agency',   label: 'Agency' },
   { key: 'agent',    label: 'Agent' },
-  { key: 'developer',label: 'Developer' },
+  { key: 'builder',  label: 'Builder' },
 ];
 
 function _dirFormatWA(phone) {
@@ -7412,7 +7412,7 @@ function _dirFormatWA(phone) {
 async function _dirFetchAll(force) {
   if (_dirContacts && !force) return _dirContacts;
   const letters = ['a','e','i','o','u','b','c','d','f','g','h','j','k','l','m','n','p','r','s','t','w','y','0','1','2','3','4','5','6','7','8','9'];
-  const types = ['landlord','agency','agent','developer'];
+  const types = ['landlord','agency','agent','builder'];
   const seen = new Map();
   for (const q of letters) {
     try {
@@ -7530,7 +7530,7 @@ function _renderDirTable() {
     landlord: 'background:#fef3c7;color:#92400e',
     agency:   'background:#e0e7ff;color:#3730a3',
     agent:    'background:#fce7f3;color:#9d174d',
-    developer:'background:#d1fae5;color:#065f46',
+    builder:  'background:#d1fae5;color:#065f46',
   };
 
   const tbl = document.createElement('table');
