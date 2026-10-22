@@ -7533,15 +7533,18 @@ function _renderDirTable() {
     builder:  'background:#d1fae5;color:#065f46',
   };
 
+  const INP = 'padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text1)';
+
   const tbl = document.createElement('table');
   tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:13px';
   tbl.innerHTML = `<thead style="position:sticky;top:0;z-index:1;background:var(--bg)">
     <tr style="border-bottom:2px solid var(--border)">
       <th style="padding:9px 14px;text-align:left;font-size:12px;color:var(--text2);font-weight:600;white-space:nowrap">Name</th>
       <th style="padding:9px 8px;text-align:left;font-size:12px;color:var(--text2);font-weight:600">Type</th>
-      <th style="padding:9px 8px;text-align:left;font-size:12px;color:var(--text2);font-weight:600">Phone</th>
-      <th style="padding:9px 8px;text-align:left;font-size:12px;color:var(--text2);font-weight:600">Email</th>
+      <th style="padding:9px 8px;text-align:left;font-size:12px;color:var(--text2);font-weight:600;min-width:160px">Phone</th>
+      <th style="padding:9px 8px;text-align:left;font-size:12px;color:var(--text2);font-weight:600;min-width:190px">Email</th>
       <th style="padding:9px 8px;text-align:left;font-size:12px;color:var(--text2);font-weight:600">WhatsApp</th>
+      <th style="padding:9px 8px"></th>
     </tr>
   </thead>`;
 
@@ -7551,87 +7554,148 @@ function _renderDirTable() {
     tr.style.borderBottom = '1px solid var(--border)';
     tr.dataset.id = c.id;
 
-    const waPhone = _dirFormatWA(c.phone || '');
+    const initialWA = _dirFormatWA(c.phone || '');
     const typeStyle = typeBadgeStyle[c.type] || 'background:var(--bg3);color:var(--text2)';
     const typeBadge = c.type ? `<span style="display:inline-block;padding:2px 7px;border-radius:8px;font-size:10px;font-weight:600;${typeStyle}">${esc(c.type)}</span>` : '—';
 
-    const emailCell = c.email && c.email.trim()
-      ? `<span style="color:var(--text2);font-size:12px">${esc(c.email)}</span>`
-      : `<div style="display:flex;gap:6px;align-items:center">
-           <input class="dir-email-inp" type="email" placeholder="Enter email…"
-             style="padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text1);width:180px;min-width:120px"
-             data-id="${esc(c.id)}">
-           <button class="dir-save-btn" data-id="${esc(c.id)}"
-             style="padding:4px 10px;font-size:11px;background:var(--red);color:#fff;border:none;border-radius:6px;cursor:pointer;white-space:nowrap;font-weight:600">
-             Save
-           </button>
-         </div>`;
+    // Phone cell — always editable input, pre-filled if known
+    const phoneTd = document.createElement('td');
+    phoneTd.style.cssText = 'padding:9px 8px';
+    const phoneInp = document.createElement('input');
+    phoneInp.type = 'tel';
+    phoneInp.placeholder = 'Enter number…';
+    phoneInp.value = c.phone || '';
+    phoneInp.style.cssText = INP + ';width:140px';
+    phoneInp.className = 'dir-phone-inp';
+    phoneInp.dataset.id = c.id;
+    phoneTd.appendChild(phoneInp);
 
-    const waCell = waPhone
-      ? `<a href="https://wa.me/${waPhone}?text=${DIR_WA_MSG}" target="_blank"
-           style="display:inline-flex;align-items:center;gap:5px;background:#25d366;color:#fff;text-decoration:none;padding:4px 11px;border-radius:14px;font-size:11px;font-weight:600;white-space:nowrap">
-           💬 Message
-         </a>`
-      : `<span style="color:var(--muted);font-size:11px">${c.phone && !waPhone ? 'Landline' : 'No phone'}</span>`;
+    // Email cell — always editable input, pre-filled if known
+    const emailTd = document.createElement('td');
+    emailTd.style.cssText = 'padding:9px 8px';
+    emailTd.className = 'dir-email-cell';
+    const emailInp = document.createElement('input');
+    emailInp.type = 'email';
+    emailInp.placeholder = 'Enter email…';
+    emailInp.value = c.email || '';
+    emailInp.style.cssText = INP + ';width:170px';
+    emailInp.className = 'dir-email-inp';
+    emailInp.dataset.id = c.id;
+    emailTd.appendChild(emailInp);
+
+    // WhatsApp cell — live-updating anchor
+    const waTd = document.createElement('td');
+    waTd.style.cssText = 'padding:9px 8px;white-space:nowrap';
+    const waAnchor = document.createElement('a');
+    waAnchor.target = '_blank';
+    waAnchor.className = 'dir-wa-link';
+    waAnchor.style.cssText = 'display:inline-flex;align-items:center;gap:5px;background:#25d366;color:#fff;text-decoration:none;padding:4px 11px;border-radius:14px;font-size:11px;font-weight:600;white-space:nowrap';
+    waAnchor.textContent = '💬 Message';
+    const waBlank = document.createElement('span');
+    waBlank.style.cssText = 'color:var(--muted);font-size:11px';
+    waBlank.textContent = 'No mobile';
+
+    const setWA = (phoneVal) => {
+      const wa = _dirFormatWA(phoneVal);
+      if (wa) {
+        waAnchor.href = `https://wa.me/${wa}?text=${DIR_WA_MSG}`;
+        if (!waTd.contains(waAnchor)) { waTd.innerHTML = ''; waTd.appendChild(waAnchor); }
+      } else {
+        if (!waTd.contains(waBlank)) { waTd.innerHTML = ''; waTd.appendChild(waBlank); }
+        waBlank.textContent = phoneVal && phoneVal.trim() ? 'Landline' : 'No mobile';
+      }
+    };
+    setWA(c.phone || '');
+
+    // Phone input → live update WA link
+    phoneInp.addEventListener('input', () => setWA(phoneInp.value));
+
+    // Save button
+    const saveTd = document.createElement('td');
+    saveTd.style.cssText = 'padding:9px 8px';
+    const saveBtn = document.createElement('button');
+    saveBtn.textContent = 'Save';
+    saveBtn.className = 'dir-save-btn';
+    saveBtn.dataset.id = c.id;
+    saveBtn.style.cssText = 'padding:5px 12px;font-size:11px;background:var(--red);color:#fff;border:none;border-radius:6px;cursor:pointer;white-space:nowrap;font-weight:600';
+    saveTd.appendChild(saveBtn);
 
     tr.innerHTML = `
       <td style="padding:9px 14px;font-weight:600;color:var(--text1)">${esc(c.name || '—')}</td>
-      <td style="padding:9px 8px">${typeBadge}</td>
-      <td style="padding:9px 8px;color:var(--text2);font-size:12px;white-space:nowrap">${esc(c.phone || '—')}</td>
-      <td style="padding:9px 8px" class="dir-email-cell">${emailCell}</td>
-      <td style="padding:9px 8px">${waCell}</td>`;
+      <td style="padding:9px 8px">${typeBadge}</td>`;
+    tr.appendChild(phoneTd);
+    tr.appendChild(emailTd);
+    tr.appendChild(waTd);
+    tr.appendChild(saveTd);
     tbody.appendChild(tr);
+
+    // Enter in either input triggers save
+    [phoneInp, emailInp].forEach(inp => {
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') saveBtn.click(); });
+    });
+    saveBtn.addEventListener('click', () => _dirSaveContact(saveBtn, phoneInp, emailInp));
   });
 
   tbl.appendChild(tbody);
   body.innerHTML = '';
   body.appendChild(tbl);
-
-  // Wire save buttons
-  body.querySelectorAll('.dir-save-btn').forEach(btn => {
-    btn.addEventListener('click', () => _dirSaveEmail(btn));
-  });
-  body.querySelectorAll('.dir-email-inp').forEach(inp => {
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { const btn = inp.parentElement.querySelector('.dir-save-btn'); if (btn) btn.click(); } });
-  });
 }
 
-async function _dirSaveEmail(btn) {
-  const id  = btn.dataset.id;
-  const inp = btn.parentElement.querySelector('.dir-email-inp');
-  const email = inp?.value?.trim();
-  if (!email) { inp.style.border = '1px solid var(--red)'; return; }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { inp.style.border = '1px solid var(--red)'; inp.title = 'Invalid email'; return; }
+async function _dirSaveContact(btn, phoneInp, emailInp) {
+  const id    = btn.dataset.id;
+  const phone = phoneInp.value.trim();
+  const email = emailInp.value.trim();
+
+  // Validate email if provided
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    emailInp.style.border = '1px solid var(--red)';
+    emailInp.title = 'Invalid email address';
+    return;
+  }
+  emailInp.style.border = '';
+
+  if (!phone && !email) {
+    phoneInp.style.border = '1px solid var(--red)';
+    emailInp.style.border = '1px solid var(--red)';
+    return;
+  }
+  phoneInp.style.border = '';
 
   btn.disabled = true;
   btn.textContent = '…';
-  const origTxt = 'Save';
+
+  const payload = { id };
+  if (phone) payload.phone = phone;
+  if (email) payload.email = email;
 
   try {
-    await trpcMutate('directory.contacts.update', { id, email });
+    await trpcMutate('directory.contacts.update', payload);
     // Update local cache
     if (_dirContacts) {
       const c = _dirContacts.find(x => x.id === id);
-      if (c) c.email = email;
+      if (c) { if (phone) c.phone = phone; if (email) c.email = email; }
     }
-    // Update cell in DOM
-    const tr = document.querySelector(`tr[data-id="${id}"]`);
-    if (tr) {
-      const cell = tr.querySelector('.dir-email-cell');
-      if (cell) cell.innerHTML = `<span style="color:var(--green,#16a34a);font-size:12px">✓ ${esc(email)}</span>`;
-      // If missing-only mode, fade out the row after a moment
-      if (_dirMissingOnly) {
-        tr.style.transition = 'opacity .4s';
-        tr.style.opacity = '0.4';
-        setTimeout(() => { tr.remove(); _updateDirCount(); }, 800);
-      }
+    btn.textContent = '✓';
+    btn.style.background = '#16a34a';
+    phoneInp.style.border = '1px solid #16a34a';
+    emailInp.style.border = '1px solid #16a34a';
+    const saved = [phone && `📞 ${phone}`, email && `✉ ${email}`].filter(Boolean).join('  ');
+    document.getElementById('stxt-dir').textContent = `Saved: ${saved}`;
+    // Fade out row if it now satisfies neither missing filter
+    const nowMissingEmail = !email && _dirMissingOnly;
+    const nowMissingPhone = !phone && _dirMissingPhone;
+    const shouldFade = (_dirMissingOnly && email) || (_dirMissingPhone && phone);
+    if (shouldFade && !nowMissingEmail && !nowMissingPhone) {
+      const tr = btn.closest('tr');
+      if (tr) { tr.style.transition = 'opacity .4s'; tr.style.opacity = '0.35'; setTimeout(() => { tr.remove(); _updateDirCount(); }, 800); }
+    } else {
+      setTimeout(() => { btn.textContent = 'Save'; btn.style.background = ''; btn.disabled = false; phoneInp.style.border = ''; emailInp.style.border = ''; }, 2000);
     }
-    document.getElementById('stxt-dir').textContent = `Saved ${email} ✓`;
   } catch(e) {
     btn.disabled = false;
-    btn.textContent = origTxt;
-    inp.style.border = '1px solid var(--red)';
-    inp.title = e.message;
+    btn.textContent = 'Save';
+    btn.style.background = '';
+    phoneInp.style.border = '1px solid var(--red)';
     document.getElementById('stxt-dir').textContent = `⚠ ${e.message}`;
   }
 }
