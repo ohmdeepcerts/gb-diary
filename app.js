@@ -2496,6 +2496,69 @@ function buildJobDetail(data, jobId) {
     body.appendChild(sec);
   }
 
+  // Certificates section (async)
+  const certSection = document.createElement('div');
+  certSection.style.cssText = 'margin-top:10px';
+  const certTitle = document.createElement('div');
+  certTitle.className = 'jd-section-title';
+  certTitle.textContent = '📋 Certificates';
+  const certBody = document.createElement('div');
+  certBody.style.cssText = 'font-size:12px;color:var(--text3);padding:4px 0';
+  certBody.textContent = 'Loading…';
+  certSection.appendChild(certTitle);
+  certSection.appendChild(certBody);
+  body.appendChild(certSection);
+
+  (async function() {
+    try {
+      const cr = await trpcQuery('certs.list', { pageSize: 20, page: 1, jobId });
+      const certs = cr.certs || [];
+      if (!certs.length) {
+        certBody.innerHTML = '<span style="color:var(--text3)">No certificates linked to this job.</span>';
+        return;
+      }
+      certBody.innerHTML = '';
+      certs.forEach(function(c) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;margin-bottom:4px;flex-wrap:wrap';
+        const info = document.createElement('div');
+        info.style.cssText = 'flex:1;min-width:0';
+        const pdfTag = c.has_pdf ? '<span style="color:#16a34a;font-weight:700">✓ PDF</span>' : '<span style="color:#ef4444;font-weight:700">✗ No PDF</span>';
+        const statusTag = c.status === 'issued' ? '<span style="color:#16a34a">Issued</span>' : '<span style="color:#f59e0b">' + esc(c.status) + '</span>';
+        info.innerHTML = '<span style="font-weight:600;color:var(--text)">' + esc(c.cert_type_name || c.cert_type_id || '?') + '</span>' +
+          (c.cert_no ? ' <span style="color:var(--text3);font-family:monospace;font-size:11px">' + esc(c.cert_no) + '</span>' : '') +
+          '  ' + statusTag + '  ' + pdfTag;
+        row.appendChild(info);
+
+        const uplBtn = document.createElement('button');
+        uplBtn.textContent = c.has_pdf ? '🔄 Replace PDF' : '⬆ Upload PDF';
+        uplBtn.style.cssText = 'padding:5px 10px;border-radius:5px;border:1px solid rgba(37,99,235,.35);background:rgba(37,99,235,.08);color:#2563eb;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0';
+        uplBtn.addEventListener('click', function() {
+          _attachCertPdf(c.id, c.cert_no || c.cert_type_name, function() {
+            certBody.textContent = 'Refreshing…';
+            trpcQuery('certs.list', { pageSize: 20, page: 1, jobId }).then(function(r2) {
+              certBody.innerHTML = '';
+              (r2.certs || []).forEach(function(c2) {
+                const pdfTag2 = c2.has_pdf ? '<span style="color:#16a34a;font-weight:700">✓ PDF</span>' : '<span style="color:#ef4444;font-weight:700">✗ No PDF</span>';
+                const statusTag2 = c2.status === 'issued' ? '<span style="color:#16a34a">Issued</span>' : '<span style="color:#f59e0b">' + esc(c2.status) + '</span>';
+                const r2row = document.createElement('div');
+                r2row.style.cssText = 'padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;margin-bottom:4px;font-size:12px';
+                r2row.innerHTML = '<span style="font-weight:600;color:var(--text)">' + esc(c2.cert_type_name || c2.cert_type_id || '?') + '</span>' +
+                  (c2.cert_no ? ' <span style="color:var(--text3);font-family:monospace;font-size:11px">' + esc(c2.cert_no) + '</span>' : '') +
+                  '  ' + statusTag2 + '  ' + pdfTag2;
+                certBody.appendChild(r2row);
+              });
+            }).catch(function(){});
+          });
+        });
+        row.appendChild(uplBtn);
+        certBody.appendChild(row);
+      });
+    } catch(e) {
+      certBody.textContent = 'Could not load certs: ' + e.message;
+    }
+  })();
+
   // Activity log
   if (events.length) {
     const sec = document.createElement('div');
@@ -8096,6 +8159,17 @@ function _openCertDetail(c) {
     btnRow.appendChild(pdfBtn);
   }
 
+  const uploadPdfBtn = document.createElement('button');
+  uploadPdfBtn.textContent = c.has_pdf ? '🔄 Replace PDF' : '⬆ Upload PDF';
+  uploadPdfBtn.style.cssText = 'padding:8px 16px;border-radius:6px;border:1px solid rgba(37,99,235,.35);background:rgba(37,99,235,.08);color:#2563eb;font-size:13px;font-weight:600;cursor:pointer';
+  uploadPdfBtn.addEventListener('click', function(){
+    _attachCertPdf(c.id, c.cert_no || c.cert_type_name || 'cert', function(){
+      overlay.remove();
+      _certsData = null;
+    });
+  });
+  btnRow.appendChild(uploadPdfBtn);
+
   const closeBtn2 = document.createElement('button');
   closeBtn2.textContent = 'Close';
   closeBtn2.style.cssText = 'padding:8px 16px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:13px;cursor:pointer;margin-left:auto';
@@ -8111,5 +8185,30 @@ function _openCertDetail(c) {
   document.addEventListener('keydown', function escHandler(e){
     if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', escHandler); }
   });
+}
+
+function _attachCertPdf(certId, certLabel, onDone) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'application/pdf';
+  input.addEventListener('change', function() {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+      const base64 = e.target.result.split(',')[1];
+      setStatus('Uploading PDF…');
+      try {
+        await trpcMutate('certs.attachPdf', { id: certId, dataBase64: base64 });
+        setStatus('PDF attached to ' + (certLabel || certId) + ' ✓');
+        _certsData = null;
+        if (onDone) onDone();
+      } catch(err) {
+        setStatus('PDF upload failed: ' + err.message, false);
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+  input.click();
 }
 
