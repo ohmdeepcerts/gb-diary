@@ -7664,7 +7664,7 @@ async function _dirSaveContact(btn, phoneInp, emailInp) {
   btn.disabled = true;
   btn.textContent = '…';
 
-  const payload = { id };
+  const payload = { contactId: id };
   if (phone) payload.phone = phone;
   if (email) payload.email = email;
 
