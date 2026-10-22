@@ -870,6 +870,7 @@
       <button class="vbtn" id="week-stmt-btn" data-view="statements">📋 Statements</button>
       <button class="vbtn" id="week-email-btn" data-view="emails">✉ Emails</button>
       <button class="vbtn" id="week-dir-btn" data-view="directory">👥 Directory</button>
+      <button class="vbtn" id="week-certs-btn" data-view="certs">📋 Certs</button>
       <button class="vbtn" id="week-failed-btn" style="color:#ef4444" title="All failed jobs">⚠ Failed</button>
     </div>
     <button class="nav-btn" id="week-prev">‹</button>
@@ -912,6 +913,7 @@
       <button class="vbtn" id="day-stmt-btn" data-view="statements">📋 Statements</button>
       <button class="vbtn" id="day-email-btn" data-view="emails">✉ Emails</button>
       <button class="vbtn" id="day-dir-btn" data-view="directory">👥 Directory</button>
+      <button class="vbtn" id="day-certs-btn" data-view="certs">📋 Certs</button>
       <button class="vbtn" id="day-alltime-btn" title="All jobs — full scrollable history">📜 All Time</button>
       <button class="vbtn" id="day-failed-btn" style="color:#ef4444" title="All failed jobs">⚠ Failed</button>
     </div>
@@ -958,6 +960,7 @@
       <button class="vbtn" id="month-stmt-btn" data-view="statements">📋 Statements</button>
       <button class="vbtn" id="month-email-btn" data-view="emails">✉ Emails</button>
       <button class="vbtn" id="month-dir-btn" data-view="directory">👥 Directory</button>
+      <button class="vbtn" id="month-certs-btn" data-view="certs">📋 Certs</button>
       <button class="vbtn" id="month-failed-btn" style="color:#ef4444" title="All failed jobs">⚠ Failed</button>
     </div>
     <button class="nav-btn" id="month-prev">‹</button>
@@ -1142,6 +1145,37 @@
   <div class="status-bar"><span id="stxt-dir">Ready</span></div>
 </div>
 
+<!-- ── CERTIFICATES VIEW ── -->
+<div id="view-certs" class="view">
+  <div class="app-header">
+    <span class="hdr-logo">GB</span>
+    <button class="nav-btn" id="certs-back-btn" style="font-size:11px;padding:5px 10px">← Diary</button>
+    <span style="font-size:15px;font-weight:800;margin-left:6px">Certificates</span>
+    <div class="spacer"></div>
+    <button class="btn-icon" id="certs-refresh-btn" title="Refresh">↻</button>
+    <button class="btn-icon" id="certs-theme-btn" title="Toggle theme">🌙</button>
+    <button class="btn-icon" id="certs-logout-btn" title="Sign out">⎋</button>
+  </div>
+  <div id="certs-top" style="flex-shrink:0;padding:10px 14px 0;border-bottom:1px solid var(--border)">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding-bottom:10px">
+      <div id="certs-tabs" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+      <input type="text" id="certs-search" placeholder="Search address, client, cert #…" style="padding:5px 10px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);width:240px;margin-left:6px">
+      <select id="certs-type-filter" style="height:30px;padding:0 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text)">
+        <option value="">All types</option>
+        <option value="pat">PAT Testing</option>
+        <option value="emergency_lighting">Emergency Lighting</option>
+        <option value="eicr">EICR</option>
+        <option value="eic">EIC</option>
+        <option value="gas">Gas Safety (CP12)</option>
+        <option value="fire_alarm">Fire Alarm</option>
+      </select>
+      <span id="certs-count" style="margin-left:auto;font-size:12px;color:var(--text3)"></span>
+    </div>
+  </div>
+  <div id="certs-body" class="body" style="flex:1;overflow:auto;padding:0 0 20px"></div>
+  <div class="status-bar"><span id="stxt-certs">Ready</span></div>
+</div>
+
 <!-- ── GLOBAL SEARCH OVERLAY ── -->
 <div id="global-search-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;align-items:flex-start;justify-content:center;padding-top:80px">
   <div class="gsearch-box">
@@ -1179,6 +1213,6 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-<script src="app.js?v=20261022f"></script>
+<script src="app.js?v=20261022g"></script>
 </body>
 </html>

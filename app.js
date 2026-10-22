@@ -497,6 +497,8 @@ async function switchView(name) {
     await openEmails();
   } else if (name === 'directory') {
     await openDirectory();
+  } else if (name === 'certs') {
+    await openCerts();
   }
 }
 
@@ -5156,6 +5158,12 @@ async function init() {
   document.getElementById('dir-theme-btn')?.addEventListener('click', toggleTheme);
   document.getElementById('dir-refresh-btn')?.addEventListener('click', () => _loadDirectory(true));
 
+  // Certs view
+  document.getElementById('certs-back-btn')?.addEventListener('click', () => switchView('day'));
+  document.getElementById('certs-logout-btn')?.addEventListener('click', logout);
+  document.getElementById('certs-theme-btn')?.addEventListener('click', toggleTheme);
+  document.getElementById('certs-refresh-btn')?.addEventListener('click', () => _loadCerts(true));
+
   // Add job overlay
   document.getElementById('btn-add-cancel').addEventListener('click', closeAddJob);
   document.getElementById('btn-add-save').addEventListener('click', saveJob);
@@ -7743,3 +7751,224 @@ function _updateDirCount() {
   const rows = body.querySelectorAll('tbody tr');
   document.getElementById('dir-count').textContent = `${rows.length} contact${rows.length !== 1 ? 's' : ''}`;
 }
+
+// ════════════════════════════════════════════════════════════
+//  CERTIFICATES VIEW
+// ════════════════════════════════════════════════════════════
+let _certsData      = null;
+let _certsTab       = 'all';
+let _certsSearch    = '';
+let _certsTypeFilter = '';
+
+const CERT_TABS = [
+  { key: 'all',      label: 'All' },
+  { key: 'done',     label: '✓ Issued' },
+  { key: 'expiring', label: '⚠ Expiring' },
+  { key: 'missing',  label: '✗ Issues' },
+];
+
+async function openCerts() {
+  showView('certs');
+  _buildCertsTabs();
+  if (!_certsData) {
+    await _loadCerts(false);
+  } else {
+    _renderCerts();
+  }
+  const searchInp = document.getElementById('certs-search');
+  const typeInp   = document.getElementById('certs-type-filter');
+  if (searchInp && !searchInp._cevt) {
+    searchInp._cevt = true;
+    searchInp.addEventListener('input', () => { _certsSearch = searchInp.value.trim().toLowerCase(); _renderCerts(); });
+  }
+  if (typeInp && !typeInp._cevt) {
+    typeInp._cevt = true;
+    typeInp.addEventListener('change', () => { _certsTypeFilter = typeInp.value; _renderCerts(); });
+  }
+}
+
+function _buildCertsTabs() {
+  const wrap = document.getElementById('certs-tabs');
+  if (!wrap || wrap._built) return;
+  wrap._built = true;
+  CERT_TABS.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'dst' + (t.key === _certsTab ? ' dst-active' : '');
+    btn.dataset.tab = t.key;
+    btn.innerHTML = t.label + ' <span class="dst-badge" id="ctab-cnt-' + t.key + '">—</span>';
+    btn.addEventListener('click', () => {
+      _certsTab = t.key;
+      wrap.querySelectorAll('.dst').forEach(b => b.classList.toggle('dst-active', b.dataset.tab === t.key));
+      _renderCerts();
+    });
+    wrap.appendChild(btn);
+  });
+}
+
+async function _loadCerts(force) {
+  if (_certsData && !force) return;
+  const stxt = document.getElementById('stxt-certs');
+  const body = document.getElementById('certs-body');
+  if (body) body.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading certificates…</div>';
+  if (stxt) stxt.textContent = 'Loading…';
+
+  try {
+    const all = [];
+    let page = 1;
+    while (true) {
+      const r = await trpcQuery('certs.list', { pageSize: 50, page });
+      const items = r && r.certs ? r.certs : [];
+      all.push.apply(all, items);
+      if (!r || !r.total || all.length >= r.total || items.length < 50) break;
+      page++;
+    }
+    _certsData = all;
+    if (stxt) stxt.textContent = all.length + ' certificates loaded';
+    _updateCertTabCounts();
+    _renderCerts();
+  } catch(e) {
+    if (body) body.innerHTML = '<div class="loading-row" style="color:var(--red)">⚠ Failed to load: ' + e.message + '</div>';
+    if (stxt) stxt.textContent = '⚠ Error';
+  }
+}
+
+function _certHasIssue(c) {
+  if (c.status !== 'issued') return true;
+  if (!c.has_pdf) return true;
+  if (c.integrity_issues && c.integrity_issues.length > 0) return true;
+  if (c.locked) return true;
+  return false;
+}
+
+function _certIsExpiring(c) {
+  return c.expiry_bucket === 'expiring_soon' || c.expiry_bucket === 'expired';
+}
+
+function _filterCerts() {
+  if (!_certsData) return [];
+  let list = _certsData;
+  if (_certsTab === 'done')     list = list.filter(function(c){ return c.status === 'issued' && !_certIsExpiring(c) && !_certHasIssue(c); });
+  if (_certsTab === 'expiring') list = list.filter(function(c){ return _certIsExpiring(c); });
+  if (_certsTab === 'missing')  list = list.filter(function(c){ return _certHasIssue(c); });
+  if (_certsTypeFilter) list = list.filter(function(c){ return c.cert_type_id === _certsTypeFilter; });
+  if (_certsSearch) {
+    const q = _certsSearch;
+    list = list.filter(function(c) {
+      const addr = ((c.property && c.property.address ? c.property.address : '') + ' ' + (c.property && c.property.postcode ? c.property.postcode : '')).toLowerCase();
+      const client = (c.contact && c.contact.name ? c.contact.name : '').toLowerCase();
+      const cno = (c.cert_no || '').toLowerCase();
+      const job = (c.job && c.job.job_no ? c.job.job_no : '').toLowerCase();
+      return addr.indexOf(q) !== -1 || client.indexOf(q) !== -1 || cno.indexOf(q) !== -1 || job.indexOf(q) !== -1;
+    });
+  }
+  return list;
+}
+
+function _updateCertTabCounts() {
+  if (!_certsData) return;
+  const counts = {
+    all:      _certsData.length,
+    done:     _certsData.filter(function(c){ return c.status === 'issued' && !_certIsExpiring(c) && !_certHasIssue(c); }).length,
+    expiring: _certsData.filter(function(c){ return _certIsExpiring(c); }).length,
+    missing:  _certsData.filter(function(c){ return _certHasIssue(c); }).length,
+  };
+  Object.keys(counts).forEach(function(k) {
+    const el = document.getElementById('ctab-cnt-' + k);
+    if (el) el.textContent = counts[k];
+  });
+}
+
+function _fmtCertDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+}
+
+function _expiryStyle(c) {
+  if (c.no_expiry) return '';
+  if (c.expiry_bucket === 'expired') return 'color:#ef4444;font-weight:700';
+  if (c.expiry_bucket === 'expiring_soon') return 'color:#f59e0b;font-weight:700';
+  return '';
+}
+
+function _certStatusBadge(c) {
+  const issues = [];
+  if (c.status !== 'issued') issues.push('<span style="background:rgba(239,68,68,.15);color:#ef4444;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">' + esc(c.status) + '</span>');
+  if (!c.has_pdf)            issues.push('<span style="background:rgba(245,158,11,.15);color:#f59e0b;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">No PDF</span>');
+  if (c.locked)              issues.push('<span style="background:rgba(239,68,68,.1);color:#ef4444;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">Locked</span>');
+  if (c.integrity_issues && c.integrity_issues.length) issues.push('<span style="background:rgba(245,158,11,.15);color:#f59e0b;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">' + c.integrity_issues.length + ' issue' + (c.integrity_issues.length > 1 ? 's' : '') + '</span>');
+  if (!issues.length) {
+    const eb = c.no_expiry ? 'No Expiry' : (c.expiry_bucket === 'valid' ? 'Valid' : c.expiry_bucket === 'expired' ? 'Expired' : c.expiry_bucket === 'expiring_soon' ? 'Expiring' : (c.expiry_bucket || 'OK'));
+    const clr = c.expiry_bucket === 'expired' ? '#ef4444' : c.expiry_bucket === 'expiring_soon' ? '#f59e0b' : '#16a34a';
+    return '<span style="background:rgba(22,163,74,.12);color:' + clr + ';border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">' + eb + '</span>';
+  }
+  return issues.join(' ');
+}
+
+function _renderCerts() {
+  const body  = document.getElementById('certs-body');
+  const count = document.getElementById('certs-count');
+  if (!body) return;
+
+  const list = _filterCerts();
+  if (count) count.textContent = list.length + ' cert' + (list.length !== 1 ? 's' : '');
+
+  if (!list.length) {
+    body.innerHTML = '<div class="loading-row" style="color:var(--text3)">No certificates match this filter.</div>';
+    return;
+  }
+
+  const TH = 'padding:8px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);border-bottom:1px solid var(--border);white-space:nowrap;background:var(--bg3)';
+  const tbl = document.createElement('table');
+  tbl.style.cssText = 'width:100%;border-collapse:collapse;min-width:900px';
+
+  tbl.innerHTML = '<thead><tr>' +
+    '<th style="' + TH + '">Cert #</th>' +
+    '<th style="' + TH + '">Type</th>' +
+    '<th style="' + TH + 'white-space:normal">Address</th>' +
+    '<th style="' + TH + 'white-space:normal">Client</th>' +
+    '<th style="' + TH + '">Job</th>' +
+    '<th style="' + TH + '">Issue Date</th>' +
+    '<th style="' + TH + '">Expiry</th>' +
+    '<th style="' + TH + 'white-space:normal">Status</th>' +
+    '</tr></thead>';
+
+  const tbody = document.createElement('tbody');
+
+  list.forEach(function(c, i) {
+    const tr = document.createElement('tr');
+    if (i % 2 !== 0) tr.style.background = 'var(--bg3)';
+
+    const addr = [(c.property && c.property.address), (c.property && c.property.postcode)].filter(Boolean).join(', ') || '—';
+    const clientName = (c.contact && c.contact.name) ? c.contact.name : '—';
+    const jobNo = (c.job && c.job.job_no) ? c.job.job_no : '—';
+    const expStyle = _expiryStyle(c);
+    const expiryTxt = c.no_expiry ? 'No Expiry' : _fmtCertDate(c.expiry_date);
+    const BD = 'border-bottom:1px solid var(--border)';
+
+    tr.innerHTML =
+      '<td style="padding:8px 12px;font-size:12px;font-family:monospace;font-weight:600;color:var(--text);white-space:nowrap;' + BD + '">' + esc(c.cert_no || '—') + '</td>' +
+      '<td style="padding:8px 12px;font-size:11px;color:var(--text2);white-space:nowrap;' + BD + '">' + esc(c.cert_type_name || c.cert_type_id || '—') + '</td>' +
+      '<td style="padding:8px 12px;font-size:12px;color:var(--text);' + BD + ';max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(addr) + '">' + esc(addr) + '</td>' +
+      '<td style="padding:8px 12px;font-size:12px;color:var(--text);' + BD + ';max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(clientName) + '">' + esc(clientName) + '</td>' +
+      '<td style="padding:8px 12px;font-size:11px;font-family:monospace;color:var(--text3);white-space:nowrap;' + BD + '">' + esc(jobNo) + '</td>' +
+      '<td style="padding:8px 12px;font-size:12px;color:var(--text2);white-space:nowrap;' + BD + '">' + _fmtCertDate(c.issue_date) + '</td>' +
+      '<td style="padding:8px 12px;font-size:12px;white-space:nowrap;' + BD + ';' + expStyle + '">' + esc(expiryTxt) + '</td>' +
+      '<td style="padding:8px 12px;' + BD + '">' + _certStatusBadge(c) + '</td>';
+
+    tbody.appendChild(tr);
+  });
+
+  tbl.appendChild(tbody);
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'padding:12px 16px 0';
+  const inner = document.createElement('div');
+  inner.style.cssText = 'border:1px solid var(--border);border-radius:8px;background:var(--bg2);overflow:hidden;box-shadow:var(--shadow);overflow-x:auto';
+  inner.appendChild(tbl);
+  wrap.appendChild(inner);
+  body.innerHTML = '';
+  body.appendChild(wrap);
+}
+
