@@ -1132,7 +1132,7 @@ function jobExcelRow(job, engineer, dateISO) {
   let dateFmt = d;
   if (d && d.includes('-')) { const [y,m,dy] = d.split('-'); dateFmt = `${dy}/${m}/${y}`; }
   const addr    = jobAddr(job);
-  const desc    = jobNotes(job) || jobTitle(job);
+  const desc    = job.description || jobTitle(job) || jobNotes(job);
   const access  = md(jobAccess(job));
   const time    = jobTime(job);
   const eng     = engineer?.name || '';
@@ -1182,7 +1182,7 @@ async function exportJobsExcel() {
             const [y,mo,dy] = iso.split('-');
             const dateFmt   = `${dy}/${mo}/${y}`;
             const addr      = jobAddr(job);
-            const desc      = jobNotes(job) || jobTitle(job);
+            const desc      = job.description || jobTitle(job) || jobNotes(job);
             const access    = md(jobAccess(job));
             const time      = jobTime(job);
             const eng       = lane.engineer?.name || '';
@@ -1813,7 +1813,7 @@ function dayRow(job, engineer, dateISO) {
   const amount = rawAmount != null ? `£${Number(rawAmount).toFixed(2)}` : '—';
   const engName = engineer?.name || 'Unassigned';
   const eColor  = engColor(engineer?.id || null);
-  const desc    = notes || title || '—';
+  const desc    = job.description || title || notes || '—';
 
   const typeMap = { Certificate:'dtype-cert', Repair:'dtype-repair', Urgent:'dtype-urgent', Emergency:'dtype-emerg' };
   const rowMap  = { Certificate:'drow-cert',  Repair:'drow-repair',  Urgent:'drow-urgent',  Emergency:'drow-emergency' };
