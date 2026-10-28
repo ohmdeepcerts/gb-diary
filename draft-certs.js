@@ -8,7 +8,8 @@
 */
 
 (function () {
-  const BASE = 'https://gbelectricals.co.uk';
+  const BASE  = 'https://gbelectricals.co.uk';
+  const TRPC  = 'https://gb-proxy.gbmandeep.workers.dev/trpc';
 
   /* ── helpers ── */
   function toLocalISO(d) {
@@ -39,7 +40,7 @@
 
   /* ── API ── */
   async function api(path, input) {
-    const url = `${BASE}/trpc/${path}?input=` + encodeURIComponent(JSON.stringify({ json: input }));
+    const url = `${TRPC}/${path}?input=` + encodeURIComponent(JSON.stringify({ json: input }));
     const r = await fetch(url, { credentials: 'include' });
     const d = await r.json();
     const row = Array.isArray(d) ? d[0] : d;
@@ -48,7 +49,7 @@
     return data?.json !== undefined ? data.json : data;
   }
   async function post(path, input) {
-    const r = await fetch(`${BASE}/trpc/${path}`, {
+    const r = await fetch(`${TRPC}/${path}`, {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ json: input }),
