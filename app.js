@@ -314,14 +314,14 @@ async function silentRefresh() {
     } else if (view === 'week')  { await loadWeek(true, true); } // silent: no spinner flash
     else if (view === 'month') { await loadMonth(true); }
 
-    // Restore scroll positions after re-render
-    requestAnimationFrame(() => {
+    // Restore scroll positions after re-render — double rAF ensures new DOM is painted first
+    requestAnimationFrame(() => requestAnimationFrame(() => {
       window.scrollTo(0, _scrollY);
       const newWrap = document.querySelector('.day-table-wrap');
       if (newWrap) newWrap.scrollLeft = _wrapScrollX;
       const wb = document.getElementById('week-body');
       if (wb) { wb.scrollTop = _wbST; wb.scrollLeft = _wbSL; }
-    });
+    }));
 
     setStatus(`Loaded · ${now()}`);
     ['w','d','m'].forEach(s => {
