@@ -299,7 +299,9 @@ async function silentRefresh() {
   if (_inAllTimeView) return; // don't overwrite the all-time scroll view
 
   // Save scroll positions before re-render
-  const _scrollY = window.scrollY;
+  // .day-table-area is the actual vertical scroll container (overflow-y:auto), not window
+  const _dayArea = document.querySelector('.day-table-area');
+  const _dayAreaST = _dayArea ? _dayArea.scrollTop : 0;
   const _wrapScrollX = document.querySelector('.day-table-wrap')?.scrollLeft || 0;
   const _wb = document.getElementById('week-body');
   const _wbST = _wb ? _wb.scrollTop  : 0;
@@ -315,9 +317,9 @@ async function silentRefresh() {
     else if (view === 'month') { await loadMonth(true); }
 
     // Restore scroll positions after re-render
-    // setTimeout beats rAF here — rAF races with _initStickyScroll's own rAF chain
     setTimeout(() => {
-      window.scrollTo(0, _scrollY);
+      const newDayArea = document.querySelector('.day-table-area');
+      if (newDayArea) newDayArea.scrollTop = _dayAreaST;
       const newWrap = document.querySelector('.day-table-wrap');
       if (newWrap) newWrap.scrollLeft = _wrapScrollX;
       const wb = document.getElementById('week-body');
