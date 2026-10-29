@@ -8240,13 +8240,20 @@ function _openCertDetail(c) {
   });
   btnRow.appendChild(invBtn);
 
-  if (c.has_pdf && c.downloadable) {
-    const pdfBtn = document.createElement('a');
-    pdfBtn.href = c.downloadable;
-    pdfBtn.target = '_blank';
-    pdfBtn.textContent = '📄 Download PDF';
-    pdfBtn.style.cssText = 'padding:8px 16px;border-radius:6px;border:1px solid rgba(22,163,74,.35);background:rgba(22,163,74,.08);color:#16a34a;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block';
-    btnRow.appendChild(pdfBtn);
+  if (c.has_pdf) {
+    const previewBtn = document.createElement('button');
+    previewBtn.textContent = '👁 Preview PDF';
+    previewBtn.style.cssText = 'padding:8px 16px;border-radius:6px;border:1px solid rgba(22,163,74,.35);background:rgba(22,163,74,.08);color:#16a34a;font-size:13px;font-weight:600;cursor:pointer';
+    previewBtn.addEventListener('click', async function(){
+      previewBtn.disabled = true; previewBtn.textContent = 'Loading…';
+      try {
+        const res = await trpcQuery('certs.pdf', { id: c.id });
+        const url = 'https://gb-proxy.gbmandeep.workers.dev' + res.url;
+        window.open(url, '_blank');
+      } catch(err) { alert('Could not load PDF: ' + err.message); }
+      previewBtn.disabled = false; previewBtn.textContent = '👁 Preview PDF';
+    });
+    btnRow.appendChild(previewBtn);
   }
 
   const uploadPdfBtn = document.createElement('button');
