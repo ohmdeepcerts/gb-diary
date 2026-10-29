@@ -8127,6 +8127,93 @@ function _openCertDetail(c) {
   // Issues
   bdy.innerHTML += issuesHtml;
 
+  // ── Draft issuing section (only when status === 'draft') ──
+  if (c.status === 'draft') {
+    var _DCPROXY = 'https://gb-proxy.gbmandeep.workers.dev/trpc';
+    function _dcISO(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+    function _dcAdd(iso,mo,minus){ var d=new Date(iso+'T00:00:00'); d.setMonth(d.getMonth()+mo); d.setDate(d.getDate()-minus); return _dcISO(d); }
+    var _DC_RULES={ pat:{m:12,d:1}, cp12:{m:12,d:1}, gas_safety:{m:12,d:1}, gas_safety_cp12:{m:12,d:1},
+      fire_risk_assessment:{m:12,d:1}, fire_alarm:{m:12,d:1}, emergency_lighting:{m:12,d:1}, eicr:{m:60,d:1}, epc:{m:120,d:1} };
+    var _DC_QUICK={ eicr:[{l:'3 Years',m:36},{l:'5 Years',m:60}], emergency_lighting:[{l:'6 Months',m:6},{l:'12 Months',m:12}] };
+    var _dcRule=_DC_RULES[c.cert_type_id], _dcToday=_dcISO(new Date());
+    var _dcInitIss=c.issue_date||_dcToday;
+    var _dcInitExp=c.expiry_date||(_dcRule?_dcAdd(_dcInitIss,_dcRule.m,_dcRule.d):'');
+    var _dcQuick=_DC_QUICK[c.cert_type_id]||[];
+
+    var dcSec=document.createElement('div');
+    dcSec.style.cssText='margin-top:16px;padding:14px 16px;background:rgba(79,70,229,.06);border:1px solid rgba(79,70,229,.2);border-radius:8px';
+    var dcTtl=document.createElement('div');
+    dcTtl.style.cssText='font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#818cf8;margin-bottom:12px';
+    dcTtl.textContent='Issue This Certificate'; dcSec.appendChild(dcTtl);
+
+    var dcFRow=document.createElement('div'); dcFRow.style.cssText='display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end';
+
+    var dcIS=document.createElement('input'); dcIS.type='date'; dcIS.value=_dcInitIss;
+    dcIS.style.cssText='border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:13px;color:var(--text);background:var(--bg2);color-scheme:dark;width:158px';
+    var dcIsF=document.createElement('div');
+    dcIsF.innerHTML='<label style="display:block;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Issue Date</label>';
+    dcIsF.appendChild(dcIS); dcFRow.appendChild(dcIsF);
+
+    var dcEX=document.createElement('input'); dcEX.type='date'; dcEX.value=_dcInitExp;
+    dcEX.style.cssText='border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:13px;color:var(--text);background:var(--bg2);color-scheme:dark;width:158px';
+    var dcExF=document.createElement('div');
+    dcExF.innerHTML='<label style="display:block;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Expiry Date</label>';
+    dcExF.appendChild(dcEX); dcFRow.appendChild(dcExF);
+
+    var dcNX=document.createElement('input'); dcNX.type='checkbox';
+    dcNX.style.cssText='cursor:pointer;width:14px;height:14px;accent-color:#818cf8'; if(c.no_expiry) dcNX.checked=true;
+    var dcNxLbl=document.createElement('label');
+    dcNxLbl.style.cssText='display:flex;align-items:center;gap:6px;padding-bottom:8px;cursor:pointer;font-size:12px;color:var(--text2)';
+    dcNxLbl.appendChild(dcNX); dcNxLbl.appendChild(document.createTextNode(' No expiry'));
+    dcFRow.appendChild(dcNxLbl); dcSec.appendChild(dcFRow);
+    if(c.no_expiry){ dcExF.style.opacity='0.3'; dcEX.disabled=true; }
+
+    dcNX.addEventListener('change',function(){ dcExF.style.opacity=dcNX.checked?'0.3':'1'; dcEX.disabled=dcNX.checked; });
+    dcIS.addEventListener('change',function(){ if(!dcNX.checked&&_dcRule) dcEX.value=_dcAdd(dcIS.value,_dcRule.m,_dcRule.d); });
+
+    if(_dcQuick.length){
+      var dcQRow=document.createElement('div'); dcQRow.style.cssText='display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap';
+      var dcQL=document.createElement('span'); dcQL.style.cssText='font-size:11px;font-weight:600;color:var(--text3)'; dcQL.textContent='Quick:'; dcQRow.appendChild(dcQL);
+      _dcQuick.forEach(function(qb){
+        var qbBtn=document.createElement('button'); qbBtn.textContent=qb.l;
+        qbBtn.style.cssText='padding:4px 11px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;border:1.5px solid #4f46e5;color:#818cf8;background:transparent';
+        qbBtn.addEventListener('click',function(){
+          if(!dcIS.value){alert('Set issue date first');return;}
+          dcEX.value=_dcAdd(dcIS.value,qb.m,1); dcNX.checked=false; dcExF.style.opacity='1'; dcEX.disabled=false;
+          dcQRow.querySelectorAll('button').forEach(function(b){b.style.background='transparent';b.style.color='#818cf8';});
+          qbBtn.style.background='#4f46e5'; qbBtn.style.color='#fff';
+        }); dcQRow.appendChild(qbBtn);
+      }); dcSec.appendChild(dcQRow);
+    }
+
+    var dcIRow=document.createElement('div'); dcIRow.style.cssText='display:flex;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap';
+    var dcIBtn=document.createElement('button'); dcIBtn.textContent='Issue Certificate';
+    dcIBtn.style.cssText='padding:8px 18px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:#4f46e5;color:#fff';
+    var dcIMsg=document.createElement('span'); dcIMsg.style.cssText='font-size:12px';
+    dcIRow.appendChild(dcIBtn); dcIRow.appendChild(dcIMsg); dcSec.appendChild(dcIRow);
+
+    dcIBtn.addEventListener('click',async function(){
+      var issDate=dcIS.value, noExp=dcNX.checked, expDate=noExp?null:dcEX.value;
+      if(!issDate){dcIMsg.style.color='#f87171';dcIMsg.textContent='Set issue date';return;}
+      if(!noExp&&!expDate){dcIMsg.style.color='#f87171';dcIMsg.textContent='Set expiry date';return;}
+      dcIBtn.disabled=true; dcIBtn.textContent='Issuing…'; dcIMsg.textContent='';
+      try{
+        var payload={id:c.id,issue_date:issDate};
+        if(!noExp&&expDate) payload.expiry_date=expDate;
+        if(noExp) payload.no_expiry=true;
+        var resp=await fetch(_DCPROXY+'/certs.issue',{method:'POST',credentials:'include',
+          headers:{'Content-Type':'application/json'},body:JSON.stringify({json:payload})});
+        var data=await resp.json(); var row=Array.isArray(data)?data[0]:data;
+        if(row&&row.error) throw new Error((row.error.json&&row.error.json.message)||'Error');
+        dcIMsg.style.color='#4ade80'; dcIMsg.textContent='✓ Issued!';
+        dcIBtn.textContent='✓ Done'; dcIBtn.style.background='#16a34a';
+        _certsData=null;
+      }catch(err){dcIMsg.style.color='#f87171';dcIMsg.textContent=err.message;dcIBtn.disabled=false;dcIBtn.textContent='Issue Certificate';}
+    });
+
+    bdy.appendChild(dcSec);
+  }
+
   // Action buttons
   const btnRow = document.createElement('div');
   btnRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin-top:16px';
