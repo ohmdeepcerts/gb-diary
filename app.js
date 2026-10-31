@@ -244,17 +244,21 @@ let _refreshTimer    = null;
 let _refreshInterval = 20;   // seconds between auto-refreshes
 let _refreshNext     = 0;    // epoch ms when next refresh fires
 let _refreshTick     = null; // countdown ticker
+let _wcBadgeTimer    = null; // refresh wc badge every 5 minutes
 
 function startAutoRefresh() {
   stopAutoRefresh();
   _schedule();
   _refreshTick = setInterval(_tickLive, 1000);
   _setLiveDot(true);
+  refreshWcBadge();
+  _wcBadgeTimer = setInterval(refreshWcBadge, 5 * 60 * 1000);
 }
 
 function stopAutoRefresh() {
-  if (_refreshTimer) { clearTimeout(_refreshTimer);   _refreshTimer = null; }
-  if (_refreshTick)  { clearInterval(_refreshTick);   _refreshTick  = null; }
+  if (_refreshTimer)  { clearTimeout(_refreshTimer);    _refreshTimer  = null; }
+  if (_refreshTick)   { clearInterval(_refreshTick);    _refreshTick   = null; }
+  if (_wcBadgeTimer)  { clearInterval(_wcBadgeTimer);   _wcBadgeTimer  = null; }
   _setLiveDot(false);
 }
 
@@ -419,6 +423,31 @@ function setStatus(msg, ok=true) {
 }
 function setUser(name) {
   ['uname-w','uname-d','uname-m'].forEach(id => { const e=document.getElementById(id); if(e) e.textContent=name; });
+}
+
+function setWcBadge(count) {
+  const text = count > 0 ? `📋 ${count} waiting cert${count !== 1 ? 's' : ''}` : '';
+  ['w','d','m'].forEach(s => {
+    const el = document.getElementById(`wc-badge-${s}`);
+    if (!el) return;
+    el.textContent = text;
+    el.style.display = count > 0 ? 'inline-flex' : 'none';
+  });
+}
+
+async function refreshWcBadge() {
+  try {
+    let total = 0, offset = 0;
+    const pageSize = 100;
+    while (true) {
+      const r = await trpcQuery('jobs.list', { status: 'Waiting Certificate', pageSize, offset });
+      const jobs = r?.jobs || [];
+      total += jobs.length;
+      if (jobs.length < pageSize) break;
+      offset += pageSize;
+    }
+    setWcBadge(total);
+  } catch { /* silently ignore — badge stays at last known value */ }
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────

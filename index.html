@@ -66,6 +66,14 @@
   }
   .hdr-logo { color: var(--red); font-weight: 800; font-size: 17px; margin-right: 4px; letter-spacing: -1px; }
 
+  .wc-badge {
+    display: none; align-items: center; gap: 4px;
+    font-size: 11px; font-weight: 700; white-space: nowrap;
+    color: var(--red); background: rgba(225,37,27,0.12);
+    border: 1px solid rgba(225,37,27,0.3); border-radius: 10px;
+    padding: 3px 9px; cursor: default; flex-shrink: 0;
+  }
+
   .view-switch { display: flex; background: var(--bg3); border-radius: 6px; padding: 2px; border: 1px solid var(--border); }
   .vbtn {
     background: none; border: none; color: var(--text2); border-radius: 4px;
@@ -878,6 +886,7 @@
     <button class="nav-btn" id="week-next">›</button>
     <button class="btn-today" id="week-today">Today</button>
     <div class="spacer"></div>
+    <span class="wc-badge" id="wc-badge-w" title="Jobs waiting for certificate upload"></span>
     <button class="btn-icon gs-open-btn" title="Search jobs">🔍</button>
     <button class="btn-add" id="week-add">+ Add Job</button>
     <button class="btn-icon cert-kw-open-btn" title="Cert keyword settings">⚙</button>
@@ -922,6 +931,7 @@
     <button class="nav-btn" id="day-next">›</button>
     <button class="btn-today" id="day-today">Today</button>
     <div class="spacer"></div>
+    <span class="wc-badge" id="wc-badge-d" title="Jobs waiting for certificate upload"></span>
     <button class="btn-icon gs-open-btn" title="Search jobs">🔍</button>
     <button class="btn-add" id="day-add">+ Add Job</button>
     <button class="btn-icon cert-kw-open-btn" title="Cert keyword settings">⚙</button>
@@ -968,6 +978,7 @@
     <button class="nav-btn" id="month-next">›</button>
     <button class="btn-today" id="month-today">Today</button>
     <div class="spacer"></div>
+    <span class="wc-badge" id="wc-badge-m" title="Jobs waiting for certificate upload"></span>
     <button class="btn-icon gs-open-btn" title="Search jobs">🔍</button>
     <button class="btn-add" id="month-add">+ Add Job</button>
     <button class="btn-icon cert-kw-open-btn" title="Cert keyword settings">⚙</button>
@@ -1213,6 +1224,6 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-<script src="app.js?v=20261029b"></script>
+<script src="app.js?v=20261031a"></script>
 </body>
 </html>
