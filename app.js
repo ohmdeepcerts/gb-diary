@@ -440,9 +440,9 @@ async function refreshWcBadge() {
     let total = 0, offset = 0;
     const pageSize = 100;
     while (true) {
-      const r = await trpcQuery('jobs.list', { status: 'Waiting Certificate', pageSize, offset });
+      const r = await trpcQuery('jobs.list', { pageSize, offset });
       const jobs = r?.jobs || [];
-      total += jobs.length;
+      total += jobs.filter(j => j.waiting_certificate === true).length;
       if (jobs.length < pageSize) break;
       offset += pageSize;
     }
