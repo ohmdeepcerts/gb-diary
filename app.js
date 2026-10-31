@@ -438,7 +438,7 @@ function setWcBadge(count) {
 async function refreshWcBadge() {
   try {
     let total = 0, offset = 0;
-    const pageSize = 100;
+    const pageSize = 50; // API caps at 50 per page
     while (true) {
       const r = await trpcQuery('jobs.list', { pageSize, offset });
       const jobs = r?.jobs || [];
