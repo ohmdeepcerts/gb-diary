@@ -437,16 +437,8 @@ function setWcBadge(count) {
 
 async function refreshWcBadge() {
   try {
-    let total = 0, offset = 0;
-    const pageSize = 50; // API caps at 50 per page
-    while (true) {
-      const r = await trpcQuery('jobs.list', { pageSize, offset });
-      const jobs = r?.jobs || [];
-      total += jobs.filter(j => j.waiting_certificate === true).length;
-      if (jobs.length < pageSize) break;
-      offset += pageSize;
-    }
-    setWcBadge(total);
+    _waitingCertJobs = null; // force fresh scan
+    await _loadWaitingCertJobs();
   } catch { /* silently ignore — badge stays at last known value */ }
 }
 
@@ -7850,21 +7842,41 @@ function _updateDirCount() {
 // ════════════════════════════════════════════════════════════
 //  CERTIFICATES VIEW
 // ════════════════════════════════════════════════════════════
-let _certsData      = null;
-let _certsTab       = 'all';
-let _certsSearch    = '';
+let _certsData       = null;
+let _waitingCertJobs = null;
+let _certsTab        = 'all';
+let _certsSearch     = '';
 let _certsTypeFilter = '';
 
 const CERT_TABS = [
   { key: 'all',      label: 'All' },
+  { key: 'waiting',  label: '⏳ Waiting' },
   { key: 'done',     label: '✓ Issued' },
   { key: 'expiring', label: '⚠ Expiring' },
   { key: 'missing',  label: '✗ Issues' },
 ];
 
+async function _loadWaitingCertJobs(force) {
+  if (_waitingCertJobs && !force) return;
+  const jobs = [];
+  let offset = 0;
+  const pageSize = 50;
+  while (true) {
+    const r = await trpcQuery('jobs.list', { pageSize, offset });
+    const page = r?.jobs || [];
+    jobs.push(...page.filter(j => j.waiting_certificate === true));
+    if (page.length < pageSize) break;
+    offset += pageSize;
+  }
+  _waitingCertJobs = jobs;
+  setWcBadge(jobs.length);
+  _updateCertTabCounts();
+}
+
 async function openCerts() {
   showView('certs');
   _buildCertsTabs();
+  _loadWaitingCertJobs().catch(() => {});
   if (!_certsData) {
     await _loadCerts(false);
   } else {
@@ -7884,8 +7896,8 @@ async function openCerts() {
 
 function _buildCertsTabs() {
   const wrap = document.getElementById('certs-tabs');
-  if (!wrap || wrap._built) return;
-  wrap._built = true;
+  if (!wrap) return;
+  wrap.innerHTML = '';
   CERT_TABS.forEach(t => {
     const btn = document.createElement('button');
     btn.className = 'dst' + (t.key === _certsTab ? ' dst-active' : '');
@@ -7960,13 +7972,14 @@ function _filterCerts() {
 }
 
 function _updateCertTabCounts() {
-  if (!_certsData) return;
-  const counts = {
-    all:      _certsData.length,
-    done:     _certsData.filter(function(c){ return c.status === 'issued' && !_certIsExpiring(c) && !_certHasIssue(c); }).length,
-    expiring: _certsData.filter(function(c){ return _certIsExpiring(c); }).length,
-    missing:  _certsData.filter(function(c){ return _certHasIssue(c); }).length,
-  };
+  const counts = {};
+  if (_certsData) {
+    counts.all      = _certsData.length;
+    counts.done     = _certsData.filter(function(c){ return c.status === 'issued' && !_certIsExpiring(c) && !_certHasIssue(c); }).length;
+    counts.expiring = _certsData.filter(function(c){ return _certIsExpiring(c); }).length;
+    counts.missing  = _certsData.filter(function(c){ return _certHasIssue(c); }).length;
+  }
+  if (_waitingCertJobs) counts.waiting = _waitingCertJobs.length;
   Object.keys(counts).forEach(function(k) {
     const el = document.getElementById('ctab-cnt-' + k);
     if (el) el.textContent = counts[k];
@@ -8001,10 +8014,70 @@ function _certStatusBadge(c) {
   return issues.join(' ');
 }
 
+function _renderWaitingCerts(body, countEl) {
+  const jobs = _waitingCertJobs;
+  if (!jobs) {
+    body.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading waiting jobs…</div>';
+    _loadWaitingCertJobs().then(() => { if (_certsTab === 'waiting') _renderCerts(); }).catch(() => {});
+    return;
+  }
+  if (countEl) countEl.textContent = jobs.length + ' job' + (jobs.length !== 1 ? 's' : '');
+  if (!jobs.length) {
+    body.innerHTML = '<div class="loading-row" style="color:var(--text3)">No jobs waiting for certificates.</div>';
+    return;
+  }
+  const TH = 'padding:8px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);border-bottom:1px solid var(--border);white-space:nowrap;background:var(--bg3)';
+  const BD = 'border-bottom:1px solid var(--border)';
+  const tbl = document.createElement('table');
+  tbl.style.cssText = 'width:100%;border-collapse:collapse;min-width:700px';
+  tbl.innerHTML = '<thead><tr>' +
+    '<th style="' + TH + '">Job #</th>' +
+    '<th style="' + TH + 'white-space:normal">Address</th>' +
+    '<th style="' + TH + 'white-space:normal">Client</th>' +
+    '<th style="' + TH + 'white-space:normal">Type</th>' +
+    '<th style="' + TH + '">Status</th>' +
+    '<th style="' + TH + '">Date</th>' +
+    '</tr></thead>';
+  const tbody = document.createElement('tbody');
+  jobs.forEach(function(j, i) {
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    if (i % 2 !== 0) tr.style.background = 'var(--bg3)';
+    tr.addEventListener('mouseover',  function(){ tr.style.background = 'var(--today-bg)'; });
+    tr.addEventListener('mouseout',   function(){ tr.style.background = i % 2 !== 0 ? 'var(--bg3)' : ''; });
+    const addr = [(j.property && j.property.address), (j.property && j.property.postcode)].filter(Boolean).join(', ') || '—';
+    const client = j.contact_name || (j.contact && j.contact.name) || '—';
+    const title  = j.title || '—';
+    const status = j.status || '—';
+    const date   = j.scheduled_date ? j.scheduled_date.slice(0,10).split('-').reverse().join('/') : '—';
+    const stClr  = status.toLowerCase() === 'completed' ? '#22c55e' : status.toLowerCase() === 'invoiced' ? '#14b8a6' : '#f59e0b';
+    tr.innerHTML =
+      '<td style="padding:8px 12px;font-size:12px;font-family:monospace;font-weight:700;color:var(--red);white-space:nowrap;' + BD + '">' + esc(j.job_no || '—') + '</td>' +
+      '<td style="padding:8px 12px;font-size:12px;color:var(--text);' + BD + ';max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(addr) + '">' + esc(addr) + '</td>' +
+      '<td style="padding:8px 12px;font-size:12px;color:var(--text2);' + BD + ';max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(client) + '">' + esc(client) + '</td>' +
+      '<td style="padding:8px 12px;font-size:11px;color:var(--text2);white-space:nowrap;' + BD + '">' + esc(title) + '</td>' +
+      '<td style="padding:8px 12px;white-space:nowrap;' + BD + '"><span style="background:rgba(0,0,0,.08);color:' + stClr + ';border-radius:4px;padding:1px 7px;font-size:10px;font-weight:700">' + esc(status) + '</span></td>' +
+      '<td style="padding:8px 12px;font-size:12px;color:var(--text2);white-space:nowrap;' + BD + '">' + esc(date) + '</td>';
+    tr.addEventListener('click', function(){ openJobDetail(j.id); });
+    tbody.appendChild(tr);
+  });
+  tbl.appendChild(tbody);
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'padding:12px 16px 0';
+  const inner = document.createElement('div');
+  inner.style.cssText = 'border:1px solid var(--border);border-radius:8px;background:var(--bg2);overflow:hidden;box-shadow:var(--shadow);overflow-x:auto';
+  inner.appendChild(tbl);
+  wrap.appendChild(inner);
+  body.innerHTML = '';
+  body.appendChild(wrap);
+}
+
 function _renderCerts() {
   const body  = document.getElementById('certs-body');
   const count = document.getElementById('certs-count');
   if (!body) return;
+
+  if (_certsTab === 'waiting') { _renderWaitingCerts(body, count); return; }
 
   const list = _filterCerts();
   if (count) count.textContent = list.length + ' cert' + (list.length !== 1 ? 's' : '');
