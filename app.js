@@ -8029,14 +8029,18 @@ function _renderWaitingCerts(body, countEl) {
   const TH = 'padding:8px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);border-bottom:1px solid var(--border);white-space:nowrap;background:var(--bg3)';
   const BD = 'border-bottom:1px solid var(--border)';
   const tbl = document.createElement('table');
-  tbl.style.cssText = 'width:100%;border-collapse:collapse;min-width:700px';
+  tbl.style.cssText = 'width:100%;border-collapse:collapse;min-width:1000px';
   tbl.innerHTML = '<thead><tr>' +
     '<th style="' + TH + '">Job #</th>' +
-    '<th style="' + TH + 'white-space:normal">Address</th>' +
-    '<th style="' + TH + 'white-space:normal">Client</th>' +
-    '<th style="' + TH + 'white-space:normal">Type</th>' +
+    '<th style="' + TH + ';white-space:normal">Address</th>' +
+    '<th style="' + TH + ';white-space:normal">Client</th>' +
+    '<th style="' + TH + ';white-space:normal">Type</th>' +
+    '<th style="' + TH + ';white-space:normal">Description</th>' +
+    '<th style="' + TH + '">Engineer</th>' +
     '<th style="' + TH + '">Status</th>' +
     '<th style="' + TH + '">Date</th>' +
+    '<th style="' + TH + '">Price</th>' +
+    '<th style="' + TH + '"></th>' +
     '</tr></thead>';
   const tbody = document.createElement('tbody');
   jobs.forEach(function(j, i) {
@@ -8045,19 +8049,31 @@ function _renderWaitingCerts(body, countEl) {
     if (i % 2 !== 0) tr.style.background = 'var(--bg3)';
     tr.addEventListener('mouseover',  function(){ tr.style.background = 'var(--today-bg)'; });
     tr.addEventListener('mouseout',   function(){ tr.style.background = i % 2 !== 0 ? 'var(--bg3)' : ''; });
-    const addr = [(j.property && j.property.address), (j.property && j.property.postcode)].filter(Boolean).join(', ') || '—';
+    const addr   = [(j.property && j.property.address), (j.property && j.property.postcode)].filter(Boolean).join(', ') || '—';
     const client = j.contact_name || (j.contact && j.contact.name) || '—';
     const title  = j.title || '—';
+    const desc   = j.description || j.notes || '—';
+    const eng    = (j.engineer && (j.engineer.name || j.engineer.first_name)) || (j.assignedEngineer && (j.assignedEngineer.name || j.assignedEngineer.first_name)) || '—';
     const status = j.status || '—';
     const date   = j.scheduled_date ? j.scheduled_date.slice(0,10).split('-').reverse().join('/') : '—';
-    const stClr  = status.toLowerCase() === 'completed' ? '#22c55e' : status.toLowerCase() === 'invoiced' ? '#14b8a6' : '#f59e0b';
+    const price  = j.price ? '£' + Number(j.price).toFixed(2) : '—';
+    const stClr  = status.toLowerCase() === 'completed' ? '#22c55e' : status.toLowerCase() === 'invoiced' ? '#14b8a6' : status.toLowerCase() === 'closed' ? '#16a34a' : '#f59e0b';
+    const portalUrl = BASE + '/office/jobs/' + j.id;
     tr.innerHTML =
       '<td style="padding:8px 12px;font-size:12px;font-family:monospace;font-weight:700;color:var(--red);white-space:nowrap;' + BD + '">' + esc(j.job_no || '—') + '</td>' +
-      '<td style="padding:8px 12px;font-size:12px;color:var(--text);' + BD + ';max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(addr) + '">' + esc(addr) + '</td>' +
-      '<td style="padding:8px 12px;font-size:12px;color:var(--text2);' + BD + ';max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(client) + '">' + esc(client) + '</td>' +
+      '<td style="padding:8px 12px;font-size:12px;color:var(--text);' + BD + ';max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(addr) + '">' + esc(addr) + '</td>' +
+      '<td style="padding:8px 12px;font-size:12px;color:var(--text2);' + BD + ';max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(client) + '">' + esc(client) + '</td>' +
       '<td style="padding:8px 12px;font-size:11px;color:var(--text2);white-space:nowrap;' + BD + '">' + esc(title) + '</td>' +
+      '<td style="padding:8px 12px;font-size:11px;color:var(--text3);' + BD + ';max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(desc) + '">' + esc(desc) + '</td>' +
+      '<td style="padding:8px 12px;font-size:11px;color:var(--text2);white-space:nowrap;' + BD + '">' + esc(eng) + '</td>' +
       '<td style="padding:8px 12px;white-space:nowrap;' + BD + '"><span style="background:rgba(0,0,0,.08);color:' + stClr + ';border-radius:4px;padding:1px 7px;font-size:10px;font-weight:700">' + esc(status) + '</span></td>' +
-      '<td style="padding:8px 12px;font-size:12px;color:var(--text2);white-space:nowrap;' + BD + '">' + esc(date) + '</td>';
+      '<td style="padding:8px 12px;font-size:12px;color:var(--text2);white-space:nowrap;' + BD + '">' + esc(date) + '</td>' +
+      '<td style="padding:8px 12px;font-size:12px;color:var(--text2);white-space:nowrap;' + BD + '">' + esc(price) + '</td>' +
+      '<td style="padding:6px 10px;white-space:nowrap;' + BD + '">' +
+        '<a href="' + esc(portalUrl) + '" target="_blank" onclick="event.stopPropagation()" ' +
+          'style="display:inline-block;padding:4px 10px;font-size:11px;font-weight:700;color:#fff;background:var(--red);border-radius:5px;text-decoration:none;white-space:nowrap" ' +
+          'title="Open in portal">↗ Portal</a>' +
+      '</td>';
     tr.addEventListener('click', function(){ openJobDetail(j.id); });
     tbody.appendChild(tr);
   });
