@@ -6022,7 +6022,7 @@ async function _loadInvoices(resetPage = false) {
     ..._invDateTo      ? { dueDateTo:   _invDateTo      } : {},
   };
   const [totals, list] = await Promise.all([
-    trpcQuery('invoices.totals', filterParams).catch(() => null),
+    trpcQuery('invoices.totals', {}).catch(() => null),
     trpcQuery('invoices.list', {
       ...filterParams,
       page:     _invPage,
@@ -6133,17 +6133,17 @@ function _buildInvTopHTML() {
         <div class="inv-card-val">${_invFmtPence(t.owedPence)}</div>
         <div class="inv-card-lbl">Total owed</div>
       </div>
-      <div class="inv-card warn">
+      <div class="inv-card warn${_invView==='overdue'?' active':''}" data-invtab="overdue" style="cursor:pointer" title="Click to view overdue">
         <div class="inv-card-val">${t.overdue ?? '—'}</div>
         <div class="inv-card-lbl">Overdue</div>
       </div>
-      <div class="inv-card">
+      <div class="inv-card${_invView==='draft'?' active':''}" data-invtab="draft" style="cursor:pointer" title="Click to view drafts">
         <div class="inv-card-val">${t.drafts ?? '—'}</div>
         <div class="inv-card-lbl">Drafts</div>
       </div>
-      <div class="inv-card">
-        <div class="inv-card-val" id="inv-card-total">${_invTotal || '—'}</div>
-        <div class="inv-card-lbl">${_invView === 'paid' ? 'Paid' : _invView === 'all' ? 'Total' : 'Showing'}</div>
+      <div class="inv-card${_invView==='paid'?' active':''}" data-invtab="paid" style="cursor:pointer" title="Click to view paid">
+        <div class="inv-card-val" id="inv-card-total">${_invView==='paid' ? _invTotal : (t.paid ?? '—')}</div>
+        <div class="inv-card-lbl">Paid</div>
       </div>
     </div>
     <div class="inv-tabs">${tabsHTML}</div>
@@ -6313,7 +6313,7 @@ function _buildInvBodyHTML() {
           <th style="min-width:160px">Description</th>
           <th class="sortable" data-sort="dueAt" style="min-width:100px">Due${_invSortBy==='dueAt'?(_invSortDir==='asc'?' ↑':' ↓'):''}</th>
           <th style="min-width:85px">Sent</th>
-          <th style="text-align:right;min-width:90px">Balance</th>
+          <th class="sortable" data-sort="total" style="text-align:right;min-width:90px;cursor:pointer">Amount${_invSortBy==='total'?(_invSortDir==='desc'?' ↓':' ↑'):''}</th>
           <th style="min-width:90px">Status</th>
         </tr></thead>
         <tbody>${rows}</tbody>
