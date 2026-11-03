@@ -5802,7 +5802,9 @@ let _invDateFrom    = '';
 let _invDateTo      = '';
 let _invTotals      = null;
 let _invItems       = [];
+let _invAllItems    = [];
 let _invTotal       = 0;
+let _invViewTotal   = 0;
 let _stmtContactId   = null;
 let _stmtContactName = '';
 let _stmtContactType = '';
@@ -6008,10 +6010,23 @@ async function openInvoices() {
   await _loadInvoices(true);
 }
 
+function _invSortItems(arr) {
+  const dir = _invSortDir === 'desc' ? -1 : 1;
+  return [...arr].sort((a, b) => {
+    switch (_invSortBy) {
+      case 'total':       return dir * ((a.total||0) - (b.total||0));
+      case 'invoiceNo':   return dir * (a.invoiceNo||'').localeCompare(b.invoiceNo||'', undefined, {numeric:true});
+      case 'issuedAt':    return dir * ((a.issuedAt||'') > (b.issuedAt||'') ? 1 : -1);
+      case 'contactName': return dir * (a.contactName||'').localeCompare(b.contactName||'');
+      case 'dueAt':
+      default:            return dir * ((a.dueAt||'') > (b.dueAt||'') ? 1 : -1);
+    }
+  });
+}
+
 async function _loadInvoices(resetPage = false) {
   if (resetPage) _invPage = 1;
   const bodyEl = document.getElementById('inv-body');
-  const topEl  = document.getElementById('inv-top');
   if (bodyEl) bodyEl.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading invoices…</div>';
 
   const filterParams = {
@@ -6021,20 +6036,27 @@ async function _loadInvoices(resetPage = false) {
     ..._invDateFrom    ? { dueDateFrom: _invDateFrom    } : {},
     ..._invDateTo      ? { dueDateTo:   _invDateTo      } : {},
   };
-  const [totals, list] = await Promise.all([
-    trpcQuery('invoices.totals', {}).catch(() => null),
-    trpcQuery('invoices.list', {
-      ...filterParams,
-      page:     _invPage,
-      pageSize: _invPageSize,
-      sortBy:   _invSortBy,
-      sortDir:  _invSortDir,
-    }).catch(() => null),
-  ]);
 
-  _invTotals = totals;
-  _invItems  = list?.invoices || list?.items || [];
-  _invTotal  = list?.total ?? _invItems.length;
+  // Fetch all items (up to 500) for client-side sort + accurate view totals
+  const totalsP = trpcQuery('invoices.totals', {}).catch(() => null);
+  const allItems = [];
+  let page = 1;
+  while (true) {
+    const r = await trpcQuery('invoices.list', { ...filterParams, page, pageSize: 100 }).catch(() => null);
+    const batch = r?.invoices || r?.items || [];
+    allItems.push(...batch);
+    if (batch.length < 100 || allItems.length >= 500) break;
+    page++;
+  }
+
+  _invTotals    = await totalsP;
+  _invAllItems  = _invSortItems(allItems);
+  _invTotal     = _invAllItems.length;
+  _invViewTotal = _invAllItems.reduce((s, i) => s + (i.total || 0), 0);
+
+  // Paginate from the full sorted list
+  const start = (_invPage - 1) * _invPageSize;
+  _invItems = _invAllItems.slice(start, start + _invPageSize);
 
   // Render immediately — descriptions fill in the background
   _renderInvoicePage();
@@ -6127,11 +6149,14 @@ function _buildInvTopHTML() {
     ? `<button id="inv-clear-filters" style="padding:5px 10px;border-radius:6px;border:1px solid var(--red);color:var(--red);background:none;font-size:11px;font-weight:600;cursor:pointer">✕ Clear (${activeFilters})</button>`
     : '';
 
+  const viewLabel = { outstanding:'Outstanding', overdue:'Overdue', all:'All', draft:'Drafts', paid:'Paid' }[_invView] || _invView;
+  const viewAmt   = _invViewTotal > 0 ? _invFmt(_invViewTotal) : (_invView==='outstanding'||_invView==='overdue' ? _invFmtPence(t.owedPence) : '—');
+  const viewAmtLbl = _invView==='paid' ? 'Total Paid' : _invView==='draft' ? 'Draft Total' : 'Total Owed';
   return `
     <div class="inv-cards">
       <div class="inv-card danger">
-        <div class="inv-card-val">${_invFmtPence(t.owedPence)}</div>
-        <div class="inv-card-lbl">Total owed</div>
+        <div class="inv-card-val">${viewAmt}</div>
+        <div class="inv-card-lbl">${viewAmtLbl}</div>
       </div>
       <div class="inv-card warn${_invView==='overdue'?' active':''}" data-invtab="overdue" style="cursor:pointer" title="Click to view overdue">
         <div class="inv-card-val">${t.overdue ?? '—'}</div>
@@ -6142,8 +6167,8 @@ function _buildInvTopHTML() {
         <div class="inv-card-lbl">Drafts</div>
       </div>
       <div class="inv-card${_invView==='paid'?' active':''}" data-invtab="paid" style="cursor:pointer" title="Click to view paid">
-        <div class="inv-card-val" id="inv-card-total">${_invView==='paid' ? _invTotal : (t.paid ?? '—')}</div>
-        <div class="inv-card-lbl">Paid</div>
+        <div class="inv-card-val" id="inv-card-total">${_invTotal}</div>
+        <div class="inv-card-lbl">${viewLabel}</div>
       </div>
     </div>
     <div class="inv-tabs">${tabsHTML}</div>
@@ -6180,7 +6205,7 @@ function _buildInvBodyHTML() {
     if (dto   && inv.dueAt && new Date(inv.dueAt) > dto)   return false;
     return true;
   });
-  const totalPages = Math.max(1, Math.ceil(_invTotal / _invPageSize));
+  const totalPages = Math.max(1, Math.ceil(_invAllItems.length / _invPageSize));
 
   if (!items.length) {
     return `<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">No invoices found</div>`;
@@ -6682,11 +6707,22 @@ function _wireInvControls() {
   // CSV export
   document.getElementById('inv-csv-btn')?.addEventListener('click', () => _invExportCSV());
 
-  document.getElementById('inv-prev-page')?.addEventListener('click', async () => {
-    if (_invPage > 1) { _invPage--; await _loadInvoices(false); }
+  document.getElementById('inv-prev-page')?.addEventListener('click', () => {
+    if (_invPage > 1) {
+      _invPage--;
+      const start = (_invPage - 1) * _invPageSize;
+      _invItems = _invAllItems.slice(start, start + _invPageSize);
+      _renderInvoicePage();
+    }
   });
-  document.getElementById('inv-next-page')?.addEventListener('click', async () => {
-    _invPage++; await _loadInvoices(false);
+  document.getElementById('inv-next-page')?.addEventListener('click', () => {
+    const totalPages = Math.ceil(_invAllItems.length / _invPageSize);
+    if (_invPage < totalPages) {
+      _invPage++;
+      const start = (_invPage - 1) * _invPageSize;
+      _invItems = _invAllItems.slice(start, start + _invPageSize);
+      _renderInvoicePage();
+    }
   });
 }
 
