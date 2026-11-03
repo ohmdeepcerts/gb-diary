@@ -8014,16 +8014,42 @@ function _certStatusBadge(c) {
   return issues.join(' ');
 }
 
+const _WC_TYPE_KEYWORDS = {
+  pat:                ['pat'],
+  emergency_lighting: ['emergency', 'lighting'],
+  eicr:               ['eicr'],
+  eic:                ['eic'],
+  gas:                ['gas', 'cp12'],
+  fire_alarm:         ['fire alarm', 'fire_alarm'],
+};
+
 function _renderWaitingCerts(body, countEl) {
-  const jobs = _waitingCertJobs;
-  if (!jobs) {
+  if (!_waitingCertJobs) {
     body.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading waiting jobs…</div>';
     _loadWaitingCertJobs().then(() => { if (_certsTab === 'waiting') _renderCerts(); }).catch(() => {});
     return;
   }
+  let jobs = _waitingCertJobs.slice();
+  if (_certsTypeFilter && _WC_TYPE_KEYWORDS[_certsTypeFilter]) {
+    const kws = _WC_TYPE_KEYWORDS[_certsTypeFilter];
+    jobs = jobs.filter(function(j) {
+      const t = (j.title || '').toLowerCase();
+      return kws.some(function(k) { return t.includes(k); });
+    });
+  }
+  if (_certsSearch) {
+    const q = _certsSearch;
+    jobs = jobs.filter(function(j) {
+      const addr   = [(j.property && j.property.address), (j.property && j.property.postcode)].filter(Boolean).join(' ').toLowerCase();
+      const client = (j.contact_name || (j.contact && j.contact.name) || '').toLowerCase();
+      const jobno  = (j.job_no || '').toLowerCase();
+      const title  = (j.title || '').toLowerCase();
+      return addr.includes(q) || client.includes(q) || jobno.includes(q) || title.includes(q);
+    });
+  }
   if (countEl) countEl.textContent = jobs.length + ' job' + (jobs.length !== 1 ? 's' : '');
   if (!jobs.length) {
-    body.innerHTML = '<div class="loading-row" style="color:var(--text3)">No jobs waiting for certificates.</div>';
+    body.innerHTML = '<div class="loading-row" style="color:var(--text3)">No jobs match the current filter.</div>';
     return;
   }
   const TH = 'padding:8px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);border-bottom:1px solid var(--border);white-space:nowrap;background:var(--bg3)';
