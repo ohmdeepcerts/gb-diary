@@ -5594,15 +5594,17 @@ async function loadFailedJobsView() {
   if (dayLabel) dayLabel.textContent = 'Failed Jobs';
 
   /* ── 1. Load all jobs, filter failed client-side ── */
+  // API silently caps at 50 per page — use pageSize:50 and break on < 50
   const failedJobs = [];
   try {
+    const PAGE = 50;
     let offset = 0;
     while (true) {
-      const r = await trpcQuery('jobs.list', { pageSize: 100, offset });
-      const page = r?.jobs || [];
-      failedJobs.push(...page.filter(j => (j.status || '').toLowerCase() === 'failed'));
-      if (page.length < 100) break;
-      offset += 100;
+      const r = await trpcQuery('jobs.list', { pageSize: PAGE, offset });
+      const page = Array.isArray(r) ? r : (r?.jobs || r?.items || []);
+      failedJobs.push(...page.filter(j => jobStatus(j) === 'failed'));
+      if (page.length < PAGE) break;
+      offset += PAGE;
     }
   } catch(e) {
     body.innerHTML = `<div class="loading-row" style="color:#ef4444">⚠ ${esc(e.message)}</div>`; return;
