@@ -5593,153 +5593,170 @@ async function loadFailedJobsView() {
   const dayLabel = document.getElementById('day-label');
   if (dayLabel) dayLabel.textContent = 'Failed Jobs';
 
-  const PAGE = 50, PAGES = 10;
-  let results;
+  /* ── 1. Load all failed jobs directly (fast) ── */
+  const failedJobs = [];
   try {
-    results = await Promise.allSettled(
-      Array.from({ length: PAGES }, (_, i) => trpcQuery('jobs.list', { pageSize: PAGE, offset: i * PAGE }))
-    );
+    let offset = 0;
+    while (true) {
+      const r = await trpcQuery('jobs.list', { pageSize: 100, status: 'Failed', offset });
+      const batch = r?.jobs || [];
+      failedJobs.push(...batch);
+      if (batch.length < 100) break;
+      offset += 100;
+    }
   } catch(e) {
     body.innerHTML = `<div class="loading-row" style="color:#ef4444">⚠ ${esc(e.message)}</div>`; return;
   }
-
-  const allJobs = results.flatMap(r => {
-    if (r.status !== 'fulfilled') return [];
-    const d = r.value;
-    return Array.isArray(d) ? d : (d?.jobs || d?.items || []);
-  });
-
-  const failedJobs = allJobs.filter(j => jobStatus(j) === 'failed');
   if (!failedJobs.length) { body.innerHTML = '<div class="loading-row">No failed jobs found ✓</div>'; return; }
 
-  // Fetch quotation meta for jobs marked as quotation jobs
-  const quotedJobsList = failedJobs.filter(j => j.quotation);
-  const quoteMetaMap   = new Map(); // jobId → { isSent, isApproved }
-  if (quotedJobsList.length) {
-    const qr = await Promise.allSettled(
-      quotedJobsList.map(j =>
-        trpcQuery('quotations.listForJob', { jobId: j.id }).then(qs => ({ jobId: j.id, qs: qs || [] }))
-      )
-    );
-    qr.forEach(r => {
-      if (r.status !== 'fulfilled') return;
-      const { jobId, qs } = r.value;
-      quoteMetaMap.set(jobId, {
-        isSent:     qs.some(q => q.status && q.status !== ''),
-        isApproved: qs.some(q => q.status === 'approved'),
-      });
-    });
-  }
+  /* ── 2. Quote state map ── */
+  // state: 'loading' | 'none' | 'draft' | 'sent' | 'booked'
+  const quoteMap = new Map();
+  failedJobs.forEach(j => quoteMap.set(j.id, { state: 'loading', bookedJobNo: null, total: null }));
 
-  let failedFilter = 'all';  // 'all' | 'quoted' | 'not_quoted'
-  let quoteFilter  = 'all';  // 'all' | 'accepted' | 'not_accepted' | 'sent' | 'not_sent'
-
+  let _fjFilter = 'all';
   daySearch = ''; dayEngFilter = ''; dayStatusFilter = '';
   const filterBar   = document.getElementById('day-filter-bar');
   const statusTabEl = document.getElementById('day-status-tabs');
+  if (statusTabEl) statusTabEl.innerHTML = '';
 
-  const applyFailedFilter = () => {
+  /* ── 3. CSS ── */
+  if (!document.getElementById('fj-css')) {
+    const s = document.createElement('style');
+    s.id = 'fj-css';
+    s.textContent = `
+      .fj-kpis{display:flex;gap:8px;padding:8px 12px 4px;flex-wrap:wrap}
+      .fj-kpi{flex:1;min-width:100px;background:var(--surface);border:1px solid var(--border);border-radius:8px;
+               padding:8px 12px;cursor:pointer;transition:border-color .15s}
+      .fj-kpi:hover{border-color:#EF4444;opacity:.85}
+      .fj-kpi.fj-k-act{border-color:var(--fj-c,#EF4444);box-shadow:0 0 0 2px color-mix(in srgb,var(--fj-c,#EF4444) 18%,transparent)}
+      .fj-kpi-val{font-size:22px;font-weight:700;color:var(--fj-c,#EF4444)}
+      .fj-kpi-lbl{font-size:10px;color:var(--muted);margin-top:2px}
+      .fj-qpill{display:inline-block;padding:2px 7px;border-radius:12px;font-size:10px;font-weight:600;white-space:nowrap}
+      .fj-q-loading{background:var(--surface);color:var(--muted);border:1px solid var(--border)}
+      .fj-q-none{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+      .fj-q-draft{background:#f5f3ff;color:#7c3aed;border:1px solid #ddd6fe}
+      .fj-q-sent{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}
+      .fj-q-booked{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}
+      .fj-qbtn{padding:3px 8px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;
+               border:1px solid var(--border);background:var(--surface);color:var(--fg);white-space:nowrap}
+      .fj-qbtn:hover{background:var(--red);color:#fff;border-color:var(--red)}
+      @media(prefers-color-scheme:dark){
+        .fj-q-none{background:#450a0a;color:#fca5a5;border-color:#7f1d1d}
+        .fj-q-draft{background:#2e1065;color:#c4b5fd;border-color:#4c1d95}
+        .fj-q-sent{background:#1e3a5f;color:#93c5fd;border-color:#1e3a8a}
+        .fj-q-booked{background:#052e16;color:#86efac;border-color:#14532d}
+      }
+    `;
+    document.head.appendChild(s);
+  }
+
+  /* ── 4. Helpers ── */
+  const PILL_CFG = {
+    loading: { cls: 'fj-q-loading', text: '…' },
+    none:    { cls: 'fj-q-none',    text: '✗ No Quote' },
+    draft:   { cls: 'fj-q-draft',   text: '📋 Draft' },
+    sent:    { cls: 'fj-q-sent',    text: '📧 Sent' },
+    booked:  { cls: 'fj-q-booked',  text: '✓ Booked' },
+  };
+  const KPI_CFG = [
+    { key: 'all',    label: 'Total Failed',   color: '#EF4444' },
+    { key: 'none',   label: '✗ Needs Action', color: '#EF4444' },
+    { key: 'sent',   label: '📧 Quote Sent',   color: '#1d4ed8' },
+    { key: 'draft',  label: '📋 Draft Quote',  color: '#7c3aed' },
+    { key: 'booked', label: '✓ Sorted',        color: '#15803d' },
+  ];
+
+  function quoteStateFromArr(arr) {
+    if (!arr?.length) return { state: 'none', bookedJobNo: null };
+    const booked   = arr.find(q => q.bookedJobNo || q.booked_job_no || q.bookedAs || q.booked_as);
+    const accepted = arr.find(q => ['approved','accepted'].includes((q.status||'').toLowerCase()));
+    const sent     = arr.find(q => q.sentAt || q.sent_at || ['sent','viewed','pending'].includes((q.status||'').toLowerCase()));
+    if (booked || accepted) {
+      const jno = booked?.bookedJobNo || booked?.booked_job_no || booked?.bookedAs || accepted?.bookedJobNo || null;
+      return { state: 'booked', bookedJobNo: jno };
+    }
+    if (sent) return { state: 'sent', bookedJobNo: null };
+    return { state: 'draft', bookedJobNo: null };
+  }
+
+  function renderPill(state, bookedJobNo) {
+    const cfg = PILL_CFG[state] || PILL_CFG.none;
+    const label = state === 'booked' && bookedJobNo ? `✓ ${esc(bookedJobNo)}` : cfg.text;
+    return `<span class="fj-qpill ${cfg.cls}">${label}</span>`;
+  }
+
+  /* ── 5. KPI cards ── */
+  function getCounts() {
+    const c = { all: failedJobs.length, none: 0, draft: 0, sent: 0, booked: 0 };
+    quoteMap.forEach(v => { if (c[v.state] !== undefined) c[v.state]++; });
+    return c;
+  }
+
+  let _kpiDebounce = null;
+  function scheduleKpiRefresh() {
+    clearTimeout(_kpiDebounce);
+    _kpiDebounce = setTimeout(renderKpis, 120);
+  }
+
+  function renderKpis() {
+    if (!filterBar) return;
+    const c = getCounts();
+    const html = `<div id="fj-kpi-row" class="fj-kpis">` +
+      KPI_CFG.map(k => `<div class="fj-kpi${_fjFilter===k.key?' fj-k-act':''}" style="--fj-c:${k.color}" data-fjk="${k.key}">
+        <div class="fj-kpi-val">${c[k.key]??'—'}</div>
+        <div class="fj-kpi-lbl">${k.label}</div>
+      </div>`).join('') + `</div>`;
+    const existing = document.getElementById('fj-kpi-row');
+    if (existing) existing.outerHTML = html;
+    else filterBar.insertAdjacentHTML('afterbegin', html);
+    document.getElementById('fj-kpi-row')?.querySelectorAll('[data-fjk]').forEach(el =>
+      el.addEventListener('click', () => { _fjFilter = el.dataset.fjk; renderKpis(); applyFjFilter(); })
+    );
+  }
+
+  /* ── 6. Filter ── */
+  function applyFjFilter() {
     const q = daySearch.toLowerCase().trim();
     const gtrVisible = new Map();
     _dayRowMeta.forEach(({ tr, gtr, searchText, job: jb }) => {
       let show = true;
       if (q && !searchText.includes(q)) show = false;
-      if (show) {
-        if (failedFilter === 'quoted')     show = !!jb.quotation;
-        if (failedFilter === 'not_quoted') show = !jb.quotation;
-        if (show && failedFilter === 'quoted') {
-          const meta = quoteMetaMap.get(jb.id);
-          if (quoteFilter === 'accepted')     show = !!meta?.isApproved;
-          if (quoteFilter === 'not_accepted') show = !meta?.isApproved;
-          if (quoteFilter === 'sent')         show = !!meta?.isSent;
-          if (quoteFilter === 'not_sent')     show = !meta?.isSent;
-        }
+      if (show && _fjFilter !== 'all') {
+        const qs = quoteMap.get(jb.id);
+        show = qs?.state === _fjFilter;
       }
       tr.style.visibility = show ? '' : 'collapse';
       if (gtr) { if (show) gtrVisible.set(gtr, true); else if (!gtrVisible.has(gtr)) gtrVisible.set(gtr, false); }
     });
     _dayRowMeta.forEach(({ gtr }) => { if (gtr) gtr.style.display = gtrVisible.get(gtr) ? '' : 'none'; });
-  };
+  }
 
-  const renderQuoteSubs = () => {
-    if (!statusTabEl) return;
-    if (failedFilter !== 'quoted') { statusTabEl.innerHTML = ''; return; }
-    const sentCnt     = quotedJobsList.filter(j => quoteMetaMap.get(j.id)?.isSent).length;
-    const acceptedCnt = quotedJobsList.filter(j => quoteMetaMap.get(j.id)?.isApproved).length;
-    const tabs = [
-      { key: 'all',          label: 'All Quoted',     cnt: quotedJobsList.length          },
-      { key: 'accepted',     label: '✓ Accepted',      cnt: acceptedCnt                    },
-      { key: 'not_accepted', label: '✗ Not Accepted',  cnt: quotedJobsList.length - acceptedCnt },
-      { key: 'sent',         label: '📧 Sent',          cnt: sentCnt                        },
-      { key: 'not_sent',     label: '📋 Not Sent',      cnt: quotedJobsList.length - sentCnt },
-    ];
-    statusTabEl.innerHTML = tabs.map(t =>
-      `<button class="dst${quoteFilter === t.key ? ' dst-active' : ''}" data-qflt="${t.key}">${esc(t.label)} <span class="dst-badge">${t.cnt}</span></button>`
-    ).join('');
-    statusTabEl.querySelectorAll('[data-qflt]').forEach(btn =>
-      btn.addEventListener('click', () => { quoteFilter = btn.dataset.qflt; renderQuoteSubs(); applyFailedFilter(); })
-    );
-  };
-
-  const renderTopFilters = () => {
-    if (!filterBar) return;
-    const topTabs = [
-      { key: 'all',        label: 'All',       cnt: failedJobs.length                       },
-      { key: 'quoted',     label: '💼 Quoted',  cnt: quotedJobsList.length                   },
-      { key: 'not_quoted', label: 'No Quote',  cnt: failedJobs.length - quotedJobsList.length },
-    ];
-    filterBar.innerHTML = `
-      <div class="dfb-search">
-        <input type="text" id="dfb-q" class="dfb-inp" placeholder="Search address, client, ref, description, phone…">
-      </div>
-      <div style="display:flex;gap:4px;flex-wrap:wrap">
-        ${topTabs.map(t => `<button class="dst${failedFilter === t.key ? ' dst-active' : ''}" data-fflt="${t.key}">${esc(t.label)} <span class="dst-badge">${t.cnt}</span></button>`).join('')}
-      </div>`;
-    document.getElementById('dfb-q').addEventListener('input', e => { daySearch = e.target.value; applyFailedFilter(); });
-    filterBar.querySelectorAll('[data-fflt]').forEach(btn =>
-      btn.addEventListener('click', () => {
-        failedFilter = btn.dataset.fflt;
-        if (failedFilter !== 'quoted') quoteFilter = 'all';
-        renderTopFilters();
-        renderQuoteSubs();
-        applyFailedFilter();
-      })
-    );
-  };
-
-  renderTopFilters();
-  renderQuoteSubs();
-
-  // Build table
+  /* ── 7. Build table ── */
   const byDate = new Map();
   failedJobs.forEach(job => {
-    const date = (job.date || job.scheduledDate || job.scheduled_date || job.visitPlan?.date || '').slice(0, 10);
-    const key = date || 'unscheduled';
+    const key = (job.scheduled_date || job.date || '').slice(0, 10) || 'unscheduled';
     if (!byDate.has(key)) byDate.set(key, []);
     byDate.get(key).push(job);
   });
-  const sortedDates = [...byDate.keys()]
-    .sort((a, b) => b === 'unscheduled' ? -1 : a === 'unscheduled' ? 1 : b.localeCompare(a));
+  const sortedDates = [...byDate.keys()].sort((a,b) =>
+    b==='unscheduled'?-1:a==='unscheduled'?1:b.localeCompare(a));
 
   _dayRowMeta = [];
   const table = document.createElement('table');
   table.className = 'day-table';
-  table.style.minWidth = '1270px';
-  const thead = document.createElement('thead');
-  thead.innerHTML = `<tr>
+  table.style.minWidth = '1300px';
+  table.innerHTML = `<thead><tr>
     <th style="width:130px">Engineer</th>
-    <th style="width:120px">Job / Type</th>
-    <th style="width:220px">Address</th>
-    <th>Description</th>
-    <th style="width:80px">Access</th>
-    <th style="width:100px">Time</th>
-    <th style="width:74px;text-align:right">Amount</th>
-    <th style="width:110px">Client</th>
-    <th style="width:130px">Phone</th>
-    <th style="width:110px">Status</th>
-    <th style="width:96px"></th>
-  </tr>`;
-  table.appendChild(thead);
+    <th style="width:115px">Job / Type</th>
+    <th style="width:210px">Address</th>
+    <th>Title</th>
+    <th style="width:120px">Client</th>
+    <th style="width:70px;text-align:right">Price</th>
+    <th style="width:88px">Date</th>
+    <th style="width:138px">Quote Status</th>
+    <th style="width:112px"></th>
+  </tr></thead>`;
 
   const tbody = document.createElement('tbody');
   sortedDates.forEach(dateKey => {
@@ -5747,33 +5764,61 @@ async function loadFailedJobsView() {
     const bannerTr = document.createElement('tr');
     bannerTr.className = 'at-date-banner-row';
     const bannerTd = document.createElement('td');
-    bannerTd.colSpan = 11;
+    bannerTd.colSpan = 9;
     if (dateKey === 'unscheduled') {
       bannerTd.innerHTML = `Unscheduled <span class="at-date-banner-cnt">${jobs.length}</span>`;
     } else {
       const d = new Date(dateKey + 'T00:00:00');
-      const dateStr = d.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
-      bannerTd.innerHTML = `${esc(dateStr)}&nbsp;<span class="at-date-banner-cnt">${jobs.length}</span>`;
+      bannerTd.innerHTML = esc(d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})) +
+        `&nbsp;<span class="at-date-banner-cnt">${jobs.length}</span>`;
     }
     bannerTr.appendChild(bannerTd);
     tbody.appendChild(bannerTr);
 
     jobs.forEach(job => {
-      const eng   = job.engineer || job.assignedEngineer || null;
-      const engId = eng?.id || '';
-      const tr = dayRow(job, eng, null);
-      tr.draggable = false;
-      const engTd = document.createElement('td');
+      const eng     = job.engineer || null;
+      const engId   = eng?.id || '';
       const engName = eng?.name || 'Unassigned';
       const color   = engColor(engId);
-      engTd.style.cssText = 'width:130px;vertical-align:middle;padding:4px 8px';
-      engTd.innerHTML = `<span style="display:inline-flex;align-items:center;gap:5px;max-width:120px;overflow:hidden">
-        <span class="eng-dot" style="background:${color};flex-shrink:0"></span>
-        <span style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(engName)}</span>
-      </span>`;
-      tr.insertBefore(engTd, tr.firstChild);
+      const addr    = job.property?.address || '—';
+      const pc      = job.property?.postcode || '';
+      const client  = job.contact?.name || job.contact_snapshot?.name || '—';
+      const price   = job.price ? `£${parseFloat(job.price).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}` : '—';
+      const dateStr = dateKey==='unscheduled' ? '—' : new Date(dateKey+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+
+      const tr = document.createElement('tr');
+      tr.className = 'day-row';
+      tr.style.cursor = 'pointer';
+      tr.addEventListener('click', () => openJobDetail(job.id));
+      tr.innerHTML = `
+        <td style="vertical-align:middle;padding:4px 8px">
+          <span style="display:inline-flex;align-items:center;gap:5px;max-width:120px;overflow:hidden">
+            <span class="eng-dot" style="background:${color};flex-shrink:0"></span>
+            <span style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(engName)}</span>
+          </span>
+        </td>
+        <td style="vertical-align:middle;padding:4px 8px">
+          <div style="font-size:11px;font-weight:600">${esc(job.job_no||'')}</div>
+          <div style="font-size:10px;color:var(--muted)">${esc(job.trade||'Electrical')}</div>
+        </td>
+        <td style="vertical-align:middle;padding:4px 8px">
+          <div style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(addr)}">${esc(addr)}</div>
+          ${pc?`<div style="font-size:10px;color:var(--muted)">${esc(pc)}</div>`:''}
+        </td>
+        <td style="vertical-align:middle;padding:4px 8px">
+          <div style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px" title="${esc(job.title||'')}">${esc(job.title||'')}</div>
+        </td>
+        <td style="vertical-align:middle;padding:4px 8px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(client)}">${esc(client)}</td>
+        <td style="vertical-align:middle;padding:4px 8px;font-size:11px;text-align:right">${price}</td>
+        <td style="vertical-align:middle;padding:4px 8px;font-size:11px">${esc(dateStr)}</td>
+        <td style="vertical-align:middle;padding:4px 8px" data-quote-pill="${job.id}">${renderPill('loading',null)}</td>
+        <td style="vertical-align:middle;padding:4px 8px;text-align:right;white-space:nowrap">
+          <button class="fj-qbtn" onclick="event.stopPropagation();openJobDetail('${job.id}')" title="View / create quotation">📋 Quote</button>
+          <a href="${BASE}/office/jobs/${job.id}" target="_blank" onclick="event.stopPropagation()"
+             style="margin-left:4px;padding:3px 7px;border-radius:5px;font-size:10px;font-weight:600;background:var(--red);color:#fff;text-decoration:none;display:inline-block">↗</a>
+        </td>`;
       tbody.appendChild(tr);
-      _dayRowMeta.push({ tr, gtr: bannerTr, engId, searchText: buildSearchText(job, eng), status: jobStatus(job), job });
+      _dayRowMeta.push({ tr, gtr: bannerTr, engId, searchText: buildSearchText(job, eng), status: 'failed', job });
     });
   });
 
@@ -5783,7 +5828,42 @@ async function loadFailedJobsView() {
   wrap.appendChild(table);
   body.innerHTML = '';
   body.appendChild(wrap);
-  applyFailedFilter();
+
+  /* ── 8. Filter bar (search) ── */
+  if (filterBar) {
+    filterBar.innerHTML = `<div class="dfb-search">
+      <input type="text" id="dfb-q" class="dfb-inp" placeholder="Search address, client, job no, description…">
+    </div>`;
+    document.getElementById('dfb-q')?.addEventListener('input', e => { daySearch = e.target.value; applyFjFilter(); });
+  }
+  renderKpis();
+
+  /* ── 9. Load quotations in background — update pills progressively ── */
+  let _pillTimer = null;
+  function schedulePillRefresh() {
+    clearTimeout(_pillTimer);
+    _pillTimer = setTimeout(() => { scheduleKpiRefresh(); applyFjFilter(); }, 80);
+  }
+
+  failedJobs.forEach(job => {
+    trpcQuery('quotations.listForJob', { jobId: job.id })
+      .then(raw => {
+        const arr = Array.isArray(raw) ? raw : (raw?.quotations || raw?.items || []);
+        const { state, bookedJobNo } = quoteStateFromArr(arr);
+        const qst = quoteMap.get(job.id);
+        if (qst) { qst.state = state; qst.bookedJobNo = bookedJobNo; }
+        const pill = document.querySelector(`[data-quote-pill="${job.id}"]`);
+        if (pill) pill.innerHTML = renderPill(state, bookedJobNo);
+        schedulePillRefresh();
+      })
+      .catch(() => {
+        const qst = quoteMap.get(job.id);
+        if (qst) qst.state = 'none';
+        const pill = document.querySelector(`[data-quote-pill="${job.id}"]`);
+        if (pill) pill.innerHTML = renderPill('none', null);
+        schedulePillRefresh();
+      });
+  });
 }
 
 // ── INVOICE / STATEMENT STATE ─────────────────────────────────────────────────
