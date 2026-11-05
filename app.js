@@ -5593,15 +5593,15 @@ async function loadFailedJobsView() {
   const dayLabel = document.getElementById('day-label');
   if (dayLabel) dayLabel.textContent = 'Failed Jobs';
 
-  /* ── 1. Load all failed jobs directly (fast) ── */
+  /* ── 1. Load all jobs, filter failed client-side ── */
   const failedJobs = [];
   try {
     let offset = 0;
     while (true) {
-      const r = await trpcQuery('jobs.list', { pageSize: 100, status: 'Failed', offset });
-      const batch = r?.jobs || [];
-      failedJobs.push(...batch);
-      if (batch.length < 100) break;
+      const r = await trpcQuery('jobs.list', { pageSize: 100, offset });
+      const page = r?.jobs || [];
+      failedJobs.push(...page.filter(j => (j.status || '').toLowerCase() === 'failed'));
+      if (page.length < 100) break;
       offset += 100;
     }
   } catch(e) {
