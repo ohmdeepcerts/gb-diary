@@ -5713,10 +5713,32 @@ async function loadFailedJobsView() {
       (priceStr ? `<div class="fj-q-price">${priceStr}</div>` : '');
   }
 
-  function downloadQuotePdf(quoteId, quoteNo, addr, pc) {
-    // Cross-origin fetch is blocked by CORS from github.io; open the PDF URL directly in a new
-    // tab — the browser sends session cookies on navigation so auth is preserved automatically.
-    window.open(`${BASE}/office/quotations/${quoteId}/pdf`, '_blank');
+  async function downloadQuotePdf(quoteId, quoteNo, addr, pc) {
+    const no = quoteNo || quoteId.slice(0, 8);
+    const safeName = `QUO-${no} ${addr}${pc ? ' ' + pc : ''}.pdf`.replace(/[/\\?%*:|"<>]/g, '-');
+    try {
+      // quotations.pdf tRPC returns { url: "/files/preview/...pdf?exp=...&sig=..." }
+      const pdfData = await trpcQuery('quotations.pdf', { id: quoteId });
+      const relUrl = pdfData?.url;
+      if (relUrl) {
+        const absUrl = `${BASE}${relUrl}`;
+        try {
+          const r = await fetch(absUrl);
+          if (r.ok) {
+            const blob = await r.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl; a.download = safeName; a.click();
+            URL.revokeObjectURL(blobUrl);
+            return;
+          }
+        } catch {}
+        // Fallback: open PDF URL directly in new tab
+        window.open(absUrl, '_blank');
+        return;
+      }
+    } catch {}
+    window.open(`${BASE}/office/quotations/${quoteId}`, '_blank');
   }
 
   /* ── 5. KPI cards ── */
