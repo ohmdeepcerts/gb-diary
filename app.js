@@ -5713,24 +5713,10 @@ async function loadFailedJobsView() {
       (priceStr ? `<div class="fj-q-price">${priceStr}</div>` : '');
   }
 
-  async function downloadQuotePdf(quoteId, quoteNo, addr, pc) {
-    const no = quoteNo || quoteId.slice(0,8);
-    const safeName = `QUO-${no} ${addr}${pc?' '+pc:''}.pdf`.replace(/[/\\?%*:|"<>]/g,'-');
-    try {
-      const r = await fetch(`${BASE}/office/quotations/${quoteId}/pdf`, { credentials: 'include' });
-      if (r.ok) {
-        const ct = r.headers.get('content-type') || '';
-        if (ct.includes('pdf') || ct.includes('octet')) {
-          const blob = await r.blob();
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url; a.download = safeName; a.click();
-          URL.revokeObjectURL(url);
-          return;
-        }
-      }
-    } catch {}
-    window.open(`${BASE}/office/quotations/${quoteId}`, '_blank');
+  function downloadQuotePdf(quoteId, quoteNo, addr, pc) {
+    // Cross-origin fetch is blocked by CORS from github.io; open the PDF URL directly in a new
+    // tab — the browser sends session cookies on navigation so auth is preserved automatically.
+    window.open(`${BASE}/office/quotations/${quoteId}/pdf`, '_blank');
   }
 
   /* ── 5. KPI cards ── */
