@@ -5614,9 +5614,10 @@ async function loadFailedJobsView() {
   /* ── 2. Quote state map ── */
   // state: 'loading' | 'none' | 'draft' | 'sent' | 'booked'
   const quoteMap = new Map();
-  failedJobs.forEach(j => quoteMap.set(j.id, { state: 'loading', bookedJobNo: null, total: null }));
+  failedJobs.forEach(j => quoteMap.set(j.id, { state: 'loading', bookedJobNo: null, total: null, quoteId: null, quoteNo: null }));
 
   let _fjFilter = 'all';
+  let _fjContactTypes = new Set();
   daySearch = ''; dayEngFilter = ''; dayStatusFilter = '';
   const filterBar   = document.getElementById('day-filter-bar');
   const statusTabEl = document.getElementById('day-status-tabs');
@@ -5643,11 +5644,23 @@ async function loadFailedJobsView() {
       .fj-qbtn{padding:3px 8px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;
                border:1px solid var(--border);background:var(--surface);color:var(--fg);white-space:nowrap}
       .fj-qbtn:hover{background:var(--red);color:#fff;border-color:var(--red)}
+      .fj-q-price{font-size:10px;color:var(--muted);margin-top:2px;white-space:nowrap;font-weight:600}
+      .fj-dl-btn{padding:3px 7px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;
+                 border:1px solid #3b82f6;background:transparent;color:#3b82f6;white-space:nowrap;margin-left:3px}
+      .fj-dl-btn:hover{background:#3b82f6;color:#fff}
+      .fj-ct-row{display:flex;gap:5px;padding:4px 12px 6px;align-items:center;flex-wrap:wrap}
+      .fj-ct-lbl{font-size:11px;color:var(--muted);white-space:nowrap;margin-right:2px}
+      .fj-ct-chip{padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;
+                  border:1px solid var(--border);background:var(--surface);color:var(--muted);transition:all .15s}
+      .fj-ct-chip:hover{border-color:var(--accent);color:var(--accent)}
+      .fj-ct-chip.fj-ct-act{background:var(--accent,#3b82f6);border-color:var(--accent,#3b82f6);color:#fff}
       @media(prefers-color-scheme:dark){
         .fj-q-none{background:#450a0a;color:#fca5a5;border-color:#7f1d1d}
         .fj-q-draft{background:#2e1065;color:#c4b5fd;border-color:#4c1d95}
         .fj-q-sent{background:#1e3a5f;color:#93c5fd;border-color:#1e3a8a}
         .fj-q-booked{background:#052e16;color:#86efac;border-color:#14532d}
+        .fj-dl-btn{border-color:#60a5fa;color:#60a5fa}
+        .fj-dl-btn:hover{background:#60a5fa;color:#0f172a}
       }
     `;
     document.head.appendChild(s);
@@ -5670,22 +5683,54 @@ async function loadFailedJobsView() {
   ];
 
   function quoteStateFromArr(arr) {
-    if (!arr?.length) return { state: 'none', bookedJobNo: null };
+    if (!arr?.length) return { state: 'none', bookedJobNo: null, quoteId: null, quoteNo: null, total: null };
     const booked   = arr.find(q => q.bookedJobNo || q.booked_job_no || q.bookedAs || q.booked_as);
     const accepted = arr.find(q => ['approved','accepted'].includes((q.status||'').toLowerCase()));
     const sent     = arr.find(q => q.sentAt || q.sent_at || ['sent','viewed','pending'].includes((q.status||'').toLowerCase()));
+    const best = booked || accepted || sent || arr[0];
+    const quoteId = best?.id || null;
+    const quoteNo = best?.quotation_no || best?.quote_no || best?.number || best?.quoteNumber || best?.quote_number || null;
+    const rawTotal = best?.total ?? best?.amount ?? best?.price ?? null;
+    const total = rawTotal != null ? parseFloat(rawTotal) : null;
     if (booked || accepted) {
       const jno = booked?.bookedJobNo || booked?.booked_job_no || booked?.bookedAs || accepted?.bookedJobNo || null;
-      return { state: 'booked', bookedJobNo: jno };
+      return { state: 'booked', bookedJobNo: jno, quoteId, quoteNo, total };
     }
-    if (sent) return { state: 'sent', bookedJobNo: null };
-    return { state: 'draft', bookedJobNo: null };
+    if (sent) return { state: 'sent', bookedJobNo: null, quoteId, quoteNo, total };
+    return { state: 'draft', bookedJobNo: null, quoteId, quoteNo, total };
   }
 
   function renderPill(state, bookedJobNo) {
     const cfg = PILL_CFG[state] || PILL_CFG.none;
     const label = state === 'booked' && bookedJobNo ? `✓ ${esc(bookedJobNo)}` : cfg.text;
     return `<span class="fj-qpill ${cfg.cls}">${label}</span>`;
+  }
+
+  function renderQuoteCell(state, bookedJobNo, total) {
+    const priceStr = (total != null && !isNaN(total) && state !== 'none' && state !== 'loading')
+      ? `£${total.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})}` : '';
+    return renderPill(state, bookedJobNo) +
+      (priceStr ? `<div class="fj-q-price">${priceStr}</div>` : '');
+  }
+
+  async function downloadQuotePdf(quoteId, quoteNo, addr, pc) {
+    const no = quoteNo || quoteId.slice(0,8);
+    const safeName = `QUO-${no} ${addr}${pc?' '+pc:''}.pdf`.replace(/[/\\?%*:|"<>]/g,'-');
+    try {
+      const r = await fetch(`${BASE}/office/quotations/${quoteId}/pdf`, { credentials: 'include' });
+      if (r.ok) {
+        const ct = r.headers.get('content-type') || '';
+        if (ct.includes('pdf') || ct.includes('octet')) {
+          const blob = await r.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = safeName; a.click();
+          URL.revokeObjectURL(url);
+          return;
+        }
+      }
+    } catch {}
+    window.open(`${BASE}/office/quotations/${quoteId}`, '_blank');
   }
 
   /* ── 5. KPI cards ── */
@@ -5728,6 +5773,10 @@ async function loadFailedJobsView() {
         const qs = quoteMap.get(jb.id);
         show = qs?.state === _fjFilter;
       }
+      if (show && _fjContactTypes.size > 0) {
+        const ct = (jb.contact_type || jb.contactType || jb.contact?.type || jb.contact_snapshot?.type || '').toLowerCase();
+        show = [..._fjContactTypes].some(f => ct.includes(f));
+      }
       tr.style.visibility = show ? '' : 'collapse';
       if (gtr) { if (show) gtrVisible.set(gtr, true); else if (!gtrVisible.has(gtr)) gtrVisible.set(gtr, false); }
     });
@@ -5756,8 +5805,8 @@ async function loadFailedJobsView() {
     <th style="width:120px">Client</th>
     <th style="width:70px;text-align:right">Price</th>
     <th style="width:88px">Date</th>
-    <th style="width:138px">Quote Status</th>
-    <th style="width:112px"></th>
+    <th style="width:138px">Quote / Price</th>
+    <th style="width:150px"></th>
   </tr></thead>`;
 
   const tbody = document.createElement('tbody');
@@ -5813,9 +5862,10 @@ async function loadFailedJobsView() {
         <td style="vertical-align:middle;padding:4px 8px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(client)}">${esc(client)}</td>
         <td style="vertical-align:middle;padding:4px 8px;font-size:11px;text-align:right">${price}</td>
         <td style="vertical-align:middle;padding:4px 8px;font-size:11px">${esc(dateStr)}</td>
-        <td style="vertical-align:middle;padding:4px 8px" data-quote-pill="${job.id}">${renderPill('loading',null)}</td>
+        <td style="vertical-align:middle;padding:4px 8px" data-quote-pill="${job.id}">${renderQuoteCell('loading',null,null)}</td>
         <td style="vertical-align:middle;padding:4px 8px;text-align:right;white-space:nowrap">
           <button class="fj-qbtn" onclick="event.stopPropagation();openJobDetail('${job.id}')" title="View / create quotation">📋 Quote</button>
+          <button class="fj-dl-btn" data-quote-dl="${job.id}" style="display:none" title="Download quotation PDF" onclick="event.stopPropagation()">⬇ PDF</button>
           <a href="${BASE}/office/jobs/${job.id}" target="_blank" onclick="event.stopPropagation()"
              style="margin-left:4px;padding:3px 7px;border-radius:5px;font-size:10px;font-weight:600;background:var(--red);color:#fff;text-decoration:none;display:inline-block">↗</a>
         </td>`;
@@ -5835,8 +5885,23 @@ async function loadFailedJobsView() {
   if (filterBar) {
     filterBar.innerHTML = `<div class="dfb-search">
       <input type="text" id="dfb-q" class="dfb-inp" placeholder="Search address, client, job no, description…">
+    </div>
+    <div class="fj-ct-row">
+      <span class="fj-ct-lbl">Contact:</span>
+      <button class="fj-ct-chip" data-ct="landlord">Landlord</button>
+      <button class="fj-ct-chip" data-ct="builder">Builder</button>
+      <button class="fj-ct-chip" data-ct="agent">Agent</button>
+      <button class="fj-ct-chip" data-ct="agency">Agency</button>
     </div>`;
     document.getElementById('dfb-q')?.addEventListener('input', e => { daySearch = e.target.value; applyFjFilter(); });
+    filterBar.querySelectorAll('.fj-ct-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const ct = btn.dataset.ct;
+        if (_fjContactTypes.has(ct)) _fjContactTypes.delete(ct); else _fjContactTypes.add(ct);
+        filterBar.querySelectorAll('.fj-ct-chip').forEach(b => b.classList.toggle('fj-ct-act', _fjContactTypes.has(b.dataset.ct)));
+        applyFjFilter();
+      });
+    });
   }
   renderKpis();
 
@@ -5851,18 +5916,27 @@ async function loadFailedJobsView() {
     trpcQuery('quotations.listForJob', { jobId: job.id })
       .then(raw => {
         const arr = Array.isArray(raw) ? raw : (raw?.quotations || raw?.items || []);
-        const { state, bookedJobNo } = quoteStateFromArr(arr);
+        const { state, bookedJobNo, quoteId, quoteNo, total } = quoteStateFromArr(arr);
         const qst = quoteMap.get(job.id);
-        if (qst) { qst.state = state; qst.bookedJobNo = bookedJobNo; }
-        const pill = document.querySelector(`[data-quote-pill="${job.id}"]`);
-        if (pill) pill.innerHTML = renderPill(state, bookedJobNo);
+        if (qst) Object.assign(qst, { state, bookedJobNo, quoteId, quoteNo, total });
+        const cell = document.querySelector(`[data-quote-pill="${job.id}"]`);
+        if (cell) cell.innerHTML = renderQuoteCell(state, bookedJobNo, total);
+        if (quoteId && state !== 'none') {
+          const dlBtn = document.querySelector(`[data-quote-dl="${job.id}"]`);
+          if (dlBtn) {
+            const addr = job.property?.address || '';
+            const pc   = job.property?.postcode || '';
+            dlBtn.style.display = '';
+            dlBtn.onclick = e => { e.stopPropagation(); downloadQuotePdf(quoteId, quoteNo, addr, pc); };
+          }
+        }
         schedulePillRefresh();
       })
       .catch(() => {
         const qst = quoteMap.get(job.id);
         if (qst) qst.state = 'none';
-        const pill = document.querySelector(`[data-quote-pill="${job.id}"]`);
-        if (pill) pill.innerHTML = renderPill('none', null);
+        const cell = document.querySelector(`[data-quote-pill="${job.id}"]`);
+        if (cell) cell.innerHTML = renderQuoteCell('none', null, null);
         schedulePillRefresh();
       });
   });
