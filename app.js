@@ -5714,8 +5714,8 @@ async function loadFailedJobsView() {
   }
 
   async function downloadQuotePdf(quoteId, quoteNo, addr, pc) {
-    const no = quoteNo || quoteId.slice(0, 8);
-    const safeName = `QUO-${no} ${addr}${pc ? ' ' + pc : ''}.pdf`.replace(/[/\\?%*:|"<>]/g, '-');
+    const rawNo = (quoteNo || quoteId.slice(0, 8)).replace(/^QUO-/i, '');
+    const safeName = `QUO-${rawNo} ${addr}${pc ? ' ' + pc : ''}.pdf`.replace(/[/\\?%*:|"<>]/g, '-');
     try {
       // Get the signed /files/preview/... URL via CORS-enabled tRPC endpoint
       const pdfData = await trpcQuery('quotations.pdf', { id: quoteId });
