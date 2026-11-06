@@ -5717,24 +5717,24 @@ async function loadFailedJobsView() {
     const no = quoteNo || quoteId.slice(0, 8);
     const safeName = `QUO-${no} ${addr}${pc ? ' ' + pc : ''}.pdf`.replace(/[/\\?%*:|"<>]/g, '-');
     try {
-      // quotations.pdf tRPC returns { url: "/files/preview/...pdf?exp=...&sig=..." }
+      // Get the signed /files/preview/... URL via CORS-enabled tRPC endpoint
       const pdfData = await trpcQuery('quotations.pdf', { id: quoteId });
-      const relUrl = pdfData?.url;
+      const relUrl = pdfData?.url; // e.g. /files/preview/{uuid}/{hash}.pdf?exp=...&sig=...
       if (relUrl) {
-        const absUrl = `${BASE}${relUrl}`;
-        try {
-          const r = await fetch(absUrl);
-          if (r.ok) {
-            const blob = await r.blob();
-            const blobUrl = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = blobUrl; a.download = safeName; a.click();
-            URL.revokeObjectURL(blobUrl);
-            return;
-          }
-        } catch {}
-        // Fallback: open PDF URL directly in new tab
-        window.open(absUrl, '_blank');
+        // Route through gb-proxy (already has CORS + proxies /files/ paths)
+        // Proxy doesn't forward Content-Disposition so we control the download filename
+        const proxyUrl = `https://gb-proxy.gbmandeep.workers.dev${relUrl}`;
+        const r = await fetch(proxyUrl);
+        if (r.ok) {
+          const blob = await r.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl; a.download = safeName; a.click();
+          URL.revokeObjectURL(blobUrl);
+          return;
+        }
+        // Fallback: open the signed URL directly in a new tab
+        window.open(`${BASE}${relUrl}`, '_blank');
         return;
       }
     } catch {}
