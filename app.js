@@ -5872,8 +5872,8 @@ async function loadFailedJobsView() {
         <td style="vertical-align:middle;padding:4px 8px;font-size:11px">${esc(dateStr)}</td>
         <td style="vertical-align:middle;padding:4px 8px" data-quote-pill="${job.id}">${renderQuoteCell('loading',null,null)}</td>
         <td style="vertical-align:middle;padding:4px 8px;text-align:right;white-space:nowrap">
+          <button class="fj-dl-btn" data-quote-dl="${job.id}" style="visibility:hidden" title="Download quotation PDF" onclick="event.stopPropagation()">⬇ PDF</button>
           <button class="fj-qbtn" onclick="event.stopPropagation();openJobDetail('${job.id}')" title="View / create quotation">📋 Quote</button>
-          <button class="fj-dl-btn" data-quote-dl="${job.id}" style="display:none" title="Download quotation PDF" onclick="event.stopPropagation()">⬇ PDF</button>
           <a href="${BASE}/office/jobs/${job.id}" target="_blank" onclick="event.stopPropagation()"
              style="margin-left:4px;padding:3px 7px;border-radius:5px;font-size:10px;font-weight:600;background:var(--red);color:#fff;text-decoration:none;display:inline-block">↗</a>
         </td>`;
@@ -5934,7 +5934,7 @@ async function loadFailedJobsView() {
           if (dlBtn) {
             const addr = job.property?.address || '';
             const pc   = job.property?.postcode || '';
-            dlBtn.style.display = '';
+            dlBtn.style.visibility = '';
             dlBtn.onclick = e => { e.stopPropagation(); downloadQuotePdf(quoteId, quoteNo, addr, pc); };
           }
         }
