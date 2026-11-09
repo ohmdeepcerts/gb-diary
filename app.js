@@ -8503,11 +8503,20 @@ function _renderCerts() {
         pdfBtn.disabled = true; pdfBtn.textContent = '⏳';
         try {
           const r = await trpcQuery('certs.pdf', { id: c.id });
-          if (r && r.url) {
-            const url = r.url.startsWith('http') ? r.url : BASE + r.url;
-            window.open(url, '_blank');
-          } else alert('No PDF URL returned');
-        } catch(err) { alert('Could not get PDF: ' + err.message); }
+          if (!r || !r.url) { alert('No PDF URL returned'); pdfBtn.disabled = false; pdfBtn.textContent = '📥 PDF'; return; }
+          const fetchUrl = PROXY + r.url;
+          const res = await fetch(fetchUrl, { credentials: 'include' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const certTypeName = (c.cert_type_name || c.cert_type_id || 'Certificate').toUpperCase();
+          const propAddr = [(c.property && c.property.address), (c.property && c.property.postcode)].filter(Boolean).join(', ') || 'property';
+          const filename = certTypeName + ' - ' + propAddr.replace(/[/\\?%*:|"<>]/g, '') + '.pdf';
+          const a = document.createElement('a');
+          a.href = blobUrl; a.download = filename;
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 10000);
+        } catch(err) { alert('Download failed: ' + err.message); }
         pdfBtn.disabled = false; pdfBtn.textContent = '📥 PDF';
       });
       actTd.appendChild(pdfBtn);
