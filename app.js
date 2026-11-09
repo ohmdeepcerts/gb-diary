@@ -2534,20 +2534,16 @@ function buildJobDetail(data, jobId) {
   body.appendChild(certSection);
 
   (async function() {
-    const SUPA_URL = 'https://iihnfgmsfshrgrhargxz.supabase.co';
-    const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlpaG5mZ21zZnNocmdyaGFyZ3h6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzNTA1MDAsImV4cCI6MjEwMzkyNjUwMH0.h3N4tW20cByuA28lmbYd5iSsfJoQ7lelvzWDKHMfK5Q';
-
-    async function getEmailSent(postcode) {
-      if (!postcode) return null;
+    async function getEmailSent(certId) {
+      if (!certId) return null;
       try {
-        const r = await fetch(SUPA_URL + '/rest/v1/rpc/get_cert_last_email', {
-          method: 'POST',
-          headers: { 'apikey': SUPA_ANON, 'Authorization': 'Bearer ' + SUPA_ANON, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ p_postcode: postcode })
-        });
+        const r = await fetch('/trpc/audit.list?input=' + encodeURIComponent(JSON.stringify({json:{entityId: certId, limit: 50}})), {credentials:'include'});
         if (!r.ok) return null;
-        const rows = await r.json();
-        return (rows && rows[0]) ? rows[0] : null;
+        const d = await r.json();
+        const rows = d?.result?.data?.json?.rows || [];
+        const sent = rows.find(function(row) { return row.action === 'cert.email_sent'; });
+        if (!sent) return null;
+        return { sent_at: sent.createdAt, to_email: sent.after && sent.after.to };
       } catch { return null; }
     }
 
@@ -2638,9 +2634,7 @@ function buildJobDetail(data, jobId) {
           } catch { releaseRow.innerHTML = ''; }
 
           try {
-            const isGasCert = (c.cert_type_id || '').toLowerCase().includes('gas');
-            const postcode = bd && bd.cert && bd.cert.property && bd.cert.property.postcode;
-            const emailInfo = (isGasCert && postcode) ? await getEmailSent(postcode) : null;
+            const emailInfo = await getEmailSent(c.id);
             emailRow.innerHTML = '';
 
             const emailBtn = document.createElement('button');
