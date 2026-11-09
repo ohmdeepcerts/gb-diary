@@ -8503,8 +8503,10 @@ function _renderCerts() {
         pdfBtn.disabled = true; pdfBtn.textContent = '⏳';
         try {
           const r = await trpcQuery('certs.pdf', { id: c.id });
-          if (r && r.url) window.open(r.url, '_blank');
-          else alert('No PDF URL returned');
+          if (r && r.url) {
+            const url = r.url.startsWith('http') ? r.url : BASE + r.url;
+            window.open(url, '_blank');
+          } else alert('No PDF URL returned');
         } catch(err) { alert('Could not get PDF: ' + err.message); }
         pdfBtn.disabled = false; pdfBtn.textContent = '📥 PDF';
       });
