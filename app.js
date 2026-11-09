@@ -2534,6 +2534,158 @@ function buildJobDetail(data, jobId) {
   body.appendChild(certSection);
 
   (async function() {
+    const SUPA_URL = 'https://iihnfgmsfshrgrhargxz.supabase.co';
+    const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlpaG5mZ21zZnNocmdyaGFyZ3h6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzNTA1MDAsImV4cCI6MjEwMzkyNjUwMH0.h3N4tW20cByuA28lmbYd5iSsfJoQ7lelvzWDKHMfK5Q';
+
+    async function getEmailSent(certRef) {
+      if (!certRef) return null;
+      let token = SUPA_ANON;
+      try { const s = JSON.parse(localStorage.getItem('sb-iihnfgmsfshrgrhargxz-auth-token') || 'null'); if (s && s.access_token) token = s.access_token; } catch {}
+      try {
+        const r = await fetch(SUPA_URL + '/rest/v1/email_sends?cert_ref=eq.' + encodeURIComponent(certRef) + '&order=created_at.desc&limit=1&select=created_at,to_email,sent_by', {
+          headers: { 'apikey': SUPA_ANON, 'Authorization': 'Bearer ' + token }
+        });
+        if (!r.ok) return null;
+        const rows = await r.json();
+        return (rows && rows[0]) ? rows[0] : null;
+      } catch { return null; }
+    }
+
+    const RELEASE_DEFS = [
+      { key: 'held',      label: '🔒 Held',         col: '#dc2626' },
+      { key: 'automatic', label: '🔁 Payment rule',  col: '#6366f1' },
+      { key: 'released',  label: '✅ Released',       col: '#16a34a' },
+    ];
+
+    function renderReleaseRow(container, currentState, certId) {
+      container.innerHTML = '<span style="font-size:10px;color:var(--text3);flex-shrink:0">Release:</span>';
+      RELEASE_DEFS.forEach(function(sd) {
+        const btn = document.createElement('button');
+        btn.textContent = sd.label;
+        const isActive = sd.key === currentState;
+        btn.style.cssText = 'padding:2px 6px;border-radius:4px;border:1px solid ' + sd.col + ';font-size:10px;font-weight:' + (isActive ? '700' : '400') + ';cursor:pointer;background:' + (isActive ? sd.col : 'transparent') + ';color:' + (isActive ? '#fff' : sd.col);
+        if (!isActive) {
+          btn.addEventListener('click', async function() {
+            const override = sd.key === 'automatic' ? null : sd.key;
+            if (!confirm('Change certificate release to "' + sd.label.replace(/^\S+ /, '') + '"?')) return;
+            btn.disabled = true;
+            try {
+              await trpcMutate('certs.setRelease', { id: certId, override: override });
+              const bd2 = await trpcQuery('certs.byId', { id: certId });
+              renderReleaseRow(container, (bd2 && bd2.release && bd2.release.release_state) || 'automatic', certId);
+            } catch (err) {
+              btn.disabled = false;
+              alert('Could not change release: ' + err.message);
+            }
+          });
+        }
+        container.appendChild(btn);
+      });
+    }
+
+    function buildCertRow(c) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;margin-bottom:4px;flex-wrap:wrap';
+
+      const info = document.createElement('div');
+      info.style.cssText = 'flex:1;min-width:0';
+      const pdfTag = c.has_pdf ? '<span style="color:#16a34a;font-weight:700">✓ PDF</span>' : '<span style="color:#ef4444;font-weight:700">✗ No PDF</span>';
+      const statusTag = c.status === 'issued' ? '<span style="color:#16a34a">Issued</span>' : '<span style="color:#f59e0b">' + esc(c.status) + '</span>';
+      info.innerHTML = '<span style="font-weight:600;color:var(--text)">' + esc(c.cert_type_name || c.cert_type_id || '?') + '</span>' +
+        (c.cert_no ? ' <span style="color:var(--text3);font-family:monospace;font-size:11px">' + esc(c.cert_no) + '</span>' : '') +
+        '  ' + statusTag + '  ' + pdfTag;
+      row.appendChild(info);
+
+      const uplBtn = document.createElement('button');
+      uplBtn.textContent = c.has_pdf ? '🔄 Replace PDF' : '⬆ Upload PDF';
+      uplBtn.style.cssText = 'padding:5px 10px;border-radius:5px;border:1px solid rgba(37,99,235,.35);background:rgba(37,99,235,.08);color:#2563eb;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0';
+      uplBtn.addEventListener('click', function() {
+        _attachCertPdf(c.id, c.cert_no || c.cert_type_name, function() {
+          certBody.textContent = 'Refreshing…';
+          trpcQuery('certs.list', { pageSize: 20, page: 1, jobId }).then(function(r2) {
+            certBody.innerHTML = '';
+            (r2.certs || []).forEach(function(c2) { certBody.appendChild(buildCertRow(c2)); });
+          }).catch(function() {});
+        });
+      });
+      row.appendChild(uplBtn);
+
+      if (c.status === 'issued') {
+        const releaseRow = document.createElement('div');
+        releaseRow.style.cssText = 'width:100%;display:flex;align-items:center;gap:4px;margin-top:5px;flex-wrap:wrap';
+        releaseRow.innerHTML = '<span style="font-size:10px;color:var(--text3)">Release: loading…</span>';
+        row.appendChild(releaseRow);
+
+        const emailRow = document.createElement('div');
+        emailRow.style.cssText = 'width:100%;display:flex;align-items:center;gap:6px;margin-top:3px;flex-wrap:wrap';
+        emailRow.innerHTML = '<span style="font-size:10px;color:var(--text3)">Email: loading…</span>';
+        row.appendChild(emailRow);
+
+        (async function() {
+          try {
+            const bd = await trpcQuery('certs.byId', { id: c.id });
+            const rs = (bd && bd.release && bd.release.release_state) || 'automatic';
+            const relAt = bd && bd.release && bd.release.released_at;
+            const relBy = bd && bd.release && bd.release.released_by_name;
+            renderReleaseRow(releaseRow, rs, c.id);
+            if (relAt) {
+              const ts = new Date(relAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+              const lbl = document.createElement('span');
+              lbl.style.cssText = 'font-size:10px;color:var(--text3)';
+              lbl.textContent = 'by ' + (relBy || 'admin') + ' ' + ts;
+              releaseRow.appendChild(lbl);
+            }
+          } catch { releaseRow.innerHTML = ''; }
+
+          try {
+            const emailInfo = await getEmailSent(c.cert_no);
+            emailRow.innerHTML = '';
+
+            const emailBtn = document.createElement('button');
+            emailBtn.style.cssText = 'padding:3px 8px;border-radius:4px;border:1px solid #0891b2;background:transparent;color:#0891b2;font-size:10px;font-weight:600;cursor:pointer;flex-shrink:0';
+            emailBtn.textContent = '✉ Email to client';
+            emailBtn.addEventListener('click', async function() {
+              let msg = 'Send ' + esc(c.cert_no || 'certificate') + ' to client by email?';
+              if (emailInfo && emailInfo.created_at) {
+                const ts = new Date(emailInfo.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                msg += '\n\nLast sent: ' + ts + (emailInfo.to_email ? ' to ' + emailInfo.to_email : '');
+              }
+              if (!confirm(msg)) return;
+              emailBtn.disabled = true;
+              emailBtn.textContent = '✉ Sending…';
+              try {
+                await trpcMutate('certs.resendEmail', { id: c.id, force: false });
+                emailBtn.textContent = '✉ Sent ✓';
+                emailBtn.style.color = '#16a34a';
+                emailBtn.style.borderColor = '#16a34a';
+                const tsEl = emailRow.querySelector('.cert-email-ts');
+                if (tsEl) tsEl.textContent = 'Last sent: just now';
+                setTimeout(function() { emailBtn.disabled = false; emailBtn.textContent = '✉ Email to client'; emailBtn.style.color = '#0891b2'; emailBtn.style.borderColor = '#0891b2'; }, 4000);
+              } catch (err) {
+                emailBtn.disabled = false;
+                emailBtn.textContent = '✉ Email to client';
+                alert('Could not send: ' + err.message);
+              }
+            });
+            emailRow.appendChild(emailBtn);
+
+            const tsEl = document.createElement('span');
+            tsEl.className = 'cert-email-ts';
+            tsEl.style.cssText = 'font-size:10px;color:var(--text3)';
+            if (emailInfo && emailInfo.created_at) {
+              const ts = new Date(emailInfo.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+              tsEl.textContent = 'Last: ' + ts + (emailInfo.to_email ? ' · ' + emailInfo.to_email : '');
+            } else {
+              tsEl.textContent = '(not sent yet)';
+            }
+            emailRow.appendChild(tsEl);
+          } catch { emailRow.innerHTML = ''; }
+        })();
+      }
+
+      return row;
+    }
+
     try {
       const cr = await trpcQuery('certs.list', { pageSize: 20, page: 1, jobId });
       const certs = cr.certs || [];
@@ -2542,43 +2694,8 @@ function buildJobDetail(data, jobId) {
         return;
       }
       certBody.innerHTML = '';
-      certs.forEach(function(c) {
-        const row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;margin-bottom:4px;flex-wrap:wrap';
-        const info = document.createElement('div');
-        info.style.cssText = 'flex:1;min-width:0';
-        const pdfTag = c.has_pdf ? '<span style="color:#16a34a;font-weight:700">✓ PDF</span>' : '<span style="color:#ef4444;font-weight:700">✗ No PDF</span>';
-        const statusTag = c.status === 'issued' ? '<span style="color:#16a34a">Issued</span>' : '<span style="color:#f59e0b">' + esc(c.status) + '</span>';
-        info.innerHTML = '<span style="font-weight:600;color:var(--text)">' + esc(c.cert_type_name || c.cert_type_id || '?') + '</span>' +
-          (c.cert_no ? ' <span style="color:var(--text3);font-family:monospace;font-size:11px">' + esc(c.cert_no) + '</span>' : '') +
-          '  ' + statusTag + '  ' + pdfTag;
-        row.appendChild(info);
-
-        const uplBtn = document.createElement('button');
-        uplBtn.textContent = c.has_pdf ? '🔄 Replace PDF' : '⬆ Upload PDF';
-        uplBtn.style.cssText = 'padding:5px 10px;border-radius:5px;border:1px solid rgba(37,99,235,.35);background:rgba(37,99,235,.08);color:#2563eb;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0';
-        uplBtn.addEventListener('click', function() {
-          _attachCertPdf(c.id, c.cert_no || c.cert_type_name, function() {
-            certBody.textContent = 'Refreshing…';
-            trpcQuery('certs.list', { pageSize: 20, page: 1, jobId }).then(function(r2) {
-              certBody.innerHTML = '';
-              (r2.certs || []).forEach(function(c2) {
-                const pdfTag2 = c2.has_pdf ? '<span style="color:#16a34a;font-weight:700">✓ PDF</span>' : '<span style="color:#ef4444;font-weight:700">✗ No PDF</span>';
-                const statusTag2 = c2.status === 'issued' ? '<span style="color:#16a34a">Issued</span>' : '<span style="color:#f59e0b">' + esc(c2.status) + '</span>';
-                const r2row = document.createElement('div');
-                r2row.style.cssText = 'padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;margin-bottom:4px;font-size:12px';
-                r2row.innerHTML = '<span style="font-weight:600;color:var(--text)">' + esc(c2.cert_type_name || c2.cert_type_id || '?') + '</span>' +
-                  (c2.cert_no ? ' <span style="color:var(--text3);font-family:monospace;font-size:11px">' + esc(c2.cert_no) + '</span>' : '') +
-                  '  ' + statusTag2 + '  ' + pdfTag2;
-                certBody.appendChild(r2row);
-              });
-            }).catch(function(){});
-          });
-        });
-        row.appendChild(uplBtn);
-        certBody.appendChild(row);
-      });
-    } catch(e) {
+      certs.forEach(function(c) { certBody.appendChild(buildCertRow(c)); });
+    } catch (e) {
       certBody.textContent = 'Could not load certs: ' + e.message;
     }
   })();
