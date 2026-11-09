@@ -2189,7 +2189,7 @@ function renderReleaseRow(container, currentState, certId) {
         if (!confirm('Change certificate release to "' + sd.label.replace(/^\S+ /, '') + '"?')) return;
         btn.disabled = true;
         try {
-          await trpcMutate('certs.setRelease', { id: certId, override: override });
+          await trpcMutate('certs.setRelease', { id: certId, release_override: override });
           const bd2 = await trpcQuery('certs.byId', { id: certId });
           renderReleaseRow(container, (bd2 && bd2.release && bd2.release.release_state) || 'automatic', certId);
         } catch (err) {
