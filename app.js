@@ -2155,6 +2155,53 @@ function dayRow(job, engineer, dateISO) {
   return tr;
 }
 
+// ── CERT HELPERS (shared by job detail + main certs table) ───────────────────
+
+async function getEmailSent(certId) {
+  if (!certId) return null;
+  try {
+    const r = await fetch('/trpc/audit.list?input=' + encodeURIComponent(JSON.stringify({json:{entityId: certId, limit: 50}})), {credentials:'include'});
+    if (!r.ok) return null;
+    const d = await r.json();
+    const rows = d?.result?.data?.json?.rows || [];
+    const sent = rows.find(function(row) { return row.action === 'cert.email_sent'; });
+    if (!sent) return null;
+    return { sent_at: sent.createdAt, to_email: sent.after && sent.after.to };
+  } catch { return null; }
+}
+
+const RELEASE_DEFS = [
+  { key: 'held',      label: '🔒 Held',         col: '#dc2626' },
+  { key: 'automatic', label: '🔁 Payment rule',  col: '#6366f1' },
+  { key: 'released',  label: '✅ Released',       col: '#16a34a' },
+];
+
+function renderReleaseRow(container, currentState, certId) {
+  container.innerHTML = '<span style="font-size:10px;color:var(--text3);flex-shrink:0">Release:</span>';
+  RELEASE_DEFS.forEach(function(sd) {
+    const btn = document.createElement('button');
+    btn.textContent = sd.label;
+    const isActive = sd.key === currentState;
+    btn.style.cssText = 'padding:2px 6px;border-radius:4px;border:1px solid ' + sd.col + ';font-size:10px;font-weight:' + (isActive ? '700' : '400') + ';cursor:pointer;background:' + (isActive ? sd.col : 'transparent') + ';color:' + (isActive ? '#fff' : sd.col);
+    if (!isActive) {
+      btn.addEventListener('click', async function() {
+        const override = sd.key === 'automatic' ? null : sd.key;
+        if (!confirm('Change certificate release to "' + sd.label.replace(/^\S+ /, '') + '"?')) return;
+        btn.disabled = true;
+        try {
+          await trpcMutate('certs.setRelease', { id: certId, override: override });
+          const bd2 = await trpcQuery('certs.byId', { id: certId });
+          renderReleaseRow(container, (bd2 && bd2.release && bd2.release.release_state) || 'automatic', certId);
+        } catch (err) {
+          btn.disabled = false;
+          alert('Could not change release: ' + err.message);
+        }
+      });
+    }
+    container.appendChild(btn);
+  });
+}
+
 // ── JOB DETAIL MODAL ─────────────────────────────────────────────────────────
 
 function openJobDetail(jobId) {
@@ -2534,51 +2581,6 @@ function buildJobDetail(data, jobId) {
   body.appendChild(certSection);
 
   (async function() {
-    async function getEmailSent(certId) {
-      if (!certId) return null;
-      try {
-        const r = await fetch('/trpc/audit.list?input=' + encodeURIComponent(JSON.stringify({json:{entityId: certId, limit: 50}})), {credentials:'include'});
-        if (!r.ok) return null;
-        const d = await r.json();
-        const rows = d?.result?.data?.json?.rows || [];
-        const sent = rows.find(function(row) { return row.action === 'cert.email_sent'; });
-        if (!sent) return null;
-        return { sent_at: sent.createdAt, to_email: sent.after && sent.after.to };
-      } catch { return null; }
-    }
-
-    const RELEASE_DEFS = [
-      { key: 'held',      label: '🔒 Held',         col: '#dc2626' },
-      { key: 'automatic', label: '🔁 Payment rule',  col: '#6366f1' },
-      { key: 'released',  label: '✅ Released',       col: '#16a34a' },
-    ];
-
-    function renderReleaseRow(container, currentState, certId) {
-      container.innerHTML = '<span style="font-size:10px;color:var(--text3);flex-shrink:0">Release:</span>';
-      RELEASE_DEFS.forEach(function(sd) {
-        const btn = document.createElement('button');
-        btn.textContent = sd.label;
-        const isActive = sd.key === currentState;
-        btn.style.cssText = 'padding:2px 6px;border-radius:4px;border:1px solid ' + sd.col + ';font-size:10px;font-weight:' + (isActive ? '700' : '400') + ';cursor:pointer;background:' + (isActive ? sd.col : 'transparent') + ';color:' + (isActive ? '#fff' : sd.col);
-        if (!isActive) {
-          btn.addEventListener('click', async function() {
-            const override = sd.key === 'automatic' ? null : sd.key;
-            if (!confirm('Change certificate release to "' + sd.label.replace(/^\S+ /, '') + '"?')) return;
-            btn.disabled = true;
-            try {
-              await trpcMutate('certs.setRelease', { id: certId, override: override });
-              const bd2 = await trpcQuery('certs.byId', { id: certId });
-              renderReleaseRow(container, (bd2 && bd2.release && bd2.release.release_state) || 'automatic', certId);
-            } catch (err) {
-              btn.disabled = false;
-              alert('Could not change release: ' + err.message);
-            }
-          });
-        }
-        container.appendChild(btn);
-      });
-    }
-
     function buildCertRow(c) {
       const row = document.createElement('div');
       row.style.cssText = 'display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;margin-bottom:4px;flex-wrap:wrap';
@@ -8444,7 +8446,7 @@ function _renderCerts() {
 
   const TH = 'padding:8px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);border-bottom:1px solid var(--border);white-space:nowrap;background:var(--bg3)';
   const tbl = document.createElement('table');
-  tbl.style.cssText = 'width:100%;border-collapse:collapse;min-width:900px';
+  tbl.style.cssText = 'width:100%;border-collapse:collapse;min-width:1000px';
 
   tbl.innerHTML = '<thead><tr>' +
     '<th style="' + TH + '">Cert #</th>' +
@@ -8455,16 +8457,18 @@ function _renderCerts() {
     '<th style="' + TH + '">Issue Date</th>' +
     '<th style="' + TH + '">Expiry</th>' +
     '<th style="' + TH + 'white-space:normal">Status</th>' +
+    '<th style="' + TH + '">Actions</th>' +
     '</tr></thead>';
 
   const tbody = document.createElement('tbody');
 
   list.forEach(function(c, i) {
+    const rowBg = i % 2 !== 0 ? 'var(--bg3)' : '';
+    // main data row
     const tr = document.createElement('tr');
-    tr.style.cursor = 'pointer';
-    if (i % 2 !== 0) tr.style.background = 'var(--bg3)';
+    tr.style.cssText = 'cursor:pointer;background:' + rowBg;
     tr.addEventListener('mouseover',  function(){ tr.style.background = 'var(--today-bg)'; });
-    tr.addEventListener('mouseout',   function(){ tr.style.background = i % 2 !== 0 ? 'var(--bg3)' : ''; });
+    tr.addEventListener('mouseout',   function(){ tr.style.background = rowBg; });
 
     const addr = [(c.property && c.property.address), (c.property && c.property.postcode)].filter(Boolean).join(', ') || '—';
     const clientName = (c.contact && c.contact.name) ? c.contact.name : '—';
@@ -8483,6 +8487,104 @@ function _renderCerts() {
       '<td style="padding:8px 12px;font-size:12px;white-space:nowrap;' + BD + ';' + expStyle + '">' + esc(expiryTxt) + '</td>' +
       '<td style="padding:8px 12px;' + BD + '">' + _certStatusBadge(c) + '</td>';
 
+    // Actions TD
+    const actTd = document.createElement('td');
+    actTd.style.cssText = 'padding:5px 8px;white-space:nowrap;' + BD + ';min-width:180px';
+
+    const BTN = 'padding:3px 7px;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;margin:1px 2px';
+
+    // PDF download
+    if (c.has_pdf) {
+      const pdfBtn = document.createElement('button');
+      pdfBtn.textContent = '📥 PDF';
+      pdfBtn.style.cssText = BTN + ';border:1px solid #2563eb;background:transparent;color:#2563eb';
+      pdfBtn.addEventListener('click', async function(e) {
+        e.stopPropagation();
+        pdfBtn.disabled = true; pdfBtn.textContent = '⏳';
+        try {
+          const r = await trpcQuery('certs.pdf', { id: c.id });
+          if (r && r.url) window.open(r.url, '_blank');
+          else alert('No PDF URL returned');
+        } catch(err) { alert('Could not get PDF: ' + err.message); }
+        pdfBtn.disabled = false; pdfBtn.textContent = '📥 PDF';
+      });
+      actTd.appendChild(pdfBtn);
+    }
+
+    if (c.status === 'issued') {
+      // Email button
+      const emailBtn = document.createElement('button');
+      emailBtn.textContent = '✉ Email';
+      emailBtn.style.cssText = BTN + ';border:1px solid #0891b2;background:transparent;color:#0891b2';
+      emailBtn.addEventListener('click', async function(e) {
+        e.stopPropagation();
+        emailBtn.disabled = true; emailBtn.textContent = '⏳';
+        let emailInfo = null;
+        try { emailInfo = await getEmailSent(c.id); } catch {}
+        emailBtn.textContent = '✉ Email';
+        let msg = 'Send ' + esc(c.cert_no || 'certificate') + ' to client by email?';
+        if (emailInfo && emailInfo.sent_at) {
+          const ts = new Date(emailInfo.sent_at).toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+          msg += '\n\nLast sent: ' + ts + (emailInfo.to_email ? ' to ' + emailInfo.to_email : '');
+        } else {
+          msg += '\n\n(Not sent yet)';
+        }
+        if (!confirm(msg)) { emailBtn.disabled = false; return; }
+        emailBtn.textContent = '⏳ Sending…';
+        try {
+          await trpcMutate('certs.resendEmail', { id: c.id, force: false });
+          emailBtn.textContent = '✉ Sent ✓';
+          emailBtn.style.color = '#16a34a'; emailBtn.style.borderColor = '#16a34a';
+          setTimeout(function() { emailBtn.textContent = '✉ Email'; emailBtn.style.color = '#0891b2'; emailBtn.style.borderColor = '#0891b2'; emailBtn.disabled = false; }, 3500);
+        } catch(err) {
+          emailBtn.disabled = false; emailBtn.textContent = '✉ Email';
+          alert('Could not send: ' + err.message);
+        }
+      });
+      actTd.appendChild(emailBtn);
+
+      // Release expand button — loads state on click, shows inline sub-row
+      const relBtn = document.createElement('button');
+      relBtn.textContent = '🔁 Release';
+      relBtn.style.cssText = BTN + ';border:1px solid #6366f1;background:transparent;color:#6366f1';
+      let relExpanded = false;
+      let relSubRow = null;
+      relBtn.addEventListener('click', async function(e) {
+        e.stopPropagation();
+        if (relExpanded && relSubRow) {
+          relSubRow.remove(); relSubRow = null; relExpanded = false;
+          relBtn.textContent = '🔁 Release'; return;
+        }
+        relBtn.disabled = true; relBtn.textContent = '⏳';
+        try {
+          const bd = await trpcQuery('certs.byId', { id: c.id });
+          const st = (bd && bd.release && bd.release.release_state) || 'automatic';
+          // Create sub-row spanning all cols
+          relSubRow = document.createElement('tr');
+          relSubRow.style.cssText = 'background:rgba(99,102,241,.05)';
+          const relTd = document.createElement('td');
+          relTd.setAttribute('colspan', '9');
+          relTd.style.cssText = 'padding:8px 16px 10px;border-bottom:1px solid var(--border)';
+          const relContainer = document.createElement('div');
+          relContainer.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap';
+          renderReleaseRow(relContainer, st, c.id);
+          relTd.appendChild(relContainer);
+          relSubRow.appendChild(relTd);
+          tr.insertAdjacentElement('afterend', relSubRow);
+          relExpanded = true;
+          // Update button label to show current state
+          const labels = { held:'🔒 Held', automatic:'🔁 Payment', released:'✅ Released' };
+          relBtn.textContent = labels[st] || '🔁 Release';
+        } catch(err) {
+          relBtn.textContent = '🔁 Release';
+          alert('Could not load release state: ' + err.message);
+        }
+        relBtn.disabled = false;
+      });
+      actTd.appendChild(relBtn);
+    }
+
+    tr.appendChild(actTd);
     tr.addEventListener('click', function(){ _openCertDetail(c); });
     tbody.appendChild(tr);
   });
