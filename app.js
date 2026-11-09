@@ -2537,13 +2537,13 @@ function buildJobDetail(data, jobId) {
     const SUPA_URL = 'https://iihnfgmsfshrgrhargxz.supabase.co';
     const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlpaG5mZ21zZnNocmdyaGFyZ3h6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzNTA1MDAsImV4cCI6MjEwMzkyNjUwMH0.h3N4tW20cByuA28lmbYd5iSsfJoQ7lelvzWDKHMfK5Q';
 
-    async function getEmailSent(certRef) {
-      if (!certRef) return null;
-      let token = SUPA_ANON;
-      try { const s = JSON.parse(localStorage.getItem('sb-iihnfgmsfshrgrhargxz-auth-token') || 'null'); if (s && s.access_token) token = s.access_token; } catch {}
+    async function getEmailSent(postcode) {
+      if (!postcode) return null;
       try {
-        const r = await fetch(SUPA_URL + '/rest/v1/email_sends?cert_ref=eq.' + encodeURIComponent(certRef) + '&order=created_at.desc&limit=1&select=created_at,to_email,sent_by', {
-          headers: { 'apikey': SUPA_ANON, 'Authorization': 'Bearer ' + token }
+        const r = await fetch(SUPA_URL + '/rest/v1/rpc/get_cert_last_email', {
+          method: 'POST',
+          headers: { 'apikey': SUPA_ANON, 'Authorization': 'Bearer ' + SUPA_ANON, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ p_postcode: postcode })
         });
         if (!r.ok) return null;
         const rows = await r.json();
@@ -2638,7 +2638,9 @@ function buildJobDetail(data, jobId) {
           } catch { releaseRow.innerHTML = ''; }
 
           try {
-            const emailInfo = await getEmailSent(c.cert_no);
+            const isGasCert = (c.cert_type_id || '').toLowerCase().includes('gas');
+            const postcode = bd && bd.cert && bd.cert.property && bd.cert.property.postcode;
+            const emailInfo = (isGasCert && postcode) ? await getEmailSent(postcode) : null;
             emailRow.innerHTML = '';
 
             const emailBtn = document.createElement('button');
@@ -2646,8 +2648,8 @@ function buildJobDetail(data, jobId) {
             emailBtn.textContent = '✉ Email to client';
             emailBtn.addEventListener('click', async function() {
               let msg = 'Send ' + esc(c.cert_no || 'certificate') + ' to client by email?';
-              if (emailInfo && emailInfo.created_at) {
-                const ts = new Date(emailInfo.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+              if (emailInfo && emailInfo.sent_at) {
+                const ts = new Date(emailInfo.sent_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
                 msg += '\n\nLast sent: ' + ts + (emailInfo.to_email ? ' to ' + emailInfo.to_email : '');
               }
               if (!confirm(msg)) return;
@@ -2672,8 +2674,8 @@ function buildJobDetail(data, jobId) {
             const tsEl = document.createElement('span');
             tsEl.className = 'cert-email-ts';
             tsEl.style.cssText = 'font-size:10px;color:var(--text3)';
-            if (emailInfo && emailInfo.created_at) {
-              const ts = new Date(emailInfo.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+            if (emailInfo && emailInfo.sent_at) {
+              const ts = new Date(emailInfo.sent_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
               tsEl.textContent = 'Last: ' + ts + (emailInfo.to_email ? ' · ' + emailInfo.to_email : '');
             } else {
               tsEl.textContent = '(not sent yet)';
