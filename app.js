@@ -8248,6 +8248,34 @@ async function openCerts() {
     typeInp._cevt = true;
     typeInp.addEventListener('change', () => { _certsTypeFilter = typeInp.value; _renderCerts(); });
   }
+  const relAllBtn = document.getElementById('certs-release-all-btn');
+  if (relAllBtn && !relAllBtn._wired) {
+    relAllBtn._wired = true;
+    relAllBtn.addEventListener('click', async function() {
+      const certList = relAllBtn._certList || [];
+      if (!certList.length) return;
+      if (!confirm('Release all ' + certList.length + ' certificate' + (certList.length !== 1 ? 's' : '') + ' in the current filter?')) return;
+      const orig = relAllBtn.textContent;
+      relAllBtn.disabled = true;
+      let done = 0;
+      const CONCURRENCY = 5;
+      for (let i = 0; i < certList.length; i += CONCURRENCY) {
+        const batch = certList.slice(i, i + CONCURRENCY);
+        await Promise.all(batch.map(async function(c) {
+          try {
+            await trpcMutate('certs.setRelease', { id: c.id, release_override: 'released' });
+            _certReleaseCache[c.id] = 'released';
+            const container = document.querySelector('[data-relcertid="' + c.id + '"]');
+            if (container) renderReleaseRow(container, 'released', c.id);
+          } catch(e) {}
+          done++;
+          relAllBtn.textContent = '✅ Releasing ' + done + '/' + certList.length + '…';
+        }));
+      }
+      relAllBtn.textContent = orig;
+      relAllBtn.disabled = false;
+    });
+  }
 }
 
 function _buildCertsTabs() {
@@ -8479,6 +8507,19 @@ function _renderCerts() {
 
   const list = _filterCerts();
   if (count) count.textContent = list.length + ' cert' + (list.length !== 1 ? 's' : '');
+
+  // Update Release-all button with current filtered issued certs
+  const relAllBtn = document.getElementById('certs-release-all-btn');
+  if (relAllBtn) {
+    const issuedList = list.filter(function(c){ return c.status === 'issued'; });
+    if (issuedList.length > 0) {
+      relAllBtn.style.display = '';
+      relAllBtn.textContent = '✅ Release all (' + issuedList.length + ')';
+      relAllBtn._certList = issuedList;
+    } else {
+      relAllBtn.style.display = 'none';
+    }
+  }
 
   if (!list.length) {
     body.innerHTML = '<div class="loading-row" style="color:var(--text3)">No certificates match this filter.</div>';
