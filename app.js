@@ -2186,11 +2186,11 @@ function renderReleaseRow(container, currentState, certId) {
     btn.textContent = sd.label;
     const isActive = !isLoading && sd.key === currentState;
     if (isLoading) {
-      btn.style.cssText = 'padding:2px 5px;border-radius:4px;border:1px solid #ddd;font-size:9px;cursor:default;background:transparent;color:#ccc';
+      btn.style.cssText = 'padding:3px 7px;border-radius:4px;border:1px solid #ddd;font-size:10px;cursor:default;background:transparent;color:#ccc';
     } else if (isActive) {
-      btn.style.cssText = 'padding:2px 5px;border-radius:4px;border:1px solid ' + sd.col + ';font-size:9px;font-weight:700;cursor:default;background:' + sd.col + ';color:#fff';
+      btn.style.cssText = 'padding:3px 7px;border-radius:4px;border:1px solid ' + sd.col + ';font-size:10px;font-weight:700;cursor:default;background:' + sd.col + ';color:#fff';
     } else {
-      btn.style.cssText = 'padding:2px 5px;border-radius:4px;border:1px solid #ddd;font-size:9px;cursor:pointer;background:transparent;color:#bbb';
+      btn.style.cssText = 'padding:3px 7px;border-radius:4px;border:1px solid #ddd;font-size:10px;cursor:pointer;background:transparent;color:#bbb';
     }
     if (!isLoading && !isActive) {
       btn.addEventListener('click', async function(e) {
@@ -8569,9 +8569,10 @@ function _renderCerts() {
       '<td style="padding:8px 12px;font-size:12px;white-space:nowrap;' + BD + ';' + expStyle + '">' + esc(expiryTxt) + '</td>' +
       '<td style="padding:8px 12px;' + BD + '">' + _certStatusBadge(c) + '</td>';
 
-    // Actions TD
+    // Actions TD — stop all clicks here from bubbling to the row (opening cert detail)
     const actTd = document.createElement('td');
     actTd.style.cssText = 'padding:5px 8px;white-space:nowrap;' + BD + ';min-width:180px';
+    actTd.addEventListener('click', function(e) { e.stopPropagation(); });
 
     const BTN = 'padding:3px 7px;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;margin:1px 2px';
 
