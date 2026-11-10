@@ -2176,22 +2176,34 @@ const RELEASE_DEFS = [
   { key: 'released',  label: '✅ Released',       col: '#16a34a' },
 ];
 
+let _certReleaseCache = {};
+
 function renderReleaseRow(container, currentState, certId) {
-  container.innerHTML = '<span style="font-size:10px;color:var(--text3);flex-shrink:0">Release:</span>';
+  container.innerHTML = '';
+  const isLoading = currentState === null || currentState === undefined;
   RELEASE_DEFS.forEach(function(sd) {
     const btn = document.createElement('button');
     btn.textContent = sd.label;
-    const isActive = sd.key === currentState;
-    btn.style.cssText = 'padding:2px 6px;border-radius:4px;border:1px solid ' + sd.col + ';font-size:10px;font-weight:' + (isActive ? '700' : '400') + ';cursor:pointer;background:' + (isActive ? sd.col : 'transparent') + ';color:' + (isActive ? '#fff' : sd.col);
-    if (!isActive) {
-      btn.addEventListener('click', async function() {
+    const isActive = !isLoading && sd.key === currentState;
+    if (isLoading) {
+      btn.style.cssText = 'padding:2px 5px;border-radius:4px;border:1px solid #ddd;font-size:9px;cursor:default;background:transparent;color:#ccc';
+    } else if (isActive) {
+      btn.style.cssText = 'padding:2px 5px;border-radius:4px;border:1px solid ' + sd.col + ';font-size:9px;font-weight:700;cursor:default;background:' + sd.col + ';color:#fff';
+    } else {
+      btn.style.cssText = 'padding:2px 5px;border-radius:4px;border:1px solid #ddd;font-size:9px;cursor:pointer;background:transparent;color:#bbb';
+    }
+    if (!isLoading && !isActive) {
+      btn.addEventListener('click', async function(e) {
+        e.stopPropagation();
         const override = sd.key === 'automatic' ? null : sd.key;
         if (!confirm('Change certificate release to "' + sd.label.replace(/^\S+ /, '') + '"?')) return;
         btn.disabled = true;
         try {
           await trpcMutate('certs.setRelease', { id: certId, release_override: override });
           const bd2 = await trpcQuery('certs.byId', { id: certId });
-          renderReleaseRow(container, (bd2 && bd2.release && bd2.release.release_state) || 'automatic', certId);
+          const newState = (bd2 && bd2.release && bd2.release.release_state) || 'automatic';
+          _certReleaseCache[certId] = newState;
+          renderReleaseRow(container, newState, certId);
         } catch (err) {
           btn.disabled = false;
           alert('Could not change release: ' + err.message);
@@ -8583,45 +8595,12 @@ function _renderCerts() {
       });
       actTd.appendChild(emailBtn);
 
-      // Release expand button — loads state on click, shows inline sub-row
-      const relBtn = document.createElement('button');
-      relBtn.textContent = '🔁 Release';
-      relBtn.style.cssText = BTN + ';border:1px solid #6366f1;background:transparent;color:#6366f1';
-      let relExpanded = false;
-      let relSubRow = null;
-      relBtn.addEventListener('click', async function(e) {
-        e.stopPropagation();
-        if (relExpanded && relSubRow) {
-          relSubRow.remove(); relSubRow = null; relExpanded = false;
-          relBtn.textContent = '🔁 Release'; return;
-        }
-        relBtn.disabled = true; relBtn.textContent = '⏳';
-        try {
-          const bd = await trpcQuery('certs.byId', { id: c.id });
-          const st = (bd && bd.release && bd.release.release_state) || 'automatic';
-          // Create sub-row spanning all cols
-          relSubRow = document.createElement('tr');
-          relSubRow.style.cssText = 'background:rgba(99,102,241,.05)';
-          const relTd = document.createElement('td');
-          relTd.setAttribute('colspan', '9');
-          relTd.style.cssText = 'padding:8px 16px 10px;border-bottom:1px solid var(--border)';
-          const relContainer = document.createElement('div');
-          relContainer.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap';
-          renderReleaseRow(relContainer, st, c.id);
-          relTd.appendChild(relContainer);
-          relSubRow.appendChild(relTd);
-          tr.insertAdjacentElement('afterend', relSubRow);
-          relExpanded = true;
-          // Update button label to show current state
-          const labels = { held:'🔒 Held', automatic:'🔁 Payment', released:'✅ Released' };
-          relBtn.textContent = labels[st] || '🔁 Release';
-        } catch(err) {
-          relBtn.textContent = '🔁 Release';
-          alert('Could not load release state: ' + err.message);
-        }
-        relBtn.disabled = false;
-      });
-      actTd.appendChild(relBtn);
+      // Inline release pills — show immediately from cache (or loading), update in background
+      const relContainer = document.createElement('div');
+      relContainer.dataset.relcertid = c.id;
+      relContainer.style.cssText = 'display:flex;align-items:center;gap:3px;flex-wrap:nowrap;margin-top:3px';
+      renderReleaseRow(relContainer, _certReleaseCache[c.id] !== undefined ? _certReleaseCache[c.id] : null, c.id);
+      actTd.appendChild(relContainer);
     }
 
     tr.appendChild(actTd);
@@ -8639,6 +8618,26 @@ function _renderCerts() {
   wrap.appendChild(inner);
   body.innerHTML = '';
   body.appendChild(wrap);
+
+  // Background-load release states for all visible issued certs not yet cached
+  const toLoad = list.filter(function(c){ return c.status === 'issued' && _certReleaseCache[c.id] === undefined; }).map(function(c){ return c.id; });
+  if (toLoad.length) _loadReleaseBatch(toLoad);
+}
+
+async function _loadReleaseBatch(ids) {
+  const CONCURRENCY = 5;
+  for (let i = 0; i < ids.length; i += CONCURRENCY) {
+    const batch = ids.slice(i, i + CONCURRENCY);
+    await Promise.all(batch.map(async function(id) {
+      try {
+        const bd = await trpcQuery('certs.byId', { id });
+        const st = (bd && bd.release && bd.release.release_state) || 'automatic';
+        _certReleaseCache[id] = st;
+        const container = document.querySelector('[data-relcertid="' + id + '"]');
+        if (container) renderReleaseRow(container, st, id);
+      } catch(e) {}
+    }));
+  }
 }
 
 function _openCertDetail(c) {
