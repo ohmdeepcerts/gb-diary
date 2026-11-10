@@ -6583,9 +6583,10 @@ function _buildInvBodyHTML() {
         <td style="font-size:11px;white-space:nowrap;color:var(--muted)">${inv.issuedAt?new Date(inv.issuedAt).toLocaleDateString('en-GB'):'—'}</td>
         <td style="text-align:right;font-weight:700;color:${balance<=0?'#16a34a':'inherit'}">${_invFmt(balance<=0 ? (inv.total||0) : balance)}</td>
         <td>${_invStatusBadge(status)}</td>
+        <td style="text-align:center;white-space:nowrap" onclick="event.stopPropagation()">${inv.pdfPath?`<button class="inv-act-btn inv-dl-btn" data-dlinvid="${esc(inv.id||'')}" data-dlinvno="${esc(inv.invoiceNo||inv.id||'')}">⬇ PDF</button>`:''}</td>
       </tr>
       <tr class="inv-detail-row" data-detail="${idx}">
-        <td class="inv-detail-cell" colspan="11">${detailHTML}</td>
+        <td class="inv-detail-cell" colspan="12">${detailHTML}</td>
       </tr>
     `;
   }).join('');
@@ -6619,6 +6620,7 @@ function _buildInvBodyHTML() {
           <th style="min-width:85px">Sent</th>
           <th class="sortable" data-sort="total" style="text-align:right;min-width:90px;cursor:pointer">Amount${_invSortBy==='total'?(_invSortDir==='desc'?' ↓':' ↑'):''}</th>
           <th style="min-width:90px">Status</th>
+          <th style="min-width:50px;text-align:center">PDF</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -6887,6 +6889,33 @@ function _wireInvControls() {
         const a = document.createElement('a');
         a.href = blobUrl;
         a.download = (btn.dataset.dlno || 'invoice') + '.pdf';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      } catch(err) {
+        alert('Download failed: ' + (err?.message || err));
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    });
+  });
+
+  // Inline row PDF download buttons
+  document.querySelectorAll('.inv-dl-btn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = '⏳';
+      try {
+        const { fetchUrl } = await _invGetPdfUrl(btn.dataset.dlinvid);
+        const r = await fetch(fetchUrl, { credentials: 'include' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const blob = await r.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = (btn.dataset.dlinvno || 'invoice') + '.pdf';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
