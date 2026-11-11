@@ -7,6 +7,13 @@ const PROXY = 'https://gb-proxy.gbmandeep.workers.dev';
 const TRPC  = `${PROXY}/trpc`;
 let GETADDRESS_KEY = (() => { try { return localStorage.getItem('gb_getaddress_key') || ''; } catch { return ''; } })();
 
+// ── Auto-release contact list ─────────────────────────────────────────────────
+const _AR_KEY = 'gb_autorelease_contacts';
+function _arLoad()     { try { return new Set(JSON.parse(localStorage.getItem(_AR_KEY) || '[]')); } catch { return new Set(); } }
+function _arSave(s)    { try { localStorage.setItem(_AR_KEY, JSON.stringify([...s])); } catch {} }
+function _arHas(id)    { return _arLoad().has(id); }
+function _arToggle(id) { const s = _arLoad(); const on = !s.has(id); on ? s.add(id) : s.delete(id); _arSave(s); return on; }
+
 // localStorage polyfill matching chrome.storage.local shape
 const store = {
   async get(keys) {
@@ -7995,6 +8002,7 @@ function _renderDirTable() {
       <th style="padding:9px 8px;text-align:left;font-size:12px;color:var(--text2);font-weight:600;min-width:160px">Phone</th>
       <th style="padding:9px 8px;text-align:left;font-size:12px;color:var(--text2);font-weight:600;min-width:190px">Email</th>
       <th style="padding:9px 8px;text-align:left;font-size:12px;color:var(--text2);font-weight:600">WhatsApp</th>
+      <th style="padding:9px 8px;text-align:left;font-size:12px;color:var(--text2);font-weight:600;white-space:nowrap">⚡ Auto-Release</th>
       <th style="padding:9px 8px"></th>
     </tr>
   </thead>`;
@@ -8114,6 +8122,28 @@ function _renderDirTable() {
     tr.appendChild(phoneTd);
     tr.appendChild(emailTd);
     tr.appendChild(waTd);
+
+    // Auto-release toggle cell
+    const arTd = document.createElement('td');
+    arTd.style.cssText = 'padding:9px 8px';
+    const arBtn = document.createElement('button');
+    arBtn.className = 'ar-dir-btn';
+    const _refreshArBtn = () => {
+      const on = _arHas(c.id);
+      arBtn.textContent = on ? '⚡ Auto ON' : '⚡ Off';
+      arBtn.style.cssText = 'padding:4px 11px;font-size:11px;font-weight:600;border-radius:14px;cursor:pointer;white-space:nowrap;border:none;' +
+        (on ? 'background:#fef08a;color:#713f12' : 'background:var(--bg3);color:var(--text3)');
+      arBtn.title = on ? 'Certs for this client auto-release when Certs tab loads. Click to turn off.' : 'Click to always auto-release certs for this client';
+    };
+    _refreshArBtn();
+    arBtn.addEventListener('click', () => {
+      _arToggle(c.id);
+      _refreshArBtn();
+      document.getElementById('certs-ar-manage-btn')?._refresh?.();
+    });
+    arTd.appendChild(arBtn);
+    tr.appendChild(arTd);
+
     tr.appendChild(saveTd);
     tbody.appendChild(tr);
 
@@ -8276,6 +8306,22 @@ async function openCerts() {
       relAllBtn.disabled = false;
     });
   }
+
+  // Inject ⚡ Auto-release manage button once, next to Release All
+  if (relAllBtn && relAllBtn.parentElement && !document.getElementById('certs-ar-manage-btn')) {
+    const arManageBtn = document.createElement('button');
+    arManageBtn.id = 'certs-ar-manage-btn';
+    arManageBtn.style.cssText = 'padding:5px 12px;font-size:11px;font-weight:600;border-radius:6px;cursor:pointer;border:1px solid #fbbf24;background:#fef3c7;color:#92400e;white-space:nowrap;margin-left:6px';
+    arManageBtn._refresh = function() {
+      const count = _arLoad().size;
+      arManageBtn.textContent = count ? '⚡ Auto-release (' + count + ' client' + (count !== 1 ? 's' : '') + ')' : '⚡ Auto-release clients';
+    };
+    arManageBtn._refresh();
+    arManageBtn.addEventListener('click', _openArModal);
+    relAllBtn.parentElement.insertBefore(arManageBtn, relAllBtn.nextSibling);
+  } else {
+    document.getElementById('certs-ar-manage-btn')?._refresh?.();
+  }
 }
 
 function _buildCertsTabs() {
@@ -8317,10 +8363,113 @@ async function _loadCerts(force) {
     if (stxt) stxt.textContent = all.length + ' certificates loaded';
     _updateCertTabCounts();
     _renderCerts();
+    _arAutoRelease(all);
   } catch(e) {
     if (body) body.innerHTML = '<div class="loading-row" style="color:var(--red)">⚠ Failed to load: ' + e.message + '</div>';
     if (stxt) stxt.textContent = '⚠ Error';
   }
+}
+
+async function _arAutoRelease(certs) {
+  const arSet = _arLoad();
+  if (!arSet.size) return;
+  const toRelease = certs.filter(function(c) {
+    return c.status === 'issued' && c.contact && arSet.has(c.contact.id);
+  });
+  if (!toRelease.length) return;
+  const names = [...new Set(toRelease.map(function(c) { return c.contact.name; }).filter(Boolean))];
+  const stxt = document.getElementById('stxt-certs');
+  if (stxt) stxt.textContent = 'Auto-releasing ' + toRelease.length + ' cert' + (toRelease.length !== 1 ? 's' : '') + ' for ' + names.join(', ') + '…';
+  const CONC = 5;
+  for (let i = 0; i < toRelease.length; i += CONC) {
+    await Promise.all(toRelease.slice(i, i + CONC).map(async function(c) {
+      try {
+        await trpcMutate('certs.setRelease', { id: c.id, release_override: 'released' });
+        _certReleaseCache[c.id] = 'released';
+      } catch(e) {}
+    }));
+  }
+  if (stxt) stxt.textContent = '⚡ Auto-released ' + toRelease.length + ' cert' + (toRelease.length !== 1 ? 's' : '') + ' for ' + names.join(', ') + ' ✓';
+  setTimeout(function() {
+    if (stxt && stxt.textContent.startsWith('⚡ Auto-released')) stxt.textContent = (certs.length) + ' certificates loaded';
+  }, 5000);
+}
+
+function _openArModal() {
+  document.getElementById('ar-modal-overlay')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'ar-modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+
+  const box = document.createElement('div');
+  box.style.cssText = 'background:var(--bg);border-radius:12px;padding:20px;width:420px;max-height:80vh;display:flex;flex-direction:column;gap:12px;box-shadow:0 20px 60px rgba(0,0,0,.4)';
+  box.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between">' +
+      '<h3 style="margin:0;font-size:14px;font-weight:700;color:var(--text1)">⚡ Auto-release clients</h3>' +
+      '<button id="ar-modal-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text3);line-height:1;padding:0 4px">×</button>' +
+    '</div>' +
+    '<p style="margin:0;font-size:11px;color:var(--text3)">Certs for these clients will auto-release every time the Certs tab loads.</p>' +
+    '<input id="ar-modal-search" type="text" placeholder="Search client name…" style="padding:8px 12px;font-size:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg2);color:var(--text1);outline:none">' +
+    '<div id="ar-modal-list" style="overflow-y:auto;max-height:360px;display:flex;flex-direction:column;gap:4px"></div>';
+
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  document.getElementById('ar-modal-close').addEventListener('click', function() { overlay.remove(); });
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+
+  const listEl = document.getElementById('ar-modal-list');
+  const searchInp = document.getElementById('ar-modal-search');
+
+  function renderArList(q) {
+    const arSet2 = _arLoad();
+    const contacts = new Map();
+    (_certsData || []).forEach(function(c) { if (c.contact && c.contact.id && c.contact.name) contacts.set(c.contact.id, c.contact.name); });
+    (_dirContacts || []).forEach(function(c) { if (c.id && c.name) contacts.set(c.id, c.name); });
+    let entries = [...contacts.entries()].sort(function(a, b) { return a[1].localeCompare(b[1]); });
+    // Enabled contacts first
+    entries.sort(function(a, b) {
+      const aOn = arSet2.has(a[0]), bOn = arSet2.has(b[0]);
+      return aOn === bOn ? 0 : aOn ? -1 : 1;
+    });
+    if (q) entries = entries.filter(function(e) { return e[1].toLowerCase().includes(q.toLowerCase()); });
+    listEl.innerHTML = '';
+    if (!entries.length) {
+      listEl.innerHTML = '<div style="color:var(--text3);font-size:12px;padding:16px;text-align:center">No clients found — visit Directory to load contacts first</div>';
+      return;
+    }
+    entries.forEach(function(entry) {
+      const id = entry[0], name = entry[1], on = arSet2.has(id);
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:8px;gap:8px;' + (on ? 'background:#fef9c3' : 'background:var(--bg2)');
+      const lbl = document.createElement('span');
+      lbl.style.cssText = 'font-size:12px;font-weight:' + (on ? 700 : 400) + ';color:var(--text1);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      lbl.textContent = name;
+      const btn = document.createElement('button');
+      btn.style.cssText = 'padding:3px 11px;font-size:11px;font-weight:600;border-radius:12px;cursor:pointer;white-space:nowrap;border:none;flex-shrink:0;' +
+        (on ? 'background:#fbbf24;color:#1c1917' : 'background:var(--bg3);color:var(--text3)');
+      btn.textContent = on ? '⚡ On — turn off' : 'Turn on';
+      btn.addEventListener('click', function() {
+        _arToggle(id);
+        document.getElementById('certs-ar-manage-btn')?._refresh?.();
+        // refresh dir row if visible
+        document.querySelectorAll('tr[data-id="' + id + '"] .ar-dir-btn').forEach(function(b) {
+          const nowOn = _arHas(id);
+          b.textContent = nowOn ? '⚡ Auto ON' : '⚡ Off';
+          b.style.background = nowOn ? '#fef08a' : '';
+          b.style.color = nowOn ? '#713f12' : '';
+        });
+        renderArList(searchInp.value);
+      });
+      row.appendChild(lbl);
+      row.appendChild(btn);
+      listEl.appendChild(row);
+    });
+  }
+
+  renderArList('');
+  let _t;
+  searchInp.addEventListener('input', function() { clearTimeout(_t); _t = setTimeout(function() { renderArList(searchInp.value); }, 200); });
+  setTimeout(function() { searchInp.focus(); }, 50);
 }
 
 function _certHasIssue(c) {
