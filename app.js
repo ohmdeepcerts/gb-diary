@@ -6109,6 +6109,7 @@ let _stmtContactType = '';
 let _invCSSInjected  = false;
 let _invDescCache    = {};
 let _invJobDateCache = {};
+let _invWaLog        = (() => { try { return JSON.parse(localStorage.getItem('_invWaLog')||'{}'); } catch { return {}; } })();
 
 // ── INVOICE CSS ────────────────────────────────────────────────────────────────
 
@@ -6603,7 +6604,7 @@ function _buildInvBodyHTML() {
         <td style="text-align:right;font-weight:700;color:${balance<=0?'#16a34a':'inherit'}">${_invFmt(balance<=0 ? (inv.total||0) : balance)}</td>
         <td>${_invStatusBadge(status)}</td>
         <td style="text-align:center;white-space:nowrap" onclick="event.stopPropagation()">${inv.pdfPath?`<button class="inv-act-btn inv-dl-btn" data-dlinvid="${esc(inv.id||'')}" data-dlinvno="${esc(inv.invoiceNo||inv.id||'')}">⬇ PDF</button>`:''}</td>
-        <td style="text-align:center;white-space:nowrap" onclick="event.stopPropagation()">${inv.contactPhone?`<button class="inv-act-btn inv-wa-btn" style="background:#25D366;color:#fff;border-color:#1ebe5d" data-wa-invid="${esc(inv.id||'')}" data-wa-phone="${esc(inv.contactPhone||'')}" data-wa-cname="${esc(inv.contactName||'')}" data-wa-addr="${esc(inv.siteAddress||'')}" data-wa-invno="${esc(inv.invoiceNo||'')}" data-wa-bal="${Math.max(0,inv.balance||inv.total||0)}" data-wa-jobid="${esc(inv.jobId||'')}">📱</button>`:''}</td>
+        <td style="text-align:center;white-space:nowrap;vertical-align:middle" onclick="event.stopPropagation()">${inv.contactPhone?`<div style="display:flex;flex-direction:column;align-items:center;gap:2px"><button class="inv-act-btn inv-wa-btn" style="background:#25D366;color:#fff;border-color:#1ebe5d" title="${_invWaLog[inv.id]?`Last sent ${new Date(_invWaLog[inv.id].time).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',','')} by ${esc(_invWaLog[inv.id].user)}`:'Send WhatsApp chase'}" data-wa-invid="${esc(inv.id||'')}" data-wa-phone="${esc(inv.contactPhone||'')}" data-wa-cname="${esc(inv.contactName||'')}" data-wa-addr="${esc(inv.siteAddress||'')}" data-wa-invno="${esc(inv.invoiceNo||'')}" data-wa-bal="${Math.max(0,inv.balance||inv.total||0)}" data-wa-jobid="${esc(inv.jobId||'')}">📱</button>${_invWaLog[inv.id]?`<span class="inv-wa-ts" style="font-size:9px;color:#1ebe5d;white-space:nowrap;line-height:1">${new Date(_invWaLog[inv.id].time).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',','')}</span>`:'<span class="inv-wa-ts" style="font-size:9px;color:var(--muted);white-space:nowrap;line-height:1"></span>'}</div>`:''}</td>
       </tr>
       <tr class="inv-detail-row" data-detail="${idx}">
         <td class="inv-detail-cell" colspan="13">${detailHTML}</td>
@@ -6989,6 +6990,21 @@ function _wireInvControls() {
         try { await navigator.clipboard.writeText(msg); } catch {}
         alert('No phone number for this contact.\nMessage has been copied to clipboard.');
       }
+
+      // Log activity: job note + local timestamp
+      const userName = user?.name || user?.email || 'Staff';
+      const tsText   = new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+      if (jobId) {
+        try { await _addJobNote(jobId, `📱 WhatsApp chase sent — Invoice ${invNo} £${bal.toFixed(2)} — ${userName} — ${tsText}`); } catch {}
+      }
+      _invWaLog[invId] = { time: new Date().toISOString(), user: userName };
+      try { localStorage.setItem('_invWaLog', JSON.stringify(_invWaLog)); } catch {}
+      // Update button timestamp display inline (no full re-render needed)
+      const cell = btn.closest('td');
+      const tsEl = cell?.querySelector('.inv-wa-ts');
+      if (tsEl) tsEl.textContent = new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }).replace(',', '');
+      if (tsEl) tsEl.style.color = '#1ebe5d';
+      btn.title = `Last sent ${new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }).replace(',','')} by ${userName}`;
     });
   });
 
