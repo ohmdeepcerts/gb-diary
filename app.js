@@ -6360,7 +6360,11 @@ async function _loadInvoices(resetPage = false) {
   _renderInvoicePage();
 
   // Fetch line-item descriptions in background (non-blocking), update cells as they arrive
-  _invItems.forEach(async inv => {
+  _loadInvDescriptions(_invItems);
+}
+
+function _loadInvDescriptions(items) {
+  items.forEach(async inv => {
     if (_invDescCache[inv.id] !== undefined) return;
     try {
       const detail = await trpcQuery('invoices.get', { invoiceId: inv.id });
@@ -6368,17 +6372,13 @@ async function _loadInvoices(resetPage = false) {
       const desc = lineItems.map(li => li.description).filter(Boolean).join(' • ');
       const payments = detail?.payments || [];
       _invDescCache[inv.id] = { desc: desc || inv.notes || '', lineItems, payments };
-      // Update payment section in DOM if detail row is open
       const payEl = document.getElementById(`inv-pay-${inv.id}`);
       if (payEl) payEl.innerHTML = _buildPaymentHTML(payments);
     } catch(e) {
       _invDescCache[inv.id] = { desc: inv.notes || '', lineItems: [], payments: [] };
     }
-    // Update the description cell in the DOM directly
     const cell = document.querySelector(`[data-desc-id="${inv.id}"]`);
     if (cell) cell.textContent = _invDescCache[inv.id].desc || '—';
-
-    // Fetch job date in background if not already cached
     if (inv.jobId && _invJobDateCache[inv.jobId] === undefined) {
       try {
         const jd = await trpcQuery('jobs.get', { id: inv.jobId });
@@ -6603,20 +6603,23 @@ function _buildInvBodyHTML() {
         <td style="text-align:right;font-weight:700;color:${balance<=0?'#16a34a':'inherit'}">${_invFmt(balance<=0 ? (inv.total||0) : balance)}</td>
         <td>${_invStatusBadge(status)}</td>
         <td style="text-align:center;white-space:nowrap" onclick="event.stopPropagation()">${inv.pdfPath?`<button class="inv-act-btn inv-dl-btn" data-dlinvid="${esc(inv.id||'')}" data-dlinvno="${esc(inv.invoiceNo||inv.id||'')}">⬇ PDF</button>`:''}</td>
+        <td style="text-align:center;white-space:nowrap" onclick="event.stopPropagation()">${inv.contactPhone?`<button class="inv-act-btn inv-wa-btn" style="background:#25D366;color:#fff;border-color:#1ebe5d" data-wa-invid="${esc(inv.id||'')}" data-wa-phone="${esc(inv.contactPhone||'')}" data-wa-cname="${esc(inv.contactName||'')}" data-wa-addr="${esc(inv.siteAddress||'')}" data-wa-invno="${esc(inv.invoiceNo||'')}" data-wa-bal="${Math.max(0,inv.balance||inv.total||0)}" data-wa-jobid="${esc(inv.jobId||'')}">📱</button>`:''}</td>
       </tr>
       <tr class="inv-detail-row" data-detail="${idx}">
-        <td class="inv-detail-cell" colspan="12">${detailHTML}</td>
+        <td class="inv-detail-cell" colspan="13">${detailHTML}</td>
       </tr>
     `;
   }).join('');
 
-  const pager = totalPages > 1
-    ? `<div class="inv-pager">
-        <button id="inv-prev-page" ${_invPage<=1?'disabled':''}>← Prev</button>
-        <span class="inv-pager-info">Page ${_invPage} of ${totalPages} · ${_invTotal} invoices</span>
-        <button id="inv-next-page" ${_invPage>=totalPages?'disabled':''}>Next →</button>
-       </div>`
-    : `<div class="inv-pager"><span class="inv-pager-info">${items.length} invoices</span></div>`;
+  const _sizeOpts = [15,25,50,100].map(n=>`<option value="${n}"${n===_invPageSize?' selected':''}>${n}</option>`).join('');
+  const pager = `<div class="inv-pager">
+    ${totalPages > 1
+      ? `<button id="inv-prev-page" ${_invPage<=1?'disabled':''}>← Prev</button>
+         <span class="inv-pager-info">Page ${_invPage} of ${totalPages} · ${_invTotal} invoices</span>
+         <button id="inv-next-page" ${_invPage>=totalPages?'disabled':''}>Next →</button>`
+      : `<span class="inv-pager-info">${items.length} invoices</span>`}
+    <label style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)">Show <select id="inv-size-sel" style="font-size:11px;padding:2px 6px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer">${_sizeOpts}</select> per page</label>
+  </div>`;
 
   return `
     <div class="inv-bulk-bar" id="inv-bulk-bar">
@@ -6640,6 +6643,7 @@ function _buildInvBodyHTML() {
           <th class="sortable" data-sort="total" style="text-align:right;min-width:90px;cursor:pointer">Amount${_invSortBy==='total'?(_invSortDir==='desc'?' ↓':' ↑'):''}</th>
           <th style="min-width:90px">Status</th>
           <th style="min-width:50px;text-align:center">PDF</th>
+          <th style="min-width:40px;text-align:center">WA</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -6920,6 +6924,71 @@ function _wireInvControls() {
     });
   });
 
+  // WhatsApp chase buttons
+  document.querySelectorAll('.inv-wa-btn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const invId  = btn.dataset.waInvid;
+      const phone  = btn.dataset.waPhone || '';
+      const cname  = btn.dataset.waCname || 'there';
+      const addr   = btn.dataset.waAddr  || '';
+      const invNo  = btn.dataset.waInvno || '';
+      const bal    = parseFloat(btn.dataset.waBal  || 0);
+      const jobId  = btn.dataset.waJobid || '';
+
+      // Normalise UK phone for wa.me (07xxx → 447xxx, +44 → 44, spaces stripped)
+      let waPhone = phone.replace(/[\s\-().]/g, '');
+      if (waPhone.startsWith('00')) waPhone = waPhone.slice(2);
+      if (waPhone.startsWith('+'))  waPhone = waPhone.slice(1);
+      if (waPhone.startsWith('07')) waPhone = '44' + waPhone.slice(1);
+
+      const desc    = _invDescCache[invId]?.desc || '';
+      const jobDate = (jobId && _invJobDateCache[jobId]) || '';
+
+      const msg = [
+        `Hi ${cname}, this is GB Electrical 👋`,
+        ``,
+        `We recently carried out${desc ? ` *${desc}*` : ' works'}${addr ? ` at *${addr}*` : ''}${jobDate ? ` on *${jobDate}*` : ''}.`,
+        ``,
+        `We hope you are happy with the works! 🛠️`,
+        ``,
+        `This is a friendly reminder regarding invoice *${invNo}* for *£${bal.toFixed(2)}* which is currently outstanding.`,
+        ``,
+        `Could you please arrange payment at your earliest convenience and send us a screenshot so we can mark it as paid? 🙏`,
+        ``,
+        `Thank you!`,
+        `GB Electrical Team`
+      ].join('\n');
+
+      // Copy invoice PDF to clipboard so it can be pasted straight into WhatsApp
+      if (invId) {
+        const orig = btn.textContent;
+        btn.textContent = '⏳';
+        try {
+          const { fetchUrl } = await _invGetPdfUrl(invId);
+          const r = await fetch(fetchUrl, { credentials: 'include' });
+          if (r.ok) {
+            const blob = await r.blob();
+            try {
+              await navigator.clipboard.write([new ClipboardItem({ 'application/pdf': blob })]);
+            } catch {
+              try { await navigator.clipboard.writeText(fetchUrl); } catch {}
+            }
+          }
+        } catch {}
+        btn.textContent = orig;
+      }
+
+      // Open WhatsApp web with pre-filled message
+      if (waPhone) {
+        window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+      } else {
+        try { await navigator.clipboard.writeText(msg); } catch {}
+        alert('No phone number for this contact.\nMessage has been copied to clipboard.');
+      }
+    });
+  });
+
   // Inline row PDF download buttons
   document.querySelectorAll('.inv-dl-btn').forEach(btn => {
     btn.addEventListener('click', async e => {
@@ -7040,6 +7109,7 @@ function _wireInvControls() {
       const start = (_invPage - 1) * _invPageSize;
       _invItems = _invAllItems.slice(start, start + _invPageSize);
       _renderInvoicePage();
+      _loadInvDescriptions(_invItems);
     }
   });
   document.getElementById('inv-next-page')?.addEventListener('click', () => {
@@ -7049,7 +7119,15 @@ function _wireInvControls() {
       const start = (_invPage - 1) * _invPageSize;
       _invItems = _invAllItems.slice(start, start + _invPageSize);
       _renderInvoicePage();
+      _loadInvDescriptions(_invItems);
     }
+  });
+  document.getElementById('inv-size-sel')?.addEventListener('change', e => {
+    _invPageSize = parseInt(e.target.value, 10);
+    _invPage = 1;
+    _invItems = _invAllItems.slice(0, _invPageSize);
+    _renderInvoicePage();
+    _loadInvDescriptions(_invItems);
   });
 }
 
