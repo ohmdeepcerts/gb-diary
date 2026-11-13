@@ -6994,8 +6994,17 @@ function _wireInvControls() {
       // Log activity: job note + local timestamp
       const userName = user?.name || user?.email || 'Staff';
       const tsText   = new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+      const noteText = `📱 WhatsApp chase sent — Invoice ${invNo} £${bal.toFixed(2)} — ${userName} — ${tsText}`;
       if (jobId) {
-        try { await _addJobNote(jobId, `📱 WhatsApp chase sent — Invoice ${invNo} £${bal.toFixed(2)} — ${userName} — ${tsText}`); } catch {}
+        // Try both param shapes the backend accepts
+        try {
+          await trpcMutate('jobs.addNote', { id: jobId, text: noteText });
+        } catch {
+          try { await _addJobNote(jobId, noteText); } catch {}
+        }
+      } else {
+        // No job linked — log against the invoice directly if endpoint exists
+        try { await trpcMutate('invoices.addNote', { invoiceId: invId, text: noteText }); } catch {}
       }
       _invWaLog[invId] = { time: new Date().toISOString(), user: userName };
       try { localStorage.setItem('_invWaLog', JSON.stringify(_invWaLog)); } catch {}
