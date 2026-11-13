@@ -6960,7 +6960,7 @@ function _wireInvControls() {
         `GB Electrical Team`
       ].join('\n');
 
-      // Copy invoice PDF to clipboard so it can be pasted straight into WhatsApp
+      // Auto-download the invoice PDF so it's ready to attach in WhatsApp
       if (invId) {
         const orig = btn.textContent;
         btn.textContent = '⏳';
@@ -6969,11 +6969,14 @@ function _wireInvControls() {
           const r = await fetch(fetchUrl, { credentials: 'include' });
           if (r.ok) {
             const blob = await r.blob();
-            try {
-              await navigator.clipboard.write([new ClipboardItem({ 'application/pdf': blob })]);
-            } catch {
-              try { await navigator.clipboard.writeText(fetchUrl); } catch {}
-            }
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = (invNo || invId) + '.pdf';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
           }
         } catch {}
         btn.textContent = orig;
