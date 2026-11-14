@@ -6825,13 +6825,29 @@ function _wireInvControls() {
   });
 
   function _showAssignPopover(invId, anchorEl) {
+    // Find all invoices for the same client (matched by phone or contactId)
+    const thisInv  = _invAllItems.find(i => i.id === invId) || {};
+    const phone    = (thisInv.contactPhone || '').replace(/[\s\-().]/g,'');
+    const cid      = thisInv.contactId || '';
+    const cname    = thisInv.contactName || '';
+    const clientInvs = _invAllItems.filter(i => {
+      if (i.id === invId) return true;
+      const p = (i.contactPhone || '').replace(/[\s\-().]/g,'');
+      return (phone && p === phone) || (cid && i.contactId === cid);
+    });
+    const clientIds = clientInvs.map(i => i.id);
     const existing  = _invOwnerMap[invId] || '';
     const staffNames = [...new Set(['Mandeep', 'Afzal', ...Object.values(_invOwnerMap)])].filter(Boolean).sort();
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:9998';
     const rect = anchorEl.getBoundingClientRect();
     const menu = document.createElement('div');
-    menu.style.cssText = `position:fixed;top:${Math.min(rect.bottom+4, window.innerHeight-200)}px;left:${Math.max(4,Math.min(rect.left, window.innerWidth-160))}px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.25);z-index:9999;min-width:150px;overflow:hidden;font-size:12px`;
+    menu.style.cssText = `position:fixed;top:${Math.min(rect.bottom+4, window.innerHeight-200)}px;left:${Math.max(4,Math.min(rect.left, window.innerWidth-160))}px;background:#fff;border:1px solid #dde1e7;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.2);z-index:9999;min-width:170px;overflow:hidden;font-size:12px`;
+    // Header showing client name + count
+    const hdr = document.createElement('div');
+    hdr.style.cssText = 'padding:8px 14px 6px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid #eee';
+    hdr.textContent = `${cname || 'Client'} · ${clientIds.length} invoice${clientIds.length!==1?'s':''}`;
+    menu.appendChild(hdr);
     const opts = [
       ...(existing ? [{ val:'', label:'✕ Remove assignment' }] : []),
       ...staffNames.map(n => ({ val:n, label:`👤 ${n}${n===existing?' ✓':''}` })),
@@ -6840,15 +6856,18 @@ function _wireInvControls() {
     opts.forEach(o => {
       const item = document.createElement('div');
       item.textContent = o.label;
-      item.style.cssText = `padding:9px 14px;cursor:pointer;${o.val===existing&&o.val?'font-weight:700;color:#7c3aed':''}`;
-      item.onmouseenter = () => item.style.background = 'var(--bg3)';
+      item.style.cssText = `padding:9px 14px;cursor:pointer;color:${o.val===''?'#dc2626':'#111'};${o.val===existing&&o.val?'font-weight:700;color:#7c3aed':''}`;
+      item.onmouseenter = () => item.style.background = '#f5f5f5';
       item.onmouseleave = () => item.style.background = '';
       item.addEventListener('click', () => {
         overlay.remove();
         let name = o.val;
         if (name === '__new__') name = (prompt('Enter staff name:') || '').trim();
-        if (name) _invOwnerMap[invId] = name;
-        else delete _invOwnerMap[invId];
+        // Apply to ALL invoices for this client
+        clientIds.forEach(id => {
+          if (name) _invOwnerMap[id] = name;
+          else delete _invOwnerMap[id];
+        });
         try { localStorage.setItem('_invOwnerMap', JSON.stringify(_invOwnerMap)); } catch {}
         _renderInvoicePage();
       });
