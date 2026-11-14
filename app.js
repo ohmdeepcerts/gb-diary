@@ -6489,8 +6489,8 @@ function _buildInvTopHTML() {
        </div>`
     : '';
 
-  const ctypes  = ['','landlord','agency','agent','developer'];
-  const ctLabel = { '':'All contacts', landlord:'Landlord', agency:'Agency', agent:'Agent', developer:'Developer' };
+  const ctypes  = ['','landlord','agency','agent','builder'];
+  const ctLabel = { '':'All contacts', landlord:'Landlord', agency:'Agency', agent:'Agent', builder:'Developer' };
   const ctSel   = ctypes.map(v=>`<option value="${v}"${_invContactType===v?' selected':''}>${ctLabel[v]}</option>`).join('');
 
   const sorts = [
