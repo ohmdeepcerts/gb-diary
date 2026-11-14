@@ -6309,6 +6309,23 @@ async function openInvoices() {
   _injectInvoiceCSS();
   showView('invoices');
   await _loadInvoices(true);
+  // Background delivery sync — runs silently every time invoices open,
+  // so delivery status is captured within the 3-day SendGrid window
+  // without requiring the user to open the Email Log page.
+  _bgSyncEmailDelivery();
+}
+
+function _bgSyncEmailDelivery() {
+  // Skip if no invoices have been emailed without a confirmed delivery yet
+  const pending = Object.keys(_invEmailLog).filter(id => !_invDeliveryLog[id]);
+  if (!pending.length) return;
+  setTimeout(async () => {
+    try {
+      const msgRes = await fetch(SG_PROXY + '/v3/messages?limit=500').then(r => r.json()).catch(() => null);
+      const msgs = msgRes?.messages || (Array.isArray(msgRes) ? msgRes : []);
+      if (msgs.length) await _syncEmailDeliveryStatus(msgs);
+    } catch {}
+  }, 3000); // small delay so the invoices page finishes rendering first
 }
 
 function _invSortItems(arr) {
