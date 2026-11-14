@@ -7444,7 +7444,15 @@ function _daysAgoLine(jobDateStr) {
   if (isNaN(jobMs)) return '';
   const days = Math.floor((Date.now() - jobMs) / 86400000);
   if (days < 10) return '';
-  return `*Please note* — this work was completed *${days} days ago* and payment has not yet been received. If there are any issues with the work or invoice from our end, please let us know so we can resolve them straight away. Otherwise, could you please provide a payment date?`;
+  return `⚠️ Please note — this work was completed *${days} days ago* and payment has not yet been received. If there are any issues with the work or invoice from our end, please let us know so we can resolve them straight away. Otherwise, could you please provide a payment date? 🙏`;
+}
+
+function _invToast(msg, ms = 4500) {
+  const t = document.createElement('div');
+  t.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:11px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:99999;box-shadow:0 4px 20px rgba(0,0,0,.35);pointer-events:none;white-space:nowrap';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), ms);
 }
 
 async function _doSingleWAChase({ invId, waPhone, cname, addr, invNo, bal, jobId }, btn) {
@@ -7452,24 +7460,27 @@ async function _doSingleWAChase({ invId, waPhone, cname, addr, invNo, bal, jobId
   const jobDate = (jobId && _invJobDateCache[jobId]) || '';
   const ageLine = _daysAgoLine(jobDate);
   const msg = [
-    `Hi ${cname}, this is GB Electrical.`,
+    `Hi ${cname}, this is GB Electrical 👋`,
     ``,
     `We recently carried out${desc ? ` *${desc}*` : ' works'}${addr ? ` at *${addr}*` : ''}${jobDate ? ` on *${jobDate}*` : ''}.`,
     ``,
-    `We hope you are happy with the works!`,
+    `We hope you are happy with the works! 🛠️`,
     ``,
     `This is a friendly reminder regarding invoice *${invNo}* for *£${bal.toFixed(2)}* which is currently outstanding.`,
     ``,
     ...(ageLine ? [ageLine, ``] : []),
-    `Could you please arrange payment at your earliest convenience and send us a screenshot so we can mark it as paid.`,
+    `Could you please arrange payment at your earliest convenience and send us a screenshot so we can mark it as paid. 🙏`,
     ``,
     `Thank you!`,
     `GB Electrical Team`
   ].join('\n');
-  // Open WhatsApp immediately while user gesture context is still active.
-  // window.open is blocked by popup blockers if called after any await.
+  // Open WhatsApp to the contact WITHOUT pre-filling the text — encoding emojis in the
+  // URL corrupts them on WhatsApp Desktop for Windows (renders as diamond symbols).
+  // The message is copied to clipboard instead; user presses Ctrl+V to paste.
   if (waPhone) {
-    window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+    window.open(`https://wa.me/${waPhone}`, '_blank');
+    try { await navigator.clipboard.writeText(msg); } catch {}
+    _invToast('📋 Message copied — press Ctrl+V in WhatsApp to paste');
   } else {
     try { await navigator.clipboard.writeText(msg); } catch {}
     alert('No phone number for this contact.\nMessage has been copied to clipboard.');
@@ -7536,12 +7547,12 @@ async function _showConsolidatedChaseModal(mainInv, siblings, triggerBtn) {
     return dB - dA;
   })[0] || '';
   const msgLines = [
-    `Hi ${cname}, this is GB Electrical.`,
+    `Hi ${cname}, this is GB Electrical 👋`,
     ``,
     `We have the following outstanding invoices on your account:`,
     ``,
     ...allInvs.map(i => {
-      const parts = [`- *${i.invNo}*`];
+      const parts = [`📋 *${i.invNo}*`];
       if (i.desc) parts.push(i.desc);
       if (i.addr) parts.push(`at ${i.addr}`);
       if (i.jobDate) parts.push(`on ${i.jobDate}`);
@@ -7550,10 +7561,10 @@ async function _showConsolidatedChaseModal(mainInv, siblings, triggerBtn) {
     ``,
     `*Total outstanding: £${total.toFixed(2)}*`,
     ``,
-    `We hope you are happy with all the works!`,
+    `We hope you are happy with all the works! 🛠️`,
     ``,
     ...(oldestAgeLine ? [oldestAgeLine, ``] : []),
-    `Could you please arrange payment at your earliest convenience and send us a screenshot so we can mark them as paid.`,
+    `Could you please arrange payment at your earliest convenience and send us a screenshot so we can mark them as paid. 🙏`,
     ``,
     `Thank you!`,
     `GB Electrical Team`
@@ -7613,7 +7624,9 @@ async function _showConsolidatedChaseModal(mainInv, siblings, triggerBtn) {
     // Open WhatsApp immediately while user gesture context is still active —
     // window.open is blocked by popup blockers if called after any await.
     if (waPhone) {
-      window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(finalMsg)}`, '_blank');
+      window.open(`https://wa.me/${waPhone}`, '_blank');
+      try { await navigator.clipboard.writeText(finalMsg); } catch {}
+      _invToast('📋 Message copied — press Ctrl+V in WhatsApp to paste');
     } else {
       try { await navigator.clipboard.writeText(finalMsg); } catch {}
       alert('No phone number. Message copied to clipboard.');
