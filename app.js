@@ -6106,6 +6106,7 @@ let _invAmtMin      = '';
 let _invAmtMax      = '';
 let _invDateFrom    = '';
 let _invDateTo      = '';
+let _invChaseFilter = '';
 let _invTotals      = null;
 let _invItems       = [];
 let _invAllItems    = [];
@@ -6505,10 +6506,22 @@ function _buildInvTopHTML() {
   const curSort  = `${_invSortBy}|${_invSortDir}`;
   const sortSel  = sorts.map(s=>`<option value="${s.val}"${curSort===s.val?' selected':''}>${s.label}</option>`).join('');
 
-  const activeFilters = [_invDateFrom, _invDateTo, _invAmtMin, _invAmtMax].filter(Boolean).length;
+  const activeFilters = [_invDateFrom, _invDateTo, _invAmtMin, _invAmtMax, _invChaseFilter].filter(Boolean).length;
   const clearFiltersBtn = activeFilters
     ? `<button id="inv-clear-filters" style="padding:5px 10px;border-radius:6px;border:1px solid var(--red);color:var(--red);background:none;font-size:11px;font-weight:600;cursor:pointer">✕ Clear (${activeFilters})</button>`
     : '';
+
+  const chaseChips = [
+    { key:'',          label:'All'            },
+    { key:'not-wa',    label:'📱 Not WA\'d'   },
+    { key:'not-email', label:'📧 Not emailed' },
+    { key:'not-both',  label:'📵 Not contacted'},
+    { key:'wa-7d+',    label:'🔄 WA 7d+ ago'  },
+  ];
+  const chaseFilterHTML = `<div class="inv-aging-row">
+    <span class="inv-aging-lbl">Chase:</span>
+    ${chaseChips.map(c=>`<button class="inv-chip${_invChaseFilter===c.key?' active':''}" data-chasefil="${c.key}">${c.label}</button>`).join('')}
+  </div>`;
 
   const viewLabel = { outstanding:'Outstanding', overdue:'Overdue', all:'All', draft:'Drafts', paid:'Paid' }[_invView] || _invView;
   const viewAmt   = _invViewTotal > 0 ? _invFmt(_invViewTotal) : (_invView==='outstanding'||_invView==='overdue' ? _invFmtPence(t.owedPence) : '—');
@@ -6534,6 +6547,7 @@ function _buildInvTopHTML() {
     </div>
     <div class="inv-tabs">${tabsHTML}</div>
     ${chipsHTML}
+    ${chaseFilterHTML}
     <div class="inv-filter-bar">
       <input type="text" id="inv-search" placeholder="Search invoice, contact…" value="${esc(_invQuery)}">
       <select id="inv-ct">${ctSel}</select>
@@ -6564,6 +6578,13 @@ function _buildInvBodyHTML() {
     if (amtMax !== null && amt > amtMax) return false;
     if (dfrom && inv.dueAt && new Date(inv.dueAt) < dfrom) return false;
     if (dto   && inv.dueAt && new Date(inv.dueAt) > dto)   return false;
+    if (_invChaseFilter === 'not-wa'    && _invWaLog[inv.id])    return false;
+    if (_invChaseFilter === 'not-email' && _invEmailLog[inv.id]) return false;
+    if (_invChaseFilter === 'not-both'  && (_invWaLog[inv.id] || _invEmailLog[inv.id])) return false;
+    if (_invChaseFilter === 'wa-7d+') {
+      const wa = _invWaLog[inv.id];
+      if (wa && (Date.now() - new Date(wa.time).getTime()) < 7 * 86400000) return false;
+    }
     return true;
   });
   const totalPages = Math.max(1, Math.ceil(_invAllItems.length / _invPageSize));
@@ -6754,6 +6775,13 @@ function _wireInvControls() {
   document.querySelectorAll('[data-agechip]').forEach(btn => {
     btn.addEventListener('click', () => {
       _invAgingChip = btn.dataset.agechip;
+      _renderInvoicePage();
+    });
+  });
+
+  document.querySelectorAll('[data-chasefil]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _invChaseFilter = btn.dataset.chasefil;
       _renderInvoicePage();
     });
   });
@@ -7279,7 +7307,7 @@ function _wireInvControls() {
 
   // Clear all extra filters
   document.getElementById('inv-clear-filters')?.addEventListener('click', async () => {
-    _invDateFrom = ''; _invDateTo = ''; _invAmtMin = ''; _invAmtMax = '';
+    _invDateFrom = ''; _invDateTo = ''; _invAmtMin = ''; _invAmtMax = ''; _invChaseFilter = '';
     await _loadInvoices(true);
   });
 
