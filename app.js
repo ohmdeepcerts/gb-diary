@@ -8731,6 +8731,22 @@ function _renderDirTable() {
     const typeStyle = typeBadgeStyle[c.type] || 'background:var(--bg3);color:var(--text2)';
     const typeBadge = c.type ? `<span style="display:inline-block;padding:2px 7px;border-radius:8px;font-size:10px;font-weight:600;${typeStyle}">${esc(c.type)}</span>` : '—';
 
+    // Name cell — editable input
+    const nameTd = document.createElement('td');
+    nameTd.style.cssText = 'padding:9px 14px';
+    const nameInp = document.createElement('input');
+    nameInp.type = 'text';
+    nameInp.placeholder = 'Enter name…';
+    nameInp.value = c.name || '';
+    nameInp.style.cssText = INP + ';width:150px;font-weight:600';
+    nameInp.dataset.id = c.id;
+    nameTd.appendChild(nameInp);
+
+    // Type cell (static badge)
+    const typeTd = document.createElement('td');
+    typeTd.style.cssText = 'padding:9px 8px';
+    typeTd.innerHTML = typeBadge;
+
     // Phone cell — always editable input, pre-filled if known
     const phoneTd = document.createElement('td');
     phoneTd.style.cssText = 'padding:9px 8px';
@@ -8830,9 +8846,8 @@ function _renderDirTable() {
     saveBtn.style.cssText = 'padding:5px 12px;font-size:11px;background:var(--red);color:#fff;border:none;border-radius:6px;cursor:pointer;white-space:nowrap;font-weight:600';
     saveTd.appendChild(saveBtn);
 
-    tr.innerHTML = `
-      <td style="padding:9px 14px;font-weight:600;color:var(--text1)">${esc(c.name || '—')}</td>
-      <td style="padding:9px 8px">${typeBadge}</td>`;
+    tr.appendChild(nameTd);
+    tr.appendChild(typeTd);
     tr.appendChild(phoneTd);
     tr.appendChild(emailTd);
     tr.appendChild(waTd);
@@ -8861,11 +8876,11 @@ function _renderDirTable() {
     tr.appendChild(saveTd);
     tbody.appendChild(tr);
 
-    // Enter in either input triggers save
-    [phoneInp, emailInp].forEach(inp => {
+    // Enter in any input triggers save
+    [nameInp, phoneInp, emailInp].forEach(inp => {
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') saveBtn.click(); });
     });
-    saveBtn.addEventListener('click', () => _dirSaveContact(saveBtn, phoneInp, emailInp));
+    saveBtn.addEventListener('click', () => _dirSaveContact(saveBtn, nameInp, phoneInp, emailInp));
   });
 
   tbl.appendChild(tbody);
@@ -8873,10 +8888,19 @@ function _renderDirTable() {
   body.appendChild(tbl);
 }
 
-async function _dirSaveContact(btn, phoneInp, emailInp) {
+async function _dirSaveContact(btn, nameInp, phoneInp, emailInp) {
   const id    = btn.dataset.id;
+  const name  = nameInp.value.trim();
   const phone = phoneInp.value.trim();
   const email = emailInp.value.trim();
+
+  // Name is required
+  if (!name) {
+    nameInp.style.border = '1px solid var(--red)';
+    nameInp.focus();
+    return;
+  }
+  nameInp.style.border = '';
 
   // Validate email if provided
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -8885,18 +8909,12 @@ async function _dirSaveContact(btn, phoneInp, emailInp) {
     return;
   }
   emailInp.style.border = '';
-
-  if (!phone && !email) {
-    phoneInp.style.border = '1px solid var(--red)';
-    emailInp.style.border = '1px solid var(--red)';
-    return;
-  }
   phoneInp.style.border = '';
 
   btn.disabled = true;
   btn.textContent = '…';
 
-  const payload = { contactId: id };
+  const payload = { contactId: id, name };
   if (phone) payload.phone = phone;
   if (email) payload.email = email;
 
@@ -8905,13 +8923,14 @@ async function _dirSaveContact(btn, phoneInp, emailInp) {
     // Update local cache
     if (_dirContacts) {
       const c = _dirContacts.find(x => x.id === id);
-      if (c) { if (phone) c.phone = phone; if (email) c.email = email; }
+      if (c) { c.name = name; if (phone) c.phone = phone; if (email) c.email = email; }
     }
     btn.textContent = '✓';
     btn.style.background = '#16a34a';
+    nameInp.style.border = '1px solid #16a34a';
     phoneInp.style.border = '1px solid #16a34a';
     emailInp.style.border = '1px solid #16a34a';
-    const saved = [phone && `📞 ${phone}`, email && `✉ ${email}`].filter(Boolean).join('  ');
+    const saved = [`👤 ${name}`, phone && `📞 ${phone}`, email && `✉ ${email}`].filter(Boolean).join('  ');
     document.getElementById('stxt-dir').textContent = `Saved: ${saved}`;
     // Fade out row if it now satisfies neither missing filter
     const nowMissingEmail = !email && _dirMissingOnly;
@@ -8921,13 +8940,13 @@ async function _dirSaveContact(btn, phoneInp, emailInp) {
       const tr = btn.closest('tr');
       if (tr) { tr.style.transition = 'opacity .4s'; tr.style.opacity = '0.35'; setTimeout(() => { tr.remove(); _updateDirCount(); }, 800); }
     } else {
-      setTimeout(() => { btn.textContent = 'Save'; btn.style.background = ''; btn.disabled = false; phoneInp.style.border = ''; emailInp.style.border = ''; }, 2000);
+      setTimeout(() => { btn.textContent = 'Save'; btn.style.background = ''; btn.disabled = false; nameInp.style.border = ''; phoneInp.style.border = ''; emailInp.style.border = ''; }, 2000);
     }
   } catch(e) {
     btn.disabled = false;
     btn.textContent = 'Save';
     btn.style.background = '';
-    phoneInp.style.border = '1px solid var(--red)';
+    nameInp.style.border = '1px solid var(--red)';
     document.getElementById('stxt-dir').textContent = `⚠ ${e.message}`;
   }
 }
