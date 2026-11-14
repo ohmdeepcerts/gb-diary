@@ -7126,6 +7126,52 @@ function _wireInvControls() {
 
           statusEl.style.color = '#22c55e'; statusEl.textContent = '✓ Invoice sent successfully!';
           setTimeout(() => modal.remove(), 1400);
+
+          // Background delivery check — query SendGrid ~30s after send
+          const _checkTo = toVal, _checkInvNo = invNo, _checkInvId = invId, _checkJobId = jobId;
+          const _checkUser = user?.name || user?.email || 'Staff';
+          setTimeout(async () => {
+            try {
+              const msgRes = await fetch(SG_PROXY + '/v3/messages?limit=100').then(r => r.json()).catch(() => null);
+              if (!msgRes) return;
+              const msgs = msgRes?.messages || (Array.isArray(msgRes) ? msgRes : []);
+              const fifteenMinsAgo = Date.now() - 15 * 60 * 1000;
+              const match = msgs.find(m => {
+                const t = m.last_event_time ? new Date(m.last_event_time).getTime() : 0;
+                return t > fifteenMinsAgo &&
+                       (m.to_email || '').toLowerCase() === _checkTo.toLowerCase() &&
+                       (m.subject  || '').includes(_checkInvNo);
+              });
+              if (!match) return;
+              const DLVD = new Set(['delivered','open','opened','click','clicked']);
+              const BNCD = new Set(['bounce','bounced','blocked','drop','dropped']);
+              const st   = (match.status || '').toLowerCase();
+              const statusLabel = DLVD.has(st) ? '✓ Delivered' : BNCD.has(st) ? '✗ Bounced' : st === 'deferred' ? '⚠ Deferred' : (match.status || 'Unknown');
+              const isDelivered = DLVD.has(st);
+              const isBounced   = BNCD.has(st);
+
+              // Log delivery note to job
+              const tsText = new Date().toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+              const dlvNote = `📧 Delivery status: Invoice ${_checkInvNo} to ${_checkTo} — ${statusLabel} — ${_checkUser} — ${tsText}`;
+              if (_checkJobId) {
+                try { await trpcMutate('jobs.addNote', { id: _checkJobId, text: dlvNote }); } catch {}
+              }
+
+              // Update the button badge in the table if still visible
+              const liveBtn = document.querySelector(`.inv-email-btn[data-em-invid="${CSS.escape(_checkInvId)}"]`);
+              if (liveBtn) {
+                const liveCell = liveBtn.closest('td');
+                const liveTs   = liveCell?.querySelector('.inv-em-ts');
+                if (liveTs) {
+                  const dot = isDelivered ? '🟢' : isBounced ? '🔴' : '🟡';
+                  liveTs.textContent = dot + ' ' + new Date(match.last_event_time).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',','');
+                  liveTs.style.color = isDelivered ? '#22c55e' : isBounced ? '#ef4444' : '#f59e0b';
+                }
+                liveBtn.title = `${statusLabel} — ${tsText}`;
+              }
+            } catch {}
+          }, 30000);
+
         } catch(err) {
           sendBtn.disabled = false; sendBtn.textContent = 'Send Invoice';
           statusEl.style.color = '#ef4444';
