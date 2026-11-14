@@ -6111,6 +6111,7 @@ let _invDescCache    = {};
 let _invJobDateCache = {};
 let _invWaLog        = (() => { try { return JSON.parse(localStorage.getItem('_invWaLog')||'{}'); } catch { return {}; } })();
 let _invEmailLog     = (() => { try { return JSON.parse(localStorage.getItem('_invEmailLog')||'{}'); } catch { return {}; } })();
+let _invDeliveryLog  = (() => { try { return JSON.parse(localStorage.getItem('_invDeliveryLog')||'{}'); } catch { return {}; } })();
 
 // ── INVOICE CSS ────────────────────────────────────────────────────────────────
 
@@ -7108,7 +7109,7 @@ function _wireInvControls() {
 
           // Persist timestamp
           const userName = user?.name || user?.email || 'Staff';
-          _invEmailLog[invId] = { time: new Date().toISOString(), user: userName };
+          _invEmailLog[invId] = { time: new Date().toISOString(), user: userName, jobId, invNo, toAddr: toVal };
           try { localStorage.setItem('_invEmailLog', JSON.stringify(_invEmailLog)); } catch {}
 
           // Update button timestamp inline
@@ -7127,48 +7128,12 @@ function _wireInvControls() {
           statusEl.style.color = '#22c55e'; statusEl.textContent = '✓ Invoice sent successfully!';
           setTimeout(() => modal.remove(), 1400);
 
-          // Background delivery check — query SendGrid ~30s after send
-          const _checkTo = toVal, _checkInvNo = invNo, _checkInvId = invId, _checkJobId = jobId;
-          const _checkUser = user?.name || user?.email || 'Staff';
+          // Background delivery check — query SendGrid ~30s after send, reuse shared sync logic
           setTimeout(async () => {
             try {
               const msgRes = await fetch(SG_PROXY + '/v3/messages?limit=100').then(r => r.json()).catch(() => null);
-              if (!msgRes) return;
               const msgs = msgRes?.messages || (Array.isArray(msgRes) ? msgRes : []);
-              const fifteenMinsAgo = Date.now() - 15 * 60 * 1000;
-              const match = msgs.find(m => {
-                const t = m.last_event_time ? new Date(m.last_event_time).getTime() : 0;
-                return t > fifteenMinsAgo &&
-                       (m.to_email || '').toLowerCase() === _checkTo.toLowerCase() &&
-                       (m.subject  || '').includes(_checkInvNo);
-              });
-              if (!match) return;
-              const DLVD = new Set(['delivered','open','opened','click','clicked']);
-              const BNCD = new Set(['bounce','bounced','blocked','drop','dropped']);
-              const st   = (match.status || '').toLowerCase();
-              const statusLabel = DLVD.has(st) ? '✓ Delivered' : BNCD.has(st) ? '✗ Bounced' : st === 'deferred' ? '⚠ Deferred' : (match.status || 'Unknown');
-              const isDelivered = DLVD.has(st);
-              const isBounced   = BNCD.has(st);
-
-              // Log delivery note to job
-              const tsText = new Date().toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
-              const dlvNote = `📧 Delivery status: Invoice ${_checkInvNo} to ${_checkTo} — ${statusLabel} — ${_checkUser} — ${tsText}`;
-              if (_checkJobId) {
-                try { await trpcMutate('jobs.addNote', { id: _checkJobId, text: dlvNote }); } catch {}
-              }
-
-              // Update the button badge in the table if still visible
-              const liveBtn = document.querySelector(`.inv-email-btn[data-em-invid="${CSS.escape(_checkInvId)}"]`);
-              if (liveBtn) {
-                const liveCell = liveBtn.closest('td');
-                const liveTs   = liveCell?.querySelector('.inv-em-ts');
-                if (liveTs) {
-                  const dot = isDelivered ? '🟢' : isBounced ? '🔴' : '🟡';
-                  liveTs.textContent = dot + ' ' + new Date(match.last_event_time).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',','');
-                  liveTs.style.color = isDelivered ? '#22c55e' : isBounced ? '#ef4444' : '#f59e0b';
-                }
-                liveBtn.title = `${statusLabel} — ${tsText}`;
-              }
+              if (msgs.length) await _syncEmailDeliveryStatus(msgs);
             } catch {}
           }, 30000);
 
@@ -7741,6 +7706,62 @@ const EMAIL_PAGE_SIZE = 30;
 let _emailExcludes = [];
 try { _emailExcludes = JSON.parse(localStorage.getItem('email_excludes') || '[]'); } catch(e) { _emailExcludes = []; }
 
+// Cross-reference SendGrid messages against every invoice we've emailed.
+// Logs delivery status to job activity and updates button badges for any
+// that have a final status not yet confirmed in _invDeliveryLog.
+async function _syncEmailDeliveryStatus(messages) {
+  if (!messages?.length) return;
+  const DLVD = new Set(['delivered','open','opened','click','clicked']);
+  const BNCD = new Set(['bounce','bounced','blocked','drop','dropped']);
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+  for (const [invId, entry] of Object.entries(_invEmailLog)) {
+    if (_invDeliveryLog[invId]) continue; // already confirmed
+    const { invNo, jobId, toAddr, user: sentUser } = entry || {};
+    if (!invNo) continue;
+
+    const sentAt = entry.time ? new Date(entry.time).getTime() : 0;
+    const match = messages.find(m => {
+      const t = m.last_event_time ? new Date(m.last_event_time).getTime() : 0;
+      return t > sevenDaysAgo && t >= sentAt &&
+             (m.subject || '').includes(invNo) &&
+             (!toAddr || (m.to_email || '').toLowerCase() === toAddr.toLowerCase());
+    });
+    if (!match) continue;
+
+    const st = (match.status || '').toLowerCase();
+    const isFinal = DLVD.has(st) || BNCD.has(st) || st === 'deferred';
+    if (!isFinal) continue;
+
+    const statusLabel = DLVD.has(st) ? '✓ Delivered' : BNCD.has(st) ? '✗ Bounced' : '⚠ Deferred';
+    const isDelivered = DLVD.has(st);
+    const isBounced   = BNCD.has(st);
+
+    // Store confirmed status so we don't re-log on the next sync
+    _invDeliveryLog[invId] = { status: match.status, time: match.last_event_time };
+    try { localStorage.setItem('_invDeliveryLog', JSON.stringify(_invDeliveryLog)); } catch {}
+
+    // Log delivery note to job activity
+    const tsText = new Date(match.last_event_time).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    const dlvNote = `📧 Delivery status: Invoice ${invNo}${toAddr?' to '+toAddr:''} — ${statusLabel} — ${sentUser||'Staff'} — ${tsText}`;
+    if (jobId) {
+      try { await trpcMutate('jobs.addNote', { id: jobId, text: dlvNote }); } catch {}
+    }
+
+    // Update button badge in invoices table if currently visible
+    const liveBtn = document.querySelector(`.inv-email-btn[data-em-invid="${CSS.escape(invId)}"]`);
+    if (liveBtn) {
+      const liveTs = liveBtn.closest('td')?.querySelector('.inv-em-ts');
+      if (liveTs) {
+        const dot = isDelivered ? '🟢' : isBounced ? '🔴' : '🟡';
+        liveTs.textContent = dot + ' ' + new Date(match.last_event_time).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',','');
+        liveTs.style.color = isDelivered ? '#22c55e' : isBounced ? '#ef4444' : '#f59e0b';
+      }
+      liveBtn.title = `${statusLabel} — ${tsText}`;
+    }
+  }
+}
+
 async function openEmails() {
   _injectEmailCSS();
   showView('emails');
@@ -7771,6 +7792,8 @@ async function _loadEmailLog() {
     const bounces  = Array.isArray(bounceRes) ? bounceRes : [];
     _emailSearch = ''; _emailStatusFilter = ''; _emailPage = 0; _emailDateFilter = '';
     _renderEmailLog(body, messages, bounces);
+    // Sync delivery status back to job activity and button badges
+    _syncEmailDeliveryStatus(messages).catch(() => {});
   } catch(e) {
     body.innerHTML = `<div class="loading-row" style="color:var(--red)">⚠ ${esc(e.message)}</div>`;
   }
