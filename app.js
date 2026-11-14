@@ -6122,6 +6122,8 @@ let _invContactCache = {};
 let _invWaLog        = (() => { try { return JSON.parse(localStorage.getItem('_invWaLog')||'{}'); } catch { return {}; } })();
 let _invEmailLog     = (() => { try { return JSON.parse(localStorage.getItem('_invEmailLog')||'{}'); } catch { return {}; } })();
 let _invDeliveryLog  = (() => { try { return JSON.parse(localStorage.getItem('_invDeliveryLog')||'{}'); } catch { return {}; } })();
+let _invOwnerMap     = (() => { try { return JSON.parse(localStorage.getItem('_invOwnerMap')||'{}'); } catch { return {}; } })();
+let _invOwnerFilter  = '';
 
 // ── INVOICE CSS ────────────────────────────────────────────────────────────────
 
@@ -6161,6 +6163,9 @@ function _injectInvoiceCSS() {
     .inv-row.st-paid td{background:rgba(34,197,94,.04)}
     .inv-row.st-paid:hover td{background:rgba(34,197,94,.08)}
     .inv-row.st-draft td{opacity:.7}
+    .inv-row.has-owner td{opacity:.6}
+    .inv-row.has-owner:hover td{opacity:1}
+    .inv-owner-badge{display:inline-block;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;background:rgba(139,92,246,.15);color:#7c3aed;white-space:nowrap;margin-top:2px;cursor:pointer;border:1px solid rgba(139,92,246,.3)}
     .inv-badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;white-space:nowrap}
     .inv-badge.overdue{background:rgba(239,68,68,.15);color:#ef4444}
     .inv-badge.paid{background:rgba(34,197,94,.15);color:#16a34a}
@@ -6506,7 +6511,7 @@ function _buildInvTopHTML() {
   const curSort  = `${_invSortBy}|${_invSortDir}`;
   const sortSel  = sorts.map(s=>`<option value="${s.val}"${curSort===s.val?' selected':''}>${s.label}</option>`).join('');
 
-  const activeFilters = [_invDateFrom, _invDateTo, _invAmtMin, _invAmtMax, _invChaseFilter].filter(Boolean).length;
+  const activeFilters = [_invDateFrom, _invDateTo, _invAmtMin, _invAmtMax, _invChaseFilter, _invOwnerFilter].filter(Boolean).length;
   const clearFiltersBtn = activeFilters
     ? `<button id="inv-clear-filters" style="padding:5px 10px;border-radius:6px;border:1px solid var(--red);color:var(--red);background:none;font-size:11px;font-weight:600;cursor:pointer">✕ Clear (${activeFilters})</button>`
     : '';
@@ -6522,6 +6527,17 @@ function _buildInvTopHTML() {
     <span class="inv-aging-lbl">Chase:</span>
     ${chaseChips.map(c=>`<button class="inv-chip${_invChaseFilter===c.key?' active':''}" data-chasefil="${c.key}">${c.label}</button>`).join('')}
   </div>`;
+
+  const ownerNames = [...new Set(Object.values(_invOwnerMap))].filter(Boolean).sort();
+  const ownerChips = [
+    { key: '',           label: 'All' },
+    { key: 'unassigned', label: '✓ Unassigned' },
+    ...ownerNames.map(n => ({ key: n, label: `👤 ${n}` }))
+  ];
+  const ownerFilterHTML = ownerNames.length ? `<div class="inv-aging-row">
+    <span class="inv-aging-lbl">Owner:</span>
+    ${ownerChips.map(c=>`<button class="inv-chip${_invOwnerFilter===c.key?' active':''}" data-ownerfil="${c.key}">${c.label}</button>`).join('')}
+  </div>` : '';
 
   const viewLabel = { outstanding:'Outstanding', overdue:'Overdue', all:'All', draft:'Drafts', paid:'Paid' }[_invView] || _invView;
   const viewAmt   = _invViewTotal > 0 ? _invFmt(_invViewTotal) : (_invView==='outstanding'||_invView==='overdue' ? _invFmtPence(t.owedPence) : '—');
@@ -6548,6 +6564,7 @@ function _buildInvTopHTML() {
     <div class="inv-tabs">${tabsHTML}</div>
     ${chipsHTML}
     ${chaseFilterHTML}
+    ${ownerFilterHTML}
     <div class="inv-filter-bar">
       <input type="text" id="inv-search" placeholder="Search invoice, contact…" value="${esc(_invQuery)}">
       <select id="inv-ct">${ctSel}</select>
@@ -6585,6 +6602,8 @@ function _buildInvBodyHTML() {
       const wa = _invWaLog[inv.id];
       if (wa && (Date.now() - new Date(wa.time).getTime()) < 7 * 86400000) return false;
     }
+    if (_invOwnerFilter === 'unassigned' && _invOwnerMap[inv.id]) return false;
+    if (_invOwnerFilter && _invOwnerFilter !== 'unassigned' && _invOwnerMap[inv.id] !== _invOwnerFilter) return false;
     return true;
   });
   const totalPages = Math.max(1, Math.ceil(_invAllItems.length / _invPageSize));
@@ -6670,7 +6689,7 @@ function _buildInvBodyHTML() {
     `;
 
     return `
-      <tr class="inv-row st-${status}" data-idx="${idx}" data-jobid="${esc(inv.jobId||'')}"  data-jobno="${esc(inv.jobNo||'')}"  data-cname="${esc(inv.contactName||'')}"  data-invno="${esc(inv.invoiceNo||'')}" data-invid="${esc(inv.id||'')}" data-pdfpath="${esc(inv.pdfPath||'')}">
+      <tr class="inv-row st-${status}${_invOwnerMap[inv.id]?' has-owner':''}" data-idx="${idx}" data-jobid="${esc(inv.jobId||'')}"  data-jobno="${esc(inv.jobNo||'')}"  data-cname="${esc(inv.contactName||'')}"  data-invno="${esc(inv.invoiceNo||'')}" data-invid="${esc(inv.id||'')}" data-pdfpath="${esc(inv.pdfPath||'')}">
         <td style="width:30px;padding:6px 8px" onclick="event.stopPropagation()"><input type="checkbox" class="inv-sel-cb inv-row-cb" data-invid="${esc(inv.id||'')}"></td>
         <td style="font-weight:700;font-size:11px;white-space:nowrap">${esc(inv.invoiceNo||'—')}</td>
         <td style="font-size:11px;white-space:nowrap">${esc(inv.jobNo||'—')}</td>
@@ -6678,6 +6697,7 @@ function _buildInvBodyHTML() {
         <td data-livecontact-id="${esc(inv.id)}" style="font-size:11px;max-width:160px">
           <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(inv.contactName||'—')}</div>
           ${inv.contactPhone?`<a href="tel:${esc(inv.contactPhone)}" onclick="event.stopPropagation()" style="font-size:10px;color:var(--accent);text-decoration:none;white-space:nowrap">📞 ${esc(inv.contactPhone)}</a>`:''}
+          ${_invOwnerMap[inv.id]?`<div class="inv-owner-badge" onclick="event.stopPropagation()" data-assigninv="${esc(inv.id)}">👤 ${esc(_invOwnerMap[inv.id])}</div>`:''}
         </td>
         <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">${esc(inv.siteAddress||'—')}</td>
         <td data-desc-id="${inv.id}" style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">${descVal}</td>
@@ -6689,9 +6709,10 @@ function _buildInvBodyHTML() {
         <td style="text-align:center;white-space:nowrap" onclick="event.stopPropagation()">${inv.pdfPath?`<button class="inv-act-btn inv-dl-btn" data-dlinvid="${esc(inv.id||'')}" data-dlinvno="${esc(inv.invoiceNo||inv.id||'')}">⬇ PDF</button>`:''}</td>
         <td style="text-align:center;white-space:nowrap;vertical-align:middle" onclick="event.stopPropagation()">${inv.contactPhone?`<div style="display:flex;flex-direction:column;align-items:center;gap:2px"><button class="inv-act-btn inv-wa-btn" style="background:#25D366;color:#fff;border-color:#1ebe5d" title="${_invWaLog[inv.id]?`Last sent ${new Date(_invWaLog[inv.id].time).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',','')} by ${esc(_invWaLog[inv.id].user)}`:'Send WhatsApp chase'}" data-wa-invid="${esc(inv.id||'')}" data-wa-phone="${esc(inv.contactPhone||'')}" data-wa-cname="${esc(inv.contactName||'')}" data-wa-addr="${esc(inv.siteAddress||'')}" data-wa-invno="${esc(inv.invoiceNo||'')}" data-wa-bal="${Math.max(0,inv.balance||inv.total||0)}" data-wa-jobid="${esc(inv.jobId||'')}">📱</button>${_invWaLog[inv.id]?`<span class="inv-wa-ts" style="font-size:9px;color:#1ebe5d;white-space:nowrap;line-height:1">${new Date(_invWaLog[inv.id].time).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',','')}</span>`:'<span class="inv-wa-ts" style="font-size:9px;color:var(--muted);white-space:nowrap;line-height:1"></span>'}</div>`:''}</td>
         <td style="text-align:center;white-space:nowrap;vertical-align:middle" onclick="event.stopPropagation()"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><button class="inv-act-btn inv-email-btn" style="background:#2563eb;color:#fff;border-color:#1d4ed8;min-width:36px" title="${_invEmailLog[inv.id]?`Last emailed ${new Date(_invEmailLog[inv.id].time).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',','')} by ${esc(_invEmailLog[inv.id].user)}`:'Email invoice to client'}" data-em-invid="${esc(inv.id||'')}" data-em-invno="${esc(inv.invoiceNo||'')}" data-em-email="${esc(inv.contactEmail||'')}" data-em-cname="${esc(inv.contactName||'')}">📧</button>${_invEmailLog[inv.id]?`<span class="inv-em-ts" style="font-size:9px;color:#60a5fa;white-space:nowrap;line-height:1">${new Date(_invEmailLog[inv.id].time).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',','')}</span>`:'<span class="inv-em-ts" style="font-size:9px;color:var(--muted);white-space:nowrap;line-height:1"></span>'}</div></td>
+        <td style="text-align:center;white-space:nowrap;vertical-align:middle" onclick="event.stopPropagation()"><button class="inv-act-btn inv-assign-btn" data-assigninv="${esc(inv.id)}" title="${_invOwnerMap[inv.id]?`Assigned to ${esc(_invOwnerMap[inv.id])} — click to change`:'Assign to staff member'}" style="${_invOwnerMap[inv.id]?'background:#7c3aed;color:#fff;border-color:#6d28d9':''}">👤</button></td>
       </tr>
       <tr class="inv-detail-row" data-detail="${idx}">
-        <td class="inv-detail-cell" colspan="14">${detailHTML}</td>
+        <td class="inv-detail-cell" colspan="15">${detailHTML}</td>
       </tr>
     `;
   }).join('');
@@ -6793,6 +6814,55 @@ function _wireInvControls() {
     btn.addEventListener('click', () => {
       _invChaseFilter = btn.dataset.chasefil;
       _renderInvoicePage();
+    });
+  });
+
+  document.querySelectorAll('[data-ownerfil]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _invOwnerFilter = btn.dataset.ownerfil;
+      _renderInvoicePage();
+    });
+  });
+
+  function _showAssignPopover(invId, anchorEl) {
+    const existing  = _invOwnerMap[invId] || '';
+    const staffNames = [...new Set(['Mandeep', 'Afzal', ...Object.values(_invOwnerMap)])].filter(Boolean).sort();
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:9998';
+    const rect = anchorEl.getBoundingClientRect();
+    const menu = document.createElement('div');
+    menu.style.cssText = `position:fixed;top:${Math.min(rect.bottom+4, window.innerHeight-200)}px;left:${Math.max(4,Math.min(rect.left, window.innerWidth-160))}px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.25);z-index:9999;min-width:150px;overflow:hidden;font-size:12px`;
+    const opts = [
+      ...(existing ? [{ val:'', label:'✕ Remove assignment' }] : []),
+      ...staffNames.map(n => ({ val:n, label:`👤 ${n}${n===existing?' ✓':''}` })),
+      { val:'__new__', label:'＋ New name…' }
+    ];
+    opts.forEach(o => {
+      const item = document.createElement('div');
+      item.textContent = o.label;
+      item.style.cssText = `padding:9px 14px;cursor:pointer;${o.val===existing&&o.val?'font-weight:700;color:#7c3aed':''}`;
+      item.onmouseenter = () => item.style.background = 'var(--bg3)';
+      item.onmouseleave = () => item.style.background = '';
+      item.addEventListener('click', () => {
+        overlay.remove();
+        let name = o.val;
+        if (name === '__new__') name = (prompt('Enter staff name:') || '').trim();
+        if (name) _invOwnerMap[invId] = name;
+        else delete _invOwnerMap[invId];
+        try { localStorage.setItem('_invOwnerMap', JSON.stringify(_invOwnerMap)); } catch {}
+        _renderInvoicePage();
+      });
+      menu.appendChild(item);
+    });
+    overlay.appendChild(menu);
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  }
+
+  document.querySelectorAll('.inv-assign-btn, [data-assigninv]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      _showAssignPopover(btn.dataset.assigninv, btn);
     });
   });
 
@@ -7308,7 +7378,7 @@ function _wireInvControls() {
 
   // Clear all extra filters
   document.getElementById('inv-clear-filters')?.addEventListener('click', async () => {
-    _invDateFrom = ''; _invDateTo = ''; _invAmtMin = ''; _invAmtMax = ''; _invChaseFilter = '';
+    _invDateFrom = ''; _invDateTo = ''; _invAmtMin = ''; _invAmtMax = ''; _invChaseFilter = ''; _invOwnerFilter = '';
     await _loadInvoices(true);
   });
 
