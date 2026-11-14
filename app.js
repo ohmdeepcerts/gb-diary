@@ -6117,6 +6117,7 @@ let _stmtContactType = '';
 let _invCSSInjected  = false;
 let _invDescCache    = {};
 let _invJobDateCache = {};
+let _invContactCache = {};
 let _invWaLog        = (() => { try { return JSON.parse(localStorage.getItem('_invWaLog')||'{}'); } catch { return {}; } })();
 let _invEmailLog     = (() => { try { return JSON.parse(localStorage.getItem('_invEmailLog')||'{}'); } catch { return {}; } })();
 let _invDeliveryLog  = (() => { try { return JSON.parse(localStorage.getItem('_invDeliveryLog')||'{}'); } catch { return {}; } })();
@@ -6388,8 +6389,9 @@ async function _loadInvoices(resetPage = false) {
   // Render immediately — descriptions fill in the background
   _renderInvoicePage();
 
-  // Fetch line-item descriptions in background (non-blocking), update cells as they arrive
+  // Fetch line-item descriptions and live contact data in background (non-blocking)
   _loadInvDescriptions(_invItems);
+  _loadInvContacts(_invItems);
 }
 
 function _loadInvDescriptions(items) {
@@ -6418,6 +6420,38 @@ function _loadInvDescriptions(items) {
       if (jdCell) jdCell.textContent = _invJobDateCache[inv.jobId];
     }
   });
+}
+
+function _loadInvContacts(items) {
+  const byJob = {};
+  items.forEach(inv => { if (inv.jobId) (byJob[inv.jobId] = byJob[inv.jobId] || []).push(inv); });
+  Object.entries(byJob).forEach(async ([jobId, invs]) => {
+    if (_invContactCache[jobId] !== undefined) {
+      invs.forEach(inv => _applyInvContact(inv.id, _invContactCache[jobId]));
+      return;
+    }
+    try {
+      const jd  = await trpcQuery('jobs.get', { id: jobId });
+      const job = jd?.job || jd || {};
+      const name  = jobCustomer(job);
+      const phone = jobPhone(job);
+      const email = job.contact?.email || job.contact_snapshot?.email ||
+                    job.customer?.email || job.client?.email || job.contactEmail || '';
+      _invContactCache[jobId] = { name, phone, email };
+    } catch(e) { _invContactCache[jobId] = {}; }
+    invs.forEach(inv => _applyInvContact(inv.id, _invContactCache[jobId]));
+  });
+}
+
+function _applyInvContact(invId, c) {
+  const cell = document.querySelector(`[data-livecontact-id="${CSS.escape(invId)}"]`);
+  if (!cell || !c) return;
+  const name  = c.name  || '';
+  const phone = c.phone || '';
+  if (!name && !phone) return;
+  cell.innerHTML =
+    `<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(name || '—')}</div>` +
+    (phone ? `<a href="tel:${esc(phone)}" onclick="event.stopPropagation()" style="font-size:10px;color:var(--accent);text-decoration:none;white-space:nowrap">📞 ${esc(phone)}</a>` : '');
 }
 
 function _renderInvoicePage() {
@@ -6620,7 +6654,7 @@ function _buildInvBodyHTML() {
         <td style="font-weight:700;font-size:11px;white-space:nowrap">${esc(inv.invoiceNo||'—')}</td>
         <td style="font-size:11px;white-space:nowrap">${esc(inv.jobNo||'—')}</td>
         <td data-jobdate-id="${inv.id}" style="font-size:11px;white-space:nowrap;color:var(--muted)">${inv.jobId&&_invJobDateCache[inv.jobId]?_invJobDateCache[inv.jobId]:'⏳'}</td>
-        <td style="font-size:11px;max-width:160px">
+        <td data-livecontact-id="${esc(inv.id)}" style="font-size:11px;max-width:160px">
           <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(inv.contactName||'—')}</div>
           ${inv.contactPhone?`<a href="tel:${esc(inv.contactPhone)}" onclick="event.stopPropagation()" style="font-size:10px;color:var(--accent);text-decoration:none;white-space:nowrap">📞 ${esc(inv.contactPhone)}</a>`:''}
         </td>
@@ -7311,6 +7345,7 @@ function _wireInvControls() {
       _invItems = _invAllItems.slice(start, start + _invPageSize);
       _renderInvoicePage();
       _loadInvDescriptions(_invItems);
+      _loadInvContacts(_invItems);
     }
   });
   document.getElementById('inv-next-page')?.addEventListener('click', () => {
@@ -7321,6 +7356,7 @@ function _wireInvControls() {
       _invItems = _invAllItems.slice(start, start + _invPageSize);
       _renderInvoicePage();
       _loadInvDescriptions(_invItems);
+      _loadInvContacts(_invItems);
     }
   });
   document.getElementById('inv-size-sel')?.addEventListener('change', e => {
@@ -7329,6 +7365,7 @@ function _wireInvControls() {
     _invItems = _invAllItems.slice(0, _invPageSize);
     _renderInvoicePage();
     _loadInvDescriptions(_invItems);
+    _loadInvContacts(_invItems);
   });
 }
 
