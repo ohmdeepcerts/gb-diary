@@ -7027,17 +7027,25 @@ function _wireInvControls() {
       const invId  = btn.dataset.emInvid;
       const invNo  = btn.dataset.emInvno  || '';
       const toAddr = btn.dataset.emEmail  || '';
-      const cname  = btn.dataset.emCname  || 'Client';
+      // Job ID: get from WA button in same row (reliable sibling lookup)
+      const jobId  = btn.closest('tr')?.querySelector('[data-wa-jobid]')?.dataset?.waJobid || '';
 
-      // Remove any existing email modal
       document.getElementById('inv-email-modal')?.remove();
 
+      // Build modal — show loading history section
       const modal = document.createElement('div');
       modal.id = 'inv-email-modal';
       modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:#00000080';
       modal.innerHTML = `
-        <div style="background:var(--surface,#1e2130);border:1px solid var(--border,#2d3250);border-radius:14px;padding:24px;width:420px;max-width:95vw;box-shadow:0 20px 60px #000a">
-          <div style="font-size:15px;font-weight:700;margin-bottom:16px">📧 Email Invoice ${esc(invNo)}</div>
+        <div style="background:var(--surface,#1e2130);border:1px solid var(--border,#2d3250);border-radius:14px;padding:24px;width:460px;max-width:95vw;box-shadow:0 20px 60px #000a">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+            <span style="font-size:18px">📧</span>
+            <div>
+              <div style="font-size:15px;font-weight:700">Email Invoice ${esc(invNo)}</div>
+              <div id="inv-em-hist-line" style="font-size:11px;color:var(--muted,#8892b0)">Loading send history…</div>
+            </div>
+          </div>
+          <div id="inv-em-hist" style="margin-bottom:14px"></div>
           <div style="font-size:12px;color:var(--muted,#8892b0);margin-bottom:4px">To</div>
           <input id="inv-em-to" type="email" value="${esc(toAddr)}" placeholder="client@example.com"
             style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--border,#2d3250);background:var(--bg,#0f1117);color:var(--text,#e8eaf6);font-size:13px;margin-bottom:12px">
@@ -7053,7 +7061,34 @@ function _wireInvControls() {
       document.body.appendChild(modal);
 
       modal.querySelector('#inv-em-cancel').addEventListener('click', () => modal.remove());
-      modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+      modal.addEventListener('click', ev => { if (ev.target === modal) modal.remove(); });
+
+      // Load send history from audit log
+      (async () => {
+        try {
+          const ad = await trpcQuery('audit.list', { entityId: invId, pageSize: 50 });
+          const sends = (ad?.rows || []).filter(r => r.action === 'invoice.send');
+          const histLine = modal.querySelector('#inv-em-hist-line');
+          const histBox  = modal.querySelector('#inv-em-hist');
+          if (!sends.length) {
+            histLine.textContent = 'Never emailed before';
+            histBox.innerHTML = '';
+          } else {
+            histLine.innerHTML = `<span style="color:#60a5fa;font-weight:600">${sends.length} time${sends.length>1?'s':''} sent previously</span>`;
+            histBox.innerHTML = `<div style="background:var(--bg,#0f1117);border:1px solid var(--border,#2d3250);border-radius:8px;padding:8px 10px;max-height:120px;overflow-y:auto">` +
+              sends.map(s => {
+                const dt = new Date(s.createdAt).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
+                const cc = (s.after?.cc || []).join(', ');
+                return `<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--border,#2d3250)22;display:flex;gap:6px;align-items:center">
+                  <span style="color:#60a5fa;white-space:nowrap">${dt}</span>
+                  <span style="color:var(--muted,#8892b0)">by</span>
+                  <span style="font-weight:600;white-space:nowrap">${esc(s.actorLabel||'')}</span>
+                  ${cc?`<span style="color:var(--muted,#8892b0);font-size:10px">CC: ${esc(cc)}</span>`:''}
+                </div>`;
+              }).join('') + `</div>`;
+          }
+        } catch {}
+      })();
 
       modal.querySelector('#inv-em-send').addEventListener('click', async () => {
         const toVal  = modal.querySelector('#inv-em-to').value.trim();
@@ -7071,7 +7106,7 @@ function _wireInvControls() {
           if (ccList.length) payload.cc = ccList;
           await trpcMutate('invoices.send', payload);
 
-          // Log timestamp
+          // Persist timestamp
           const userName = user?.name || user?.email || 'Staff';
           _invEmailLog[invId] = { time: new Date().toISOString(), user: userName };
           try { localStorage.setItem('_invEmailLog', JSON.stringify(_invEmailLog)); } catch {}
@@ -7082,14 +7117,15 @@ function _wireInvControls() {
           if (tsEl) { tsEl.textContent = new Date().toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',',''); tsEl.style.color='#60a5fa'; }
           btn.title = `Last emailed ${new Date().toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',','')} by ${userName}`;
 
-          // Log job note
-          const jobId = document.querySelector(`tr[data-invid="${invId}"] [data-wa-jobid]`)?.dataset?.waJobid || '';
+          // Log job activity note
           const tsText = new Date().toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
           const noteText = `📧 Invoice ${invNo} emailed to ${toVal}${ccList.length?' (CC: '+ccList.join(', ')+')':''} — ${userName} — ${tsText}`;
-          if (jobId) { try { await trpcMutate('jobs.addNote',{id:jobId,text:noteText}); } catch {} }
+          if (jobId) {
+            try { await trpcMutate('jobs.addNote', { id: jobId, text: noteText }); } catch {}
+          }
 
-          statusEl.style.color = '#22c55e'; statusEl.textContent = '✓ Invoice sent!';
-          setTimeout(() => modal.remove(), 1200);
+          statusEl.style.color = '#22c55e'; statusEl.textContent = '✓ Invoice sent successfully!';
+          setTimeout(() => modal.remove(), 1400);
         } catch(err) {
           sendBtn.disabled = false; sendBtn.textContent = 'Send Invoice';
           statusEl.style.color = '#ef4444';
