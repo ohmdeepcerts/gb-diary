@@ -7435,9 +7435,22 @@ function _wireInvControls() {
   });
 }
 
+function _daysAgoLine(jobDateStr) {
+  if (!jobDateStr) return '';
+  // jobDateStr is "DD/MM/YYYY" from the diary date cache
+  const parts = jobDateStr.split('/');
+  if (parts.length !== 3) return '';
+  const jobMs = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T00:00:00`).getTime();
+  if (isNaN(jobMs)) return '';
+  const days = Math.floor((Date.now() - jobMs) / 86400000);
+  if (days < 10) return '';
+  return `⚠️ Please note — this work was completed *${days} days ago* and payment has not yet been received. If there are any issues with the work or invoice from our end, please let us know so we can resolve them straight away. Otherwise, could you please provide a payment date? 🙏`;
+}
+
 async function _doSingleWAChase({ invId, waPhone, cname, addr, invNo, bal, jobId }, btn) {
   const desc    = _invDescCache[invId]?.desc || '';
   const jobDate = (jobId && _invJobDateCache[jobId]) || '';
+  const ageLine = _daysAgoLine(jobDate);
   const msg = [
     `Hi ${cname}, this is GB Electrical 👋`,
     ``,
@@ -7447,6 +7460,7 @@ async function _doSingleWAChase({ invId, waPhone, cname, addr, invNo, bal, jobId
     ``,
     `This is a friendly reminder regarding invoice *${invNo}* for *£${bal.toFixed(2)}* which is currently outstanding.`,
     ``,
+    ...(ageLine ? [ageLine, ``] : []),
     `Could you please arrange payment at your earliest convenience and send us a screenshot so we can mark it as paid? 🙏`,
     ``,
     `Thank you!`,
@@ -7515,6 +7529,12 @@ async function _showConsolidatedChaseModal(mainInv, siblings, triggerBtn) {
     }))
   ].sort((a,b) => (a.invNo||'').localeCompare(b.invNo||'', undefined, {numeric:true}));
   const total = allInvs.reduce((sum, i) => sum + i.bal, 0);
+  // Use the oldest job date for the age warning line
+  const oldestAgeLine = allInvs.map(i => _daysAgoLine(i.jobDate)).filter(Boolean).sort((a,b) => {
+    const dA = parseInt(a.match(/(\d+) days ago/)?.[1]||0);
+    const dB = parseInt(b.match(/(\d+) days ago/)?.[1]||0);
+    return dB - dA;
+  })[0] || '';
   const msgLines = [
     `Hi ${cname}, this is GB Electrical 👋`,
     ``,
@@ -7532,6 +7552,7 @@ async function _showConsolidatedChaseModal(mainInv, siblings, triggerBtn) {
     ``,
     `We hope you are happy with all the works! 🛠️`,
     ``,
+    ...(oldestAgeLine ? [oldestAgeLine, ``] : []),
     `Could you please arrange payment at your earliest convenience and send us a screenshot so we can mark them as paid? 🙏`,
     ``,
     `Thank you!`,
