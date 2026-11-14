@@ -67,8 +67,8 @@
   .hdr-logo { color: var(--red); font-weight: 800; font-size: 17px; margin-right: 4px; letter-spacing: -1px; }
 
   #email-sync-pill {
-    position: fixed; top: 9px; right: 160px; z-index: 9500;
-    display: inline-block; padding: 3px 10px; border-radius: 12px;
+    display: inline-flex; align-items: center;
+    padding: 3px 10px; border-radius: 12px; flex-shrink: 0;
     font-size: 11px; font-weight: 600; white-space: nowrap;
     pointer-events: none; transition: background 0.3s, color 0.3s, border-color 0.3s;
     background: var(--bg3); border: 1px solid var(--border); color: var(--text2);
@@ -1236,7 +1236,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-<script src="app.js?v=20261114g"></script>
+<script src="app.js?v=20261114h"></script>
 <span id="email-sync-pill"></span>
 </body>
 </html>

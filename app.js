@@ -469,6 +469,12 @@ function showView(name) {
   view = name;
   document.querySelectorAll('.vbtn').forEach(b => b.classList.toggle('active', b.dataset.view === name));
   if (name !== 'day') _initStickyScroll(null);
+  // Move sync pill into this view's header (before the wc-badge) so it flows
+  // naturally in the flex layout and never covers other buttons
+  const pill = document.getElementById('email-sync-pill');
+  const hdr  = el?.querySelector('.app-header');
+  const badge = hdr?.querySelector('.wc-badge');
+  if (pill && badge) badge.before(pill);
 }
 
 function _initStickyScroll(wrap) {
