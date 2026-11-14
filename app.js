@@ -6110,6 +6110,7 @@ let _invCSSInjected  = false;
 let _invDescCache    = {};
 let _invJobDateCache = {};
 let _invWaLog        = (() => { try { return JSON.parse(localStorage.getItem('_invWaLog')||'{}'); } catch { return {}; } })();
+let _invEmailLog     = (() => { try { return JSON.parse(localStorage.getItem('_invEmailLog')||'{}'); } catch { return {}; } })();
 
 // ── INVOICE CSS ────────────────────────────────────────────────────────────────
 
@@ -6605,9 +6606,10 @@ function _buildInvBodyHTML() {
         <td>${_invStatusBadge(status)}</td>
         <td style="text-align:center;white-space:nowrap" onclick="event.stopPropagation()">${inv.pdfPath?`<button class="inv-act-btn inv-dl-btn" data-dlinvid="${esc(inv.id||'')}" data-dlinvno="${esc(inv.invoiceNo||inv.id||'')}">⬇ PDF</button>`:''}</td>
         <td style="text-align:center;white-space:nowrap;vertical-align:middle" onclick="event.stopPropagation()">${inv.contactPhone?`<div style="display:flex;flex-direction:column;align-items:center;gap:2px"><button class="inv-act-btn inv-wa-btn" style="background:#25D366;color:#fff;border-color:#1ebe5d" title="${_invWaLog[inv.id]?`Last sent ${new Date(_invWaLog[inv.id].time).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',','')} by ${esc(_invWaLog[inv.id].user)}`:'Send WhatsApp chase'}" data-wa-invid="${esc(inv.id||'')}" data-wa-phone="${esc(inv.contactPhone||'')}" data-wa-cname="${esc(inv.contactName||'')}" data-wa-addr="${esc(inv.siteAddress||'')}" data-wa-invno="${esc(inv.invoiceNo||'')}" data-wa-bal="${Math.max(0,inv.balance||inv.total||0)}" data-wa-jobid="${esc(inv.jobId||'')}">📱</button>${_invWaLog[inv.id]?`<span class="inv-wa-ts" style="font-size:9px;color:#1ebe5d;white-space:nowrap;line-height:1">${new Date(_invWaLog[inv.id].time).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',','')}</span>`:'<span class="inv-wa-ts" style="font-size:9px;color:var(--muted);white-space:nowrap;line-height:1"></span>'}</div>`:''}</td>
+        <td style="text-align:center;white-space:nowrap;vertical-align:middle" onclick="event.stopPropagation()"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><button class="inv-act-btn inv-email-btn" style="background:#2563eb;color:#fff;border-color:#1d4ed8;min-width:36px" title="${_invEmailLog[inv.id]?`Last emailed ${new Date(_invEmailLog[inv.id].time).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',','')} by ${esc(_invEmailLog[inv.id].user)}`:'Email invoice to client'}" data-em-invid="${esc(inv.id||'')}" data-em-invno="${esc(inv.invoiceNo||'')}" data-em-email="${esc(inv.contactEmail||'')}" data-em-cname="${esc(inv.contactName||'')}">📧</button>${_invEmailLog[inv.id]?`<span class="inv-em-ts" style="font-size:9px;color:#60a5fa;white-space:nowrap;line-height:1">${new Date(_invEmailLog[inv.id].time).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',','')}</span>`:'<span class="inv-em-ts" style="font-size:9px;color:var(--muted);white-space:nowrap;line-height:1"></span>'}</div></td>
       </tr>
       <tr class="inv-detail-row" data-detail="${idx}">
-        <td class="inv-detail-cell" colspan="13">${detailHTML}</td>
+        <td class="inv-detail-cell" colspan="14">${detailHTML}</td>
       </tr>
     `;
   }).join('');
@@ -6645,6 +6647,7 @@ function _buildInvBodyHTML() {
           <th style="min-width:90px">Status</th>
           <th style="min-width:50px;text-align:center">PDF</th>
           <th style="min-width:40px;text-align:center">WA</th>
+          <th style="min-width:40px;text-align:center">Email</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -7014,6 +7017,85 @@ function _wireInvControls() {
       if (tsEl) tsEl.textContent = new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }).replace(',', '');
       if (tsEl) tsEl.style.color = '#1ebe5d';
       btn.title = `Last sent ${new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }).replace(',','')} by ${userName}`;
+    });
+  });
+
+  // Email invoice buttons
+  document.querySelectorAll('.inv-email-btn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const invId  = btn.dataset.emInvid;
+      const invNo  = btn.dataset.emInvno  || '';
+      const toAddr = btn.dataset.emEmail  || '';
+      const cname  = btn.dataset.emCname  || 'Client';
+
+      // Remove any existing email modal
+      document.getElementById('inv-email-modal')?.remove();
+
+      const modal = document.createElement('div');
+      modal.id = 'inv-email-modal';
+      modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:#00000080';
+      modal.innerHTML = `
+        <div style="background:var(--surface,#1e2130);border:1px solid var(--border,#2d3250);border-radius:14px;padding:24px;width:420px;max-width:95vw;box-shadow:0 20px 60px #000a">
+          <div style="font-size:15px;font-weight:700;margin-bottom:16px">📧 Email Invoice ${esc(invNo)}</div>
+          <div style="font-size:12px;color:var(--muted,#8892b0);margin-bottom:4px">To</div>
+          <input id="inv-em-to" type="email" value="${esc(toAddr)}" placeholder="client@example.com"
+            style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--border,#2d3250);background:var(--bg,#0f1117);color:var(--text,#e8eaf6);font-size:13px;margin-bottom:12px">
+          <div style="font-size:12px;color:var(--muted,#8892b0);margin-bottom:4px">CC <span style="font-size:10px">(comma-separated, optional)</span></div>
+          <input id="inv-em-cc" type="text" placeholder="cc1@example.com, cc2@example.com"
+            style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--border,#2d3250);background:var(--bg,#0f1117);color:var(--text,#e8eaf6);font-size:13px;margin-bottom:18px">
+          <div style="display:flex;gap:10px;justify-content:flex-end">
+            <button id="inv-em-cancel" style="padding:9px 18px;border-radius:8px;border:1px solid var(--border,#2d3250);background:transparent;color:var(--text,#e8eaf6);cursor:pointer;font-size:13px">Cancel</button>
+            <button id="inv-em-send" style="padding:9px 20px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-weight:600;cursor:pointer;font-size:13px">Send Invoice</button>
+          </div>
+          <div id="inv-em-status" style="font-size:12px;margin-top:10px;text-align:center;min-height:18px"></div>
+        </div>`;
+      document.body.appendChild(modal);
+
+      modal.querySelector('#inv-em-cancel').addEventListener('click', () => modal.remove());
+      modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+      modal.querySelector('#inv-em-send').addEventListener('click', async () => {
+        const toVal  = modal.querySelector('#inv-em-to').value.trim();
+        const ccRaw  = modal.querySelector('#inv-em-cc').value.trim();
+        const ccList = ccRaw ? ccRaw.split(',').map(s=>s.trim()).filter(Boolean) : [];
+        const statusEl = modal.querySelector('#inv-em-status');
+        const sendBtn  = modal.querySelector('#inv-em-send');
+
+        if (!toVal) { statusEl.style.color='#ef4444'; statusEl.textContent='Please enter a To address.'; return; }
+
+        sendBtn.disabled = true; sendBtn.textContent = 'Sending…';
+        statusEl.style.color = 'var(--muted,#8892b0)'; statusEl.textContent = 'Sending invoice…';
+        try {
+          const payload = { invoiceId: invId };
+          if (ccList.length) payload.cc = ccList;
+          await trpcMutate('invoices.send', payload);
+
+          // Log timestamp
+          const userName = user?.name || user?.email || 'Staff';
+          _invEmailLog[invId] = { time: new Date().toISOString(), user: userName };
+          try { localStorage.setItem('_invEmailLog', JSON.stringify(_invEmailLog)); } catch {}
+
+          // Update button timestamp inline
+          const cell = btn.closest('td');
+          const tsEl = cell?.querySelector('.inv-em-ts');
+          if (tsEl) { tsEl.textContent = new Date().toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',',''); tsEl.style.color='#60a5fa'; }
+          btn.title = `Last emailed ${new Date().toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',','')} by ${userName}`;
+
+          // Log job note
+          const jobId = document.querySelector(`tr[data-invid="${invId}"] [data-wa-jobid]`)?.dataset?.waJobid || '';
+          const tsText = new Date().toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+          const noteText = `📧 Invoice ${invNo} emailed to ${toVal}${ccList.length?' (CC: '+ccList.join(', ')+')':''} — ${userName} — ${tsText}`;
+          if (jobId) { try { await trpcMutate('jobs.addNote',{id:jobId,text:noteText}); } catch {} }
+
+          statusEl.style.color = '#22c55e'; statusEl.textContent = '✓ Invoice sent!';
+          setTimeout(() => modal.remove(), 1200);
+        } catch(err) {
+          sendBtn.disabled = false; sendBtn.textContent = 'Send Invoice';
+          statusEl.style.color = '#ef4444';
+          statusEl.textContent = 'Failed: ' + (err?.message?.slice(0,80) || 'Unknown error');
+        }
+      });
     });
   });
 
