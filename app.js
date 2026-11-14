@@ -6178,10 +6178,10 @@ function _injectInvoiceCSS() {
     .inv-age.age2{background:#fecaca;color:#b91c1c}
     .inv-detail-row{display:none}
     .inv-detail-row.open{display:table-row}
-    .inv-detail-cell{padding:10px 16px 14px 32px;background:var(--surface);border-bottom:2px solid var(--border)}
+    .inv-detail-cell{padding:10px 16px 14px 32px;background:#f8fafc;border-bottom:2px solid var(--border,#e0e0e0);color:#111}
     .inv-detail-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 16px;margin-bottom:10px}
-    .inv-detail-item{font-size:11px}
-    .inv-detail-item span:first-child{color:var(--muted);display:block;font-size:10px}
+    .inv-detail-item{font-size:11px;color:#111}
+    .inv-detail-item span:first-child{color:#888;display:block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.3px}
     .inv-pay-history{margin-top:8px}
     .inv-pay-history-title{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
     .inv-pay-row{display:flex;gap:10px;font-size:11px;padding:5px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:flex-start}
@@ -6212,15 +6212,15 @@ function _injectInvoiceCSS() {
     .inv-modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
     .inv-modal-btns button{padding:7px 16px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-weight:600;cursor:pointer}
     .inv-modal-btns .primary{background:var(--accent);border-color:var(--accent);color:#fff}
-    .inv-chase-section{margin-top:12px;border-top:1px solid var(--border);padding-top:10px}
-    .inv-chase-header{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}
-    .inv-chase-note{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:6px}
-    .inv-chase-meta{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:4px}
-    .inv-chase-meta strong{color:var(--text);font-weight:600}
-    .inv-chase-text{font-size:12px;line-height:1.45;white-space:pre-wrap}
+    .inv-chase-section{margin-top:12px;border-top:1px solid #e0e0e0;padding-top:10px}
+    .inv-chase-header{font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}
+    .inv-chase-note{background:#fff;border:1px solid #dde1e7;border-radius:8px;padding:8px 10px;margin-bottom:6px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+    .inv-chase-meta{display:flex;justify-content:space-between;font-size:10px;color:#777;margin-bottom:4px}
+    .inv-chase-meta strong{color:#111;font-weight:700}
+    .inv-chase-text{font-size:12px;line-height:1.5;white-space:pre-wrap;color:#222}
     .inv-chase-form{display:flex;gap:8px;margin-top:8px;align-items:flex-start}
-    .inv-chase-input{flex:1;padding:7px 9px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:12px;font-family:inherit;resize:vertical;min-height:52px}
-    .inv-chase-input:focus{outline:none;border-color:var(--accent)}
+    .inv-chase-input{flex:1;padding:7px 9px;border:1px solid #dde1e7;border-radius:6px;background:#fff;color:#111;font-size:12px;font-family:inherit;resize:vertical;min-height:52px}
+    .inv-chase-input:focus{outline:none;border-color:var(--accent,#E1251B)}
     .stmt-search-wrap{padding:14px 12px 6px}
     .stmt-search-wrap .inp{width:100%;box-sizing:border-box}
     .stmt-contact-drop{background:var(--surface);border:1px solid var(--border);border-radius:6px;max-height:200px;overflow-y:auto;margin-top:4px}
