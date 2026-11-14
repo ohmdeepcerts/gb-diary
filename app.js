@@ -7221,12 +7221,14 @@ function _wireInvControls() {
             histBox.innerHTML = `<div style="border-top:1px solid var(--border,#e2e8f0);border-bottom:1px solid var(--border,#e2e8f0);max-height:110px;overflow-y:auto;background:var(--bg3,#f8fafc)">` +
               sends.map((s, i) => {
                 const dt = new Date(s.createdAt).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
+                const to = s.after?.to || '';
                 const cc = (s.after?.cc || []).join(', ');
-                return `<div style="font-size:11.5px;padding:7px 22px;${i<sends.length-1?'border-bottom:1px solid var(--border,#e2e8f0)':''};display:flex;gap:8px;align-items:center">
+                return `<div style="font-size:11.5px;padding:7px 22px;${i<sends.length-1?'border-bottom:1px solid var(--border,#e2e8f0)':''};display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                   <span style="color:#2563eb;font-weight:700;white-space:nowrap">${dt}</span>
                   <span style="color:var(--text2,#64748b)">by</span>
                   <span style="font-weight:600;color:var(--text,#111);white-space:nowrap">${esc(s.actorLabel||'')}</span>
-                  ${cc?`<span style="color:var(--text2,#64748b);font-size:10.5px;margin-left:2px">CC: ${esc(cc)}</span>`:''}
+                  ${to?`<span style="color:var(--text2,#64748b)">→</span><span style="font-weight:600;color:#0369a1;white-space:nowrap">${esc(to)}</span>`:''}
+                  ${cc?`<span style="color:var(--text2,#64748b);font-size:10.5px">CC: ${esc(cc)}</span>`:''}
                 </div>`;
               }).join('') + `</div>`;
           }
