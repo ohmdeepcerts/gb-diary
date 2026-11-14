@@ -7444,7 +7444,7 @@ function _daysAgoLine(jobDateStr) {
   if (isNaN(jobMs)) return '';
   const days = Math.floor((Date.now() - jobMs) / 86400000);
   if (days < 10) return '';
-  return `⚠️ Please note — this work was completed *${days} days ago* and payment has not yet been received. If there are any issues with the work or invoice from our end, please let us know so we can resolve them straight away. Otherwise, could you please provide a payment date? 🙏`;
+  return `*Please note* — this work was completed *${days} days ago* and payment has not yet been received. If there are any issues with the work or invoice from our end, please let us know so we can resolve them straight away. Otherwise, could you please provide a payment date?`;
 }
 
 async function _doSingleWAChase({ invId, waPhone, cname, addr, invNo, bal, jobId }, btn) {
@@ -7452,16 +7452,16 @@ async function _doSingleWAChase({ invId, waPhone, cname, addr, invNo, bal, jobId
   const jobDate = (jobId && _invJobDateCache[jobId]) || '';
   const ageLine = _daysAgoLine(jobDate);
   const msg = [
-    `Hi ${cname}, this is GB Electrical 👋`,
+    `Hi ${cname}, this is GB Electrical.`,
     ``,
     `We recently carried out${desc ? ` *${desc}*` : ' works'}${addr ? ` at *${addr}*` : ''}${jobDate ? ` on *${jobDate}*` : ''}.`,
     ``,
-    `We hope you are happy with the works! 🛠️`,
+    `We hope you are happy with the works!`,
     ``,
     `This is a friendly reminder regarding invoice *${invNo}* for *£${bal.toFixed(2)}* which is currently outstanding.`,
     ``,
     ...(ageLine ? [ageLine, ``] : []),
-    `Could you please arrange payment at your earliest convenience and send us a screenshot so we can mark it as paid? 🙏`,
+    `Could you please arrange payment at your earliest convenience and send us a screenshot so we can mark it as paid.`,
     ``,
     `Thank you!`,
     `GB Electrical Team`
@@ -7536,12 +7536,12 @@ async function _showConsolidatedChaseModal(mainInv, siblings, triggerBtn) {
     return dB - dA;
   })[0] || '';
   const msgLines = [
-    `Hi ${cname}, this is GB Electrical 👋`,
+    `Hi ${cname}, this is GB Electrical.`,
     ``,
     `We have the following outstanding invoices on your account:`,
     ``,
     ...allInvs.map(i => {
-      const parts = [`📋 *${i.invNo}*`];
+      const parts = [`- *${i.invNo}*`];
       if (i.desc) parts.push(i.desc);
       if (i.addr) parts.push(`at ${i.addr}`);
       if (i.jobDate) parts.push(`on ${i.jobDate}`);
@@ -7550,10 +7550,10 @@ async function _showConsolidatedChaseModal(mainInv, siblings, triggerBtn) {
     ``,
     `*Total outstanding: £${total.toFixed(2)}*`,
     ``,
-    `We hope you are happy with all the works! 🛠️`,
+    `We hope you are happy with all the works!`,
     ``,
     ...(oldestAgeLine ? [oldestAgeLine, ``] : []),
-    `Could you please arrange payment at your earliest convenience and send us a screenshot so we can mark them as paid? 🙏`,
+    `Could you please arrange payment at your earliest convenience and send us a screenshot so we can mark them as paid.`,
     ``,
     `Thank you!`,
     `GB Electrical Team`
