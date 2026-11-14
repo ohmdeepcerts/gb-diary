@@ -6316,16 +6316,17 @@ async function openInvoices() {
 }
 
 function _bgSyncEmailDelivery() {
-  // Skip if no invoices have been emailed without a confirmed delivery yet
   const pending = Object.keys(_invEmailLog).filter(id => !_invDeliveryLog[id]);
-  if (!pending.length) return;
+  if (!pending.length) return; // all already confirmed — nothing to do, no pill shown
   setTimeout(async () => {
+    _showSyncPill('syncing');
     try {
       const msgRes = await fetch(SG_PROXY + '/v3/messages?limit=500').then(r => r.json()).catch(() => null);
       const msgs = msgRes?.messages || (Array.isArray(msgRes) ? msgRes : []);
-      if (msgs.length) await _syncEmailDeliveryStatus(msgs);
-    } catch {}
-  }, 3000); // small delay so the invoices page finishes rendering first
+      const logged = msgs.length ? await _syncEmailDeliveryStatus(msgs) : 0;
+      logged > 0 ? _showSyncPill('logged', logged) : _showSyncPill('hide');
+    } catch { _showSyncPill('hide'); }
+  }, 3000);
 }
 
 function _invSortItems(arr) {
@@ -7145,13 +7146,15 @@ function _wireInvControls() {
           statusEl.style.color = '#22c55e'; statusEl.textContent = '✓ Invoice sent successfully!';
           setTimeout(() => modal.remove(), 1400);
 
-          // Background delivery check — query SendGrid ~30s after send, reuse shared sync logic
+          // Background delivery check — query SendGrid ~30s after send
           setTimeout(async () => {
+            _showSyncPill('syncing');
             try {
               const msgRes = await fetch(SG_PROXY + '/v3/messages?limit=100').then(r => r.json()).catch(() => null);
               const msgs = msgRes?.messages || (Array.isArray(msgRes) ? msgRes : []);
-              if (msgs.length) await _syncEmailDeliveryStatus(msgs);
-            } catch {}
+              const logged = msgs.length ? await _syncEmailDeliveryStatus(msgs) : 0;
+              logged > 0 ? _showSyncPill('logged', logged) : _showSyncPill('hide');
+            } catch { _showSyncPill('hide'); }
           }, 30000);
 
         } catch(err) {
@@ -7723,17 +7726,42 @@ const EMAIL_PAGE_SIZE = 30;
 let _emailExcludes = [];
 try { _emailExcludes = JSON.parse(localStorage.getItem('email_excludes') || '[]'); } catch(e) { _emailExcludes = []; }
 
+let _syncPillTimer = null;
+function _showSyncPill(state, count = 0) {
+  const pill = document.getElementById('email-sync-pill');
+  if (!pill) return;
+  clearTimeout(_syncPillTimer);
+  pill.className = '';
+  if (state === 'syncing') {
+    pill.textContent = '🔄 Checking delivery…';
+    pill.className = 'sp-syncing';
+  } else if (state === 'logged') {
+    pill.textContent = `✓ ${count} delivery status${count !== 1 ? 'es' : ''} logged`;
+    pill.className = 'sp-logged';
+    _syncPillTimer = setTimeout(() => {
+      pill.classList.replace('sp-logged', 'sp-fading');
+      setTimeout(() => { pill.className = ''; }, 500);
+    }, 4000);
+  } else {
+    // 'hide' — fade out whatever is showing
+    pill.classList.add('sp-fading');
+    setTimeout(() => { pill.className = ''; }, 500);
+  }
+}
+
 // Cross-reference SendGrid messages against every invoice we've emailed.
 // Logs delivery status to job activity and updates button badges for any
 // that have a final status not yet confirmed in _invDeliveryLog.
+// Returns the number of invoices whose status was newly confirmed.
 async function _syncEmailDeliveryStatus(messages) {
-  if (!messages?.length) return;
+  if (!messages?.length) return 0;
   const DLVD = new Set(['delivered','open','opened','click','clicked']);
   const BNCD = new Set(['bounce','bounced','blocked','drop','dropped']);
   const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  let logged = 0;
 
   for (const [invId, entry] of Object.entries(_invEmailLog)) {
-    if (_invDeliveryLog[invId]) continue; // already confirmed
+    if (_invDeliveryLog[invId]) continue; // already confirmed — never re-log
     const { invNo, jobId, toAddr, user: sentUser } = entry || {};
     if (!invNo) continue;
 
@@ -7754,9 +7782,10 @@ async function _syncEmailDeliveryStatus(messages) {
     const isDelivered = DLVD.has(st);
     const isBounced   = BNCD.has(st);
 
-    // Store confirmed status so we don't re-log on the next sync
+    // Store confirmed status — prevents any future re-log for this invoice
     _invDeliveryLog[invId] = { status: match.status, time: match.last_event_time };
     try { localStorage.setItem('_invDeliveryLog', JSON.stringify(_invDeliveryLog)); } catch {}
+    logged++;
 
     // Log delivery note to job activity
     const tsText = new Date(match.last_event_time).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
@@ -7777,6 +7806,7 @@ async function _syncEmailDeliveryStatus(messages) {
       liveBtn.title = `${statusLabel} — ${tsText}`;
     }
   }
+  return logged;
 }
 
 async function openEmails() {
