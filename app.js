@@ -7007,77 +7007,25 @@ function _wireInvControls() {
       if (waPhone.startsWith('+'))  waPhone = waPhone.slice(1);
       if (waPhone.startsWith('07')) waPhone = '44' + waPhone.slice(1);
 
-      const desc    = _invDescCache[invId]?.desc || '';
-      const jobDate = (jobId && _invJobDateCache[jobId]) || '';
+      // Check if this client has other outstanding invoices — offer a consolidated chase
+      const siblings = waPhone ? _invAllItems.filter(i => {
+        if (i.id === invId) return false;
+        const st = i.effectiveStatus || (i.settled ? 'paid' : 'current');
+        if (st === 'paid' || st === 'draft') return false;
+        const livePhone = i.jobId ? (_invContactCache[i.jobId]?.phone || '') : '';
+        let p = (livePhone || i.contactPhone || '').replace(/[\s\-().]/g, '');
+        if (p.startsWith('00')) p = p.slice(2);
+        if (p.startsWith('+'))  p = p.slice(1);
+        if (p.startsWith('07')) p = '44' + p.slice(1);
+        return p && p === waPhone;
+      }) : [];
 
-      const msg = [
-        `Hi ${cname}, this is GB Electrical 👋`,
-        ``,
-        `We recently carried out${desc ? ` *${desc}*` : ' works'}${addr ? ` at *${addr}*` : ''}${jobDate ? ` on *${jobDate}*` : ''}.`,
-        ``,
-        `We hope you are happy with the works! 🛠️`,
-        ``,
-        `This is a friendly reminder regarding invoice *${invNo}* for *£${bal.toFixed(2)}* which is currently outstanding.`,
-        ``,
-        `Could you please arrange payment at your earliest convenience and send us a screenshot so we can mark it as paid? 🙏`,
-        ``,
-        `Thank you!`,
-        `GB Electrical Team`
-      ].join('\n');
-
-      // Auto-download the invoice PDF so it's ready to attach in WhatsApp
-      if (invId) {
-        const orig = btn.textContent;
-        btn.textContent = '⏳';
-        try {
-          const { fetchUrl } = await _invGetPdfUrl(invId);
-          const r = await fetch(fetchUrl, { credentials: 'include' });
-          if (r.ok) {
-            const blob = await r.blob();
-            const blobUrl = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = blobUrl;
-            a.download = (invNo || invId) + '.pdf';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-          }
-        } catch {}
-        btn.textContent = orig;
+      if (siblings.length > 0) {
+        await _showConsolidatedChaseModal({ invId, waPhone, cname, addr, invNo, bal, jobId }, siblings, btn);
+        return;
       }
 
-      // Open WhatsApp web with pre-filled message
-      if (waPhone) {
-        window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(msg)}`, '_blank');
-      } else {
-        try { await navigator.clipboard.writeText(msg); } catch {}
-        alert('No phone number for this contact.\nMessage has been copied to clipboard.');
-      }
-
-      // Log activity: job note + local timestamp
-      const userName = user?.name || user?.email || 'Staff';
-      const tsText   = new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
-      const noteText = `📱 WhatsApp chase sent — Invoice ${invNo} £${bal.toFixed(2)} — ${userName} — ${tsText}`;
-      if (jobId) {
-        // Try both param shapes the backend accepts
-        try {
-          await trpcMutate('jobs.addNote', { id: jobId, text: noteText });
-        } catch {
-          try { await _addJobNote(jobId, noteText); } catch {}
-        }
-      } else {
-        // No job linked — log against the invoice directly if endpoint exists
-        try { await trpcMutate('invoices.addNote', { invoiceId: invId, text: noteText }); } catch {}
-      }
-      _invWaLog[invId] = { time: new Date().toISOString(), user: userName };
-      try { localStorage.setItem('_invWaLog', JSON.stringify(_invWaLog)); } catch {}
-      // Update button timestamp display inline (no full re-render needed)
-      const cell = btn.closest('td');
-      const tsEl = cell?.querySelector('.inv-wa-ts');
-      if (tsEl) tsEl.textContent = new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }).replace(',', '');
-      if (tsEl) tsEl.style.color = '#1ebe5d';
-      btn.title = `Last sent ${new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }).replace(',','')} by ${userName}`;
+      await _doSingleWAChase({ invId, waPhone, cname, addr, invNo, bal, jobId }, btn);
     });
   });
 
@@ -7366,6 +7314,199 @@ function _wireInvControls() {
     _renderInvoicePage();
     _loadInvDescriptions(_invItems);
     _loadInvContacts(_invItems);
+  });
+}
+
+async function _doSingleWAChase({ invId, waPhone, cname, addr, invNo, bal, jobId }, btn) {
+  const desc    = _invDescCache[invId]?.desc || '';
+  const jobDate = (jobId && _invJobDateCache[jobId]) || '';
+  const msg = [
+    `Hi ${cname}, this is GB Electrical 👋`,
+    ``,
+    `We recently carried out${desc ? ` *${desc}*` : ' works'}${addr ? ` at *${addr}*` : ''}${jobDate ? ` on *${jobDate}*` : ''}.`,
+    ``,
+    `We hope you are happy with the works! 🛠️`,
+    ``,
+    `This is a friendly reminder regarding invoice *${invNo}* for *£${bal.toFixed(2)}* which is currently outstanding.`,
+    ``,
+    `Could you please arrange payment at your earliest convenience and send us a screenshot so we can mark it as paid? 🙏`,
+    ``,
+    `Thank you!`,
+    `GB Electrical Team`
+  ].join('\n');
+  if (invId) {
+    const orig = btn ? btn.textContent : '';
+    if (btn) btn.textContent = '⏳';
+    try {
+      const { fetchUrl } = await _invGetPdfUrl(invId);
+      const r = await fetch(fetchUrl, { credentials: 'include' });
+      if (r.ok) {
+        const blob = await r.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl; a.download = (invNo || invId) + '.pdf';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      }
+    } catch {}
+    if (btn) btn.textContent = orig;
+  }
+  if (waPhone) {
+    window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+  } else {
+    try { await navigator.clipboard.writeText(msg); } catch {}
+    alert('No phone number for this contact.\nMessage has been copied to clipboard.');
+  }
+  const userName = user?.name || user?.email || 'Staff';
+  const tsText   = new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  const noteText = `📱 WhatsApp chase sent — Invoice ${invNo} £${bal.toFixed(2)} — ${userName} — ${tsText}`;
+  if (jobId) {
+    try { await trpcMutate('jobs.addNote', { id: jobId, text: noteText }); } catch {
+      try { await _addJobNote(jobId, noteText); } catch {}
+    }
+  } else {
+    try { await trpcMutate('invoices.addNote', { invoiceId: invId, text: noteText }); } catch {}
+  }
+  _invWaLog[invId] = { time: new Date().toISOString(), user: userName };
+  try { localStorage.setItem('_invWaLog', JSON.stringify(_invWaLog)); } catch {}
+  if (btn) {
+    const cell = btn.closest('td');
+    const tsEl = cell?.querySelector('.inv-wa-ts');
+    if (tsEl) { tsEl.textContent = new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }).replace(',', ''); tsEl.style.color = '#1ebe5d'; }
+    btn.title = `Last sent ${new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }).replace(',','')} by ${userName}`;
+  }
+}
+
+async function _showConsolidatedChaseModal(mainInv, siblings, triggerBtn) {
+  const { invId, waPhone, cname, addr, invNo, bal, jobId } = mainInv;
+  const allInvs = [
+    { id: invId, invNo, bal, jobId, addr,
+      desc: _invDescCache[invId]?.desc || '',
+      jobDate: (jobId && _invJobDateCache[jobId]) || '' },
+    ...siblings.map(s => ({
+      id: s.id,
+      invNo: s.invoiceNo || s.invNo || '',
+      bal: Math.max(0, s.balance || s.total || 0),
+      jobId: s.jobId || '',
+      addr: s.siteAddress || '',
+      desc: _invDescCache[s.id]?.desc || '',
+      jobDate: (s.jobId && _invJobDateCache[s.jobId]) || ''
+    }))
+  ].sort((a,b) => (a.invNo||'').localeCompare(b.invNo||'', undefined, {numeric:true}));
+  const total = allInvs.reduce((sum, i) => sum + i.bal, 0);
+  const msgLines = [
+    `Hi ${cname}, this is GB Electrical 👋`,
+    ``,
+    `We have the following outstanding invoices on your account:`,
+    ``,
+    ...allInvs.map(i => {
+      const parts = [`📋 *${i.invNo}*`];
+      if (i.desc) parts.push(i.desc);
+      if (i.addr) parts.push(`at ${i.addr}`);
+      if (i.jobDate) parts.push(`on ${i.jobDate}`);
+      return parts.join(' ') + ` — *£${i.bal.toFixed(2)}*`;
+    }),
+    ``,
+    `*Total outstanding: £${total.toFixed(2)}*`,
+    ``,
+    `We hope you are happy with all the works! 🛠️`,
+    ``,
+    `Could you please arrange payment at your earliest convenience and send us a screenshot so we can mark them as paid? 🙏`,
+    ``,
+    `Thank you!`,
+    `GB Electrical Team`
+  ];
+  const defaultMsg = msgLines.join('\n');
+  const modal = document.createElement('div');
+  modal.id = 'inv-chase-all-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.45)';
+  modal.innerHTML = `
+    <div style="background:var(--bg2,#fff);border:1px solid var(--border,#e2e8f0);border-radius:16px;width:520px;max-width:96vw;max-height:92vh;box-shadow:0 24px 64px rgba(0,0,0,0.18);overflow:hidden;display:flex;flex-direction:column">
+      <div style="padding:18px 22px 14px;border-bottom:1px solid var(--border,#e2e8f0);flex-shrink:0">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="width:38px;height:38px;border-radius:10px;background:#25d366;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">📱</div>
+          <div>
+            <div style="font-size:15px;font-weight:700;color:var(--text,#0f172a)">Chase ${esc(cname)}</div>
+            <div style="font-size:11px;color:var(--text2,#64748b)">${allInvs.length} outstanding invoices · Total: <strong>£${total.toFixed(2)}</strong></div>
+          </div>
+        </div>
+      </div>
+      <div style="padding:14px 22px 10px;border-bottom:1px solid var(--border,#e2e8f0);overflow-y:auto;flex-shrink:0;max-height:200px">
+        ${allInvs.map(i => `
+          <div style="display:flex;align-items:baseline;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border,#e2e8f0)">
+            <div style="min-width:0;flex:1;overflow:hidden">
+              <span style="font-weight:700;font-size:12px;color:var(--text,#0f172a)">${esc(i.invNo)}</span>
+              ${i.desc?`<span style="font-size:11px;color:var(--text2,#64748b);margin-left:6px">${esc(i.desc.length>45?i.desc.slice(0,45)+'…':i.desc)}</span>`:''}
+              ${i.jobDate?`<span style="font-size:10px;color:var(--text2,#64748b);margin-left:6px">· ${esc(i.jobDate)}</span>`:''}
+            </div>
+            <span style="font-weight:700;font-size:12px;color:var(--text,#0f172a);white-space:nowrap;margin-left:12px">£${i.bal.toFixed(2)}</span>
+          </div>
+        `).join('')}
+        <div style="display:flex;justify-content:flex-end;padding-top:7px">
+          <span style="font-weight:800;font-size:13px;color:var(--text,#0f172a)">Total: £${total.toFixed(2)}</span>
+        </div>
+      </div>
+      <div style="padding:12px 22px 10px;flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0">
+        <div style="font-size:10px;font-weight:700;color:var(--text2,#64748b);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Message (editable)</div>
+        <textarea id="inv-chase-all-msg" style="flex:1;min-height:120px;padding:9px 11px;border:1px solid var(--border,#e2e8f0);border-radius:8px;background:var(--bg,#f8fafc);color:var(--text,#0f172a);font-size:11.5px;font-family:inherit;resize:none;outline:none;line-height:1.5">${esc(defaultMsg)}</textarea>
+      </div>
+      <div style="padding:14px 22px;border-top:1px solid var(--border,#e2e8f0);display:flex;gap:10px;flex-shrink:0;justify-content:flex-end;flex-wrap:wrap">
+        <button id="inv-chase-all-cancel" style="padding:9px 18px;border-radius:8px;border:1px solid var(--border,#e2e8f0);background:var(--bg2,#fff);color:var(--text,#0f172a);font-size:12px;font-weight:600;cursor:pointer">Cancel</button>
+        <button id="inv-chase-single-btn" style="padding:9px 18px;border-radius:8px;border:1px solid #1ebe5d;background:transparent;color:#1ebe5d;font-size:12px;font-weight:600;cursor:pointer">📱 This invoice only</button>
+        <button id="inv-chase-all-btn" style="padding:9px 18px;border-radius:8px;border:none;background:#25d366;color:#fff;font-size:12px;font-weight:700;cursor:pointer">📱 Chase all ${allInvs.length} · £${total.toFixed(2)}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  document.getElementById('inv-chase-all-cancel').addEventListener('click', close);
+  document.getElementById('inv-chase-single-btn').addEventListener('click', async () => {
+    close();
+    await _doSingleWAChase(mainInv, triggerBtn);
+  });
+  document.getElementById('inv-chase-all-btn').addEventListener('click', async () => {
+    const sendBtn = document.getElementById('inv-chase-all-btn');
+    if (sendBtn) { sendBtn.textContent = '⏳ Preparing…'; sendBtn.disabled = true; }
+    const finalMsg = document.getElementById('inv-chase-all-msg')?.value || defaultMsg;
+    for (const i of allInvs) {
+      try {
+        const { fetchUrl } = await _invGetPdfUrl(i.id);
+        const r = await fetch(fetchUrl, { credentials: 'include' });
+        if (r.ok) {
+          const blob = await r.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl; a.download = (i.invNo || i.id) + '.pdf';
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+        }
+      } catch {}
+      await new Promise(r => setTimeout(r, 300));
+    }
+    if (waPhone) {
+      window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(finalMsg)}`, '_blank');
+    } else {
+      try { await navigator.clipboard.writeText(finalMsg); } catch {}
+      alert('No phone number. Message copied to clipboard.');
+    }
+    const userName = user?.name || user?.email || 'Staff';
+    const tsText   = new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    const invList  = allInvs.map(i => `${i.invNo} £${i.bal.toFixed(2)}`).join(', ');
+    const noteText = `📱 Consolidated WhatsApp chase — ${invList} — Total £${total.toFixed(2)} — ${userName} — ${tsText}`;
+    for (const i of allInvs) {
+      if (i.jobId) { try { await trpcMutate('jobs.addNote', { id: i.jobId, text: noteText }); } catch {} }
+      _invWaLog[i.id] = { time: new Date().toISOString(), user: userName };
+    }
+    try { localStorage.setItem('_invWaLog', JSON.stringify(_invWaLog)); } catch {}
+    const tsNow = new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }).replace(',', '');
+    allInvs.forEach(i => {
+      const waBtn = document.querySelector(`.inv-wa-btn[data-wa-invid="${CSS.escape(i.id)}"]`);
+      if (!waBtn) return;
+      const tsEl = waBtn.closest('td')?.querySelector('.inv-wa-ts');
+      if (tsEl) { tsEl.textContent = tsNow; tsEl.style.color = '#1ebe5d'; }
+      waBtn.title = `Last sent ${tsNow} by ${userName}`;
+    });
+    close();
   });
 }
 
