@@ -7496,21 +7496,24 @@ async function _showConsolidatedChaseModal(mainInv, siblings, triggerBtn) {
     const sendBtn = document.getElementById('inv-chase-all-btn');
     if (sendBtn) { sendBtn.textContent = '⏳ Preparing…'; sendBtn.disabled = true; }
     const finalMsg = document.getElementById('inv-chase-all-msg')?.value || defaultMsg;
-    for (const i of allInvs) {
-      try {
-        const { fetchUrl } = await _invGetPdfUrl(i.id);
-        const r = await fetch(fetchUrl, { credentials: 'include' });
-        if (r.ok) {
-          const blob = await r.blob();
-          const blobUrl = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = blobUrl; a.download = (i.invNo || i.id) + '.pdf';
-          document.body.appendChild(a); a.click(); document.body.removeChild(a);
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-        }
-      } catch {}
-      await new Promise(r => setTimeout(r, 300));
-    }
+    // Fetch all blobs in parallel first, then trigger downloads synchronously.
+    // If downloads are spread across multiple awaits, browsers block all but the first
+    // because they lose the user-gesture context — batching fixes this.
+    const blobs = await Promise.allSettled(allInvs.map(async i => {
+      const { fetchUrl } = await _invGetPdfUrl(i.id);
+      const r = await fetch(fetchUrl, { credentials: 'include' });
+      if (!r.ok) throw new Error('fetch failed');
+      return { invNo: i.invNo, id: i.id, blob: await r.blob() };
+    }));
+    blobs.forEach(res => {
+      if (res.status !== 'fulfilled') return;
+      const { invNo, id, blob } = res.value;
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl; a.download = (invNo || id) + '.pdf';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+    });
     if (waPhone) {
       window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(finalMsg)}`, '_blank');
     } else {
