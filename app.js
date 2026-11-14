@@ -6738,6 +6738,16 @@ function _buildInvBodyHTML() {
   `;
 }
 
+async function _invGetPdfUrl(invoiceId) {
+  const res = await trpcQuery('invoices.pdf', { invoiceId });
+  const relUrl = res?.url;
+  if (!relUrl) throw new Error('No PDF URL returned');
+  return {
+    viewUrl:  'https://gbelectricals.co.uk' + relUrl,
+    fetchUrl: 'https://gb-proxy.gbmandeep.workers.dev' + relUrl,
+  };
+}
+
 async function _loadChaseNotes(jobId, el) {
   el.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:4px 0">Loading notes…</div>';
   try {
@@ -6963,15 +6973,6 @@ function _wireInvControls() {
     });
   });
 
-  async function _invGetPdfUrl(invoiceId) {
-    const res = await trpcQuery('invoices.pdf', { invoiceId });
-    const relUrl = res?.url;
-    if (!relUrl) throw new Error('No PDF URL returned');
-    return {
-      viewUrl:  'https://gbelectricals.co.uk' + relUrl,
-      fetchUrl: 'https://gb-proxy.gbmandeep.workers.dev' + relUrl,
-    };
-  }
 
   // View PDF in new tab
   document.querySelectorAll('[data-vpdf]').forEach(btn => {
