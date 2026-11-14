@@ -7062,28 +7062,44 @@ function _wireInvControls() {
       // Build modal — show loading history section
       const modal = document.createElement('div');
       modal.id = 'inv-email-modal';
-      modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:#00000080';
+      modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.45)';
       modal.innerHTML = `
-        <div style="background:var(--surface,#1e2130);border:1px solid var(--border,#2d3250);border-radius:14px;padding:24px;width:460px;max-width:95vw;box-shadow:0 20px 60px #000a">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
-            <span style="font-size:18px">📧</span>
-            <div>
-              <div style="font-size:15px;font-weight:700">Email Invoice ${esc(invNo)}</div>
-              <div id="inv-em-hist-line" style="font-size:11px;color:var(--muted,#8892b0)">Loading send history…</div>
+        <div style="background:var(--bg2,#fff);border:1px solid var(--border,#e2e8f0);border-radius:16px;padding:0;width:480px;max-width:96vw;box-shadow:0 24px 64px rgba(0,0,0,0.18);overflow:hidden">
+
+          <!-- Header bar -->
+          <div style="padding:18px 22px 14px;border-bottom:1px solid var(--border,#e2e8f0)">
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="width:36px;height:36px;border-radius:10px;background:#2563eb22;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">📧</div>
+              <div>
+                <div style="font-size:15px;font-weight:800;color:var(--text,#111)">Email Invoice ${esc(invNo)}</div>
+                <div id="inv-em-hist-line" style="font-size:11px;color:var(--text2,#64748b);margin-top:1px">Loading send history…</div>
+              </div>
             </div>
           </div>
-          <div id="inv-em-hist" style="margin-bottom:14px"></div>
-          <div style="font-size:12px;color:var(--muted,#8892b0);margin-bottom:4px">To</div>
-          <input id="inv-em-to" type="email" value="${esc(toAddr)}" placeholder="client@example.com"
-            style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--border,#2d3250);background:var(--bg,#0f1117);color:var(--text,#e8eaf6);font-size:13px;margin-bottom:12px">
-          <div style="font-size:12px;color:var(--muted,#8892b0);margin-bottom:4px">CC <span style="font-size:10px">(comma-separated, optional)</span></div>
-          <input id="inv-em-cc" type="text" placeholder="cc1@example.com, cc2@example.com"
-            style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--border,#2d3250);background:var(--bg,#0f1117);color:var(--text,#e8eaf6);font-size:13px;margin-bottom:18px">
-          <div style="display:flex;gap:10px;justify-content:flex-end">
-            <button id="inv-em-cancel" style="padding:9px 18px;border-radius:8px;border:1px solid var(--border,#2d3250);background:transparent;color:var(--text,#e8eaf6);cursor:pointer;font-size:13px">Cancel</button>
-            <button id="inv-em-send" style="padding:9px 20px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-weight:600;cursor:pointer;font-size:13px">Send Invoice</button>
+
+          <!-- Send history -->
+          <div id="inv-em-hist" style="padding:0 22px"></div>
+
+          <!-- Form -->
+          <div style="padding:16px 22px 20px">
+            <div style="margin-bottom:12px">
+              <label style="font-size:11px;font-weight:700;color:var(--text2,#64748b);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:5px">To</label>
+              <input id="inv-em-to" type="email" value="${esc(toAddr)}" placeholder="client@example.com"
+                style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border,#e2e8f0);background:var(--bg,#f8fafc);color:var(--text,#111);font-size:13px;box-sizing:border-box;outline:none;transition:border-color .15s"
+                onfocus="this.style.borderColor='#2563eb'" onblur="this.style.borderColor='var(--border,#e2e8f0)'">
+            </div>
+            <div style="margin-bottom:20px">
+              <label style="font-size:11px;font-weight:700;color:var(--text2,#64748b);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:5px">CC <span style="font-weight:400;text-transform:none;letter-spacing:0">(comma-separated, optional)</span></label>
+              <input id="inv-em-cc" type="text" placeholder="cc1@example.com, cc2@example.com"
+                style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border,#e2e8f0);background:var(--bg,#f8fafc);color:var(--text,#111);font-size:13px;box-sizing:border-box;outline:none;transition:border-color .15s"
+                onfocus="this.style.borderColor='#2563eb'" onblur="this.style.borderColor='var(--border,#e2e8f0)'">
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;align-items:center">
+              <button id="inv-em-cancel" style="padding:9px 18px;border-radius:8px;border:1.5px solid var(--border,#e2e8f0);background:transparent;color:var(--text2,#64748b);cursor:pointer;font-size:13px;font-weight:600">Cancel</button>
+              <button id="inv-em-send" style="padding:9px 22px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;font-size:13px;letter-spacing:.2px">Send Invoice</button>
+            </div>
+            <div id="inv-em-status" style="font-size:12px;margin-top:10px;text-align:center;min-height:16px"></div>
           </div>
-          <div id="inv-em-status" style="font-size:12px;margin-top:10px;text-align:center;min-height:18px"></div>
         </div>`;
       document.body.appendChild(modal);
 
@@ -7098,19 +7114,19 @@ function _wireInvControls() {
           const histLine = modal.querySelector('#inv-em-hist-line');
           const histBox  = modal.querySelector('#inv-em-hist');
           if (!sends.length) {
-            histLine.textContent = 'Never emailed before';
+            histLine.innerHTML = '<span style="color:var(--text2,#64748b)">Never emailed before</span>';
             histBox.innerHTML = '';
           } else {
-            histLine.innerHTML = `<span style="color:#60a5fa;font-weight:600">${sends.length} time${sends.length>1?'s':''} sent previously</span>`;
-            histBox.innerHTML = `<div style="background:var(--bg,#0f1117);border:1px solid var(--border,#2d3250);border-radius:8px;padding:8px 10px;max-height:120px;overflow-y:auto">` +
-              sends.map(s => {
+            histLine.innerHTML = `<span style="color:#2563eb;font-weight:600">${sends.length} time${sends.length>1?'s':''} sent previously</span>`;
+            histBox.innerHTML = `<div style="border-top:1px solid var(--border,#e2e8f0);border-bottom:1px solid var(--border,#e2e8f0);max-height:110px;overflow-y:auto;background:var(--bg3,#f8fafc)">` +
+              sends.map((s, i) => {
                 const dt = new Date(s.createdAt).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
                 const cc = (s.after?.cc || []).join(', ');
-                return `<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--border,#2d3250)22;display:flex;gap:6px;align-items:center">
-                  <span style="color:#60a5fa;white-space:nowrap">${dt}</span>
-                  <span style="color:var(--muted,#8892b0)">by</span>
-                  <span style="font-weight:600;white-space:nowrap">${esc(s.actorLabel||'')}</span>
-                  ${cc?`<span style="color:var(--muted,#8892b0);font-size:10px">CC: ${esc(cc)}</span>`:''}
+                return `<div style="font-size:11.5px;padding:7px 22px;${i<sends.length-1?'border-bottom:1px solid var(--border,#e2e8f0)':''};display:flex;gap:8px;align-items:center">
+                  <span style="color:#2563eb;font-weight:700;white-space:nowrap">${dt}</span>
+                  <span style="color:var(--text2,#64748b)">by</span>
+                  <span style="font-weight:600;color:var(--text,#111);white-space:nowrap">${esc(s.actorLabel||'')}</span>
+                  ${cc?`<span style="color:var(--text2,#64748b);font-size:10.5px;margin-left:2px">CC: ${esc(cc)}</span>`:''}
                 </div>`;
               }).join('') + `</div>`;
           }
