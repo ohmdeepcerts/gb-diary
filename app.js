@@ -5279,6 +5279,7 @@ async function tryLogin() {
     curMonth = {year:d.getFullYear(), month:d.getMonth()+1};
     await switchView('day');
     startAutoRefresh();
+    _initSyncPill();
   } catch(e) {
     showErr(errEl, e.message||'Login failed');
     btn.disabled=false; btn.textContent='Sign In';
@@ -5426,6 +5427,7 @@ async function init() {
       curMonth = {year:d.getFullYear(), month:d.getMonth()+1};
       await switchView('day');
       startAutoRefresh();
+      _initSyncPill();
     }
   } catch { /* show login */ }
 }
@@ -7731,22 +7733,35 @@ function _showSyncPill(state, count = 0) {
   const pill = document.getElementById('email-sync-pill');
   if (!pill) return;
   clearTimeout(_syncPillTimer);
-  pill.className = '';
   if (state === 'syncing') {
-    pill.textContent = '🔄 Checking delivery…';
     pill.className = 'sp-syncing';
+    pill.textContent = '🔄 Checking delivery…';
   } else if (state === 'logged') {
-    pill.textContent = `✓ ${count} delivery status${count !== 1 ? 'es' : ''} logged`;
     pill.className = 'sp-logged';
-    _syncPillTimer = setTimeout(() => {
-      pill.classList.replace('sp-logged', 'sp-fading');
-      setTimeout(() => { pill.className = ''; }, 500);
-    }, 4000);
+    pill.textContent = `✓ ${count} delivery status${count !== 1 ? 'es' : ''} logged`;
+    // After 4s drift back to idle
+    _syncPillTimer = setTimeout(() => _syncPillIdle(), 4000);
   } else {
-    // 'hide' — fade out whatever is showing
-    pill.classList.add('sp-fading');
-    setTimeout(() => { pill.className = ''; }, 500);
+    // 'hide' means go back to idle
+    _syncPillIdle();
   }
+}
+function _syncPillIdle() {
+  const pill = document.getElementById('email-sync-pill');
+  if (!pill) return;
+  const pending = Object.keys(_invEmailLog).filter(id => !_invDeliveryLog[id]).length;
+  if (pending > 0) {
+    pill.className = 'sp-pending';
+    pill.textContent = `⏳ ${pending} email${pending !== 1 ? 's' : ''} pending`;
+  } else {
+    pill.className = '';
+    pill.textContent = '✓ Emails synced';
+  }
+}
+// Call once on load to set initial pill state
+function _initSyncPill() {
+  // Small delay so _invEmailLog / _invDeliveryLog globals are ready
+  setTimeout(_syncPillIdle, 500);
 }
 
 // Cross-reference SendGrid messages against every invoice we've emailed.

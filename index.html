@@ -68,13 +68,14 @@
 
   #email-sync-pill {
     position: fixed; top: 9px; right: 160px; z-index: 9500;
-    display: none; padding: 3px 10px; border-radius: 12px;
-    font-size: 11px; font-weight: 700; white-space: nowrap;
-    pointer-events: none; transition: opacity 0.4s;
+    display: inline-block; padding: 3px 10px; border-radius: 12px;
+    font-size: 11px; font-weight: 600; white-space: nowrap;
+    pointer-events: none; transition: background 0.3s, color 0.3s, border-color 0.3s;
+    background: var(--bg3); border: 1px solid var(--border); color: var(--text2);
   }
-  #email-sync-pill.sp-syncing { display:inline-block; opacity:1; background:rgba(37,99,235,0.14); border:1px solid rgba(37,99,235,0.28); color:#2563eb; }
-  #email-sync-pill.sp-logged  { display:inline-block; opacity:1; background:rgba(34,197,94,0.14);  border:1px solid rgba(34,197,94,0.28);  color:#16a34a; }
-  #email-sync-pill.sp-fading  { opacity:0; }
+  #email-sync-pill.sp-pending  { background:rgba(217,119,6,0.13);  border-color:rgba(217,119,6,0.3);  color:#b45309; }
+  #email-sync-pill.sp-syncing  { background:rgba(37,99,235,0.14);  border-color:rgba(37,99,235,0.28); color:#2563eb; }
+  #email-sync-pill.sp-logged   { background:rgba(34,197,94,0.14);  border-color:rgba(34,197,94,0.28); color:#16a34a; }
 
   .wc-badge {
     display: none; align-items: center; gap: 4px;
@@ -1235,7 +1236,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-<script src="app.js?v=20261114f"></script>
+<script src="app.js?v=20261114g"></script>
 <span id="email-sync-pill"></span>
 </body>
 </html>
