@@ -7363,6 +7363,15 @@ async function _doSingleWAChase({ invId, waPhone, cname, addr, invNo, bal, jobId
     `Thank you!`,
     `GB Electrical Team`
   ].join('\n');
+  // Open WhatsApp immediately while user gesture context is still active.
+  // window.open is blocked by popup blockers if called after any await.
+  if (waPhone) {
+    window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+  } else {
+    try { await navigator.clipboard.writeText(msg); } catch {}
+    alert('No phone number for this contact.\nMessage has been copied to clipboard.');
+  }
+  // PDF download after (blob URL clicks don't require user gesture context).
   if (invId) {
     const orig = btn ? btn.textContent : '';
     if (btn) btn.textContent = '⏳';
@@ -7379,12 +7388,6 @@ async function _doSingleWAChase({ invId, waPhone, cname, addr, invNo, bal, jobId
       }
     } catch {}
     if (btn) btn.textContent = orig;
-  }
-  if (waPhone) {
-    window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(msg)}`, '_blank');
-  } else {
-    try { await navigator.clipboard.writeText(msg); } catch {}
-    alert('No phone number for this contact.\nMessage has been copied to clipboard.');
   }
   const userName = user?.name || user?.email || 'Staff';
   const tsText   = new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
@@ -7497,9 +7500,16 @@ async function _showConsolidatedChaseModal(mainInv, siblings, triggerBtn) {
     const sendBtn = document.getElementById('inv-chase-all-btn');
     if (sendBtn) { sendBtn.textContent = '⏳ Preparing…'; sendBtn.disabled = true; }
     const finalMsg = document.getElementById('inv-chase-all-msg')?.value || defaultMsg;
-    // Fetch all blobs in parallel first, then trigger downloads synchronously.
-    // If downloads are spread across multiple awaits, browsers block all but the first
-    // because they lose the user-gesture context — batching fixes this.
+    // Open WhatsApp immediately while user gesture context is still active —
+    // window.open is blocked by popup blockers if called after any await.
+    if (waPhone) {
+      window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(finalMsg)}`, '_blank');
+    } else {
+      try { await navigator.clipboard.writeText(finalMsg); } catch {}
+      alert('No phone number. Message copied to clipboard.');
+    }
+    // Fetch all PDF blobs in parallel then trigger downloads synchronously.
+    // Blob URL clicks don't need user gesture context so this is safe after awaits.
     const blobs = await Promise.allSettled(allInvs.map(async i => {
       const { fetchUrl } = await _invGetPdfUrl(i.id);
       const r = await fetch(fetchUrl, { credentials: 'include' });
@@ -7515,12 +7525,6 @@ async function _showConsolidatedChaseModal(mainInv, siblings, triggerBtn) {
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
     });
-    if (waPhone) {
-      window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(finalMsg)}`, '_blank');
-    } else {
-      try { await navigator.clipboard.writeText(finalMsg); } catch {}
-      alert('No phone number. Message copied to clipboard.');
-    }
     const userName = user?.name || user?.email || 'Staff';
     const tsText   = new Date().toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
     const invList  = allInvs.map(i => `${i.invNo} £${i.bal.toFixed(2)}`).join(', ');
