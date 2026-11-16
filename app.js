@@ -7741,12 +7741,16 @@ async function _invDownloadStatement(stmtBtn) {
       ..._invDateFrom    ? { dueDateFrom: _invDateFrom    } : {},
       ..._invDateTo      ? { dueDateTo:   _invDateTo      } : {},
     };
-    const allData = await trpcQuery('invoices.list', {
-      ...filterParams, page: 1, pageSize: 500,
-      sortBy: _invSortBy, sortDir: _invSortDir,
-    }).catch(() => null);
-
-    let allItems = allData?.invoices || allData?.items || [];
+    let allItems = [];
+    for (let page = 1; page <= 20; page++) {
+      const pageData = await trpcQuery('invoices.list', {
+        ...filterParams, page, pageSize: 100,
+        sortBy: _invSortBy, sortDir: _invSortDir,
+      }).catch(() => null);
+      const batch = pageData?.invoices || pageData?.items || [];
+      allItems = allItems.concat(batch);
+      if (!pageData?.hasMore || !batch.length) break;
+    }
     const amtMin = _invAmtMin ? parseFloat(_invAmtMin) : null;
     const amtMax = _invAmtMax ? parseFloat(_invAmtMax) : null;
     const dfrom  = _invDateFrom ? new Date(_invDateFrom) : null;
