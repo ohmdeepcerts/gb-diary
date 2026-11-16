@@ -7928,7 +7928,7 @@ async function _invDownloadStatement(stmtBtn) {
         if (!r.ok) continue;
         const bytes = await r.arrayBuffer();
         const src = await PDFDocument.load(bytes, { ignoreEncryption:true });
-        const pgs = await merged.copyPagesFrom(src, src.getPageIndices());
+        const pgs = await merged.copyPages(src, src.getPageIndices());
         pgs.forEach(p => merged.addPage(p));
       } catch(e) { console.warn('Skip PDF', inv.invoiceNo, e); }
     }
