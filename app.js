@@ -6570,6 +6570,7 @@ function _buildInvTopHTML() {
       <select id="inv-ct">${ctSel}</select>
       <select id="inv-sort">${sortSel}</select>
       <button id="inv-csv-btn" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">⬇ CSV</button>
+      <button id="inv-stmt-btn" style="padding:5px 10px;border-radius:6px;border:1px solid #E1251B;background:rgba(225,37,27,0.08);color:#E1251B;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">📄 Statement</button>
     </div>
     <div class="inv-filter-bar" style="padding-top:0">
       <input type="date" id="inv-date-from" value="${_invDateFrom}" title="Due from" style="flex:none">
@@ -7407,6 +7408,11 @@ function _wireInvControls() {
   // CSV export
   document.getElementById('inv-csv-btn')?.addEventListener('click', () => _invExportCSV());
 
+  // Statement PDF
+  document.getElementById('inv-stmt-btn')?.addEventListener('click', async e => {
+    await _invDownloadStatement(e.currentTarget);
+  });
+
   document.getElementById('inv-prev-page')?.addEventListener('click', () => {
     if (_invPage > 1) {
       _invPage--;
@@ -7715,6 +7721,229 @@ function _invExportCSV() {
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+async function _invDownloadStatement(stmtBtn) {
+  if (typeof PDFLib === 'undefined') {
+    alert('PDF library not loaded. Please refresh and try again.');
+    return;
+  }
+  const orig = stmtBtn.textContent;
+  stmtBtn.disabled = true;
+  stmtBtn.textContent = 'Fetching…';
+  try {
+    const { PDFDocument, StandardFonts, rgb } = PDFLib;
+
+    const filterParams = {
+      view: _invView,
+      ..._invQuery       ? { query:       _invQuery       } : {},
+      ..._invContactType ? { contactType: _invContactType } : {},
+      ..._invDateFrom    ? { dueDateFrom: _invDateFrom    } : {},
+      ..._invDateTo      ? { dueDateTo:   _invDateTo      } : {},
+    };
+    const allData = await trpcQuery('invoices.list', {
+      ...filterParams, page: 1, pageSize: 500,
+      sortBy: _invSortBy, sortDir: _invSortDir,
+    }).catch(() => null);
+
+    let allItems = allData?.invoices || allData?.items || [];
+    const amtMin = _invAmtMin ? parseFloat(_invAmtMin) : null;
+    const amtMax = _invAmtMax ? parseFloat(_invAmtMax) : null;
+    const dfrom  = _invDateFrom ? new Date(_invDateFrom) : null;
+    const dto    = _invDateTo   ? new Date(_invDateTo + 'T23:59:59') : null;
+    allItems = allItems.filter(inv => {
+      if (!_invAgingFilter(inv)) return false;
+      const bal = inv.balance ?? ((inv.total||0) - (inv.paidAmount||0));
+      const amt = bal <= 0 ? (inv.total||0) : bal;
+      if (amtMin !== null && amt < amtMin) return false;
+      if (amtMax !== null && amt > amtMax) return false;
+      if (dfrom && inv.dueAt && new Date(inv.dueAt) < dfrom) return false;
+      if (dto   && inv.dueAt && new Date(inv.dueAt) > dto)   return false;
+      return true;
+    });
+
+    if (!allItems.length) { alert('No invoices match the current filters.'); return; }
+
+    const merged = await PDFDocument.create();
+    const reg  = await merged.embedFont(StandardFonts.Helvetica);
+    const bld  = await merged.embedFont(StandardFonts.HelveticaBold);
+
+    const W = 595.28, H = 841.89, ML = 40, MR = 40, MB = 36;
+    const CW = 515;
+    const RED    = rgb(0.882, 0.145, 0.106);
+    const BLACK  = rgb(0.09, 0.09, 0.09);
+    const GRAY   = rgb(0.45, 0.45, 0.45);
+    const WHITE  = rgb(1, 1, 1);
+    const LTGRAY = rgb(0.95, 0.95, 0.96);
+    const HDRBG  = rgb(0.22, 0.22, 0.26);
+    const ALTROW = rgb(0.97, 0.97, 0.98);
+
+    const fmtDate  = s => s ? new Date(s).toLocaleDateString('en-GB') : '—';
+    const fmtGBP   = n => '£' + Number(n||0).toFixed(2);
+    const dateStr  = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+    const clientLbl = _invQuery || (allItems[0]?.contactName) || 'All Clients';
+
+    const totInvoiced = allItems.reduce((s,i) => s + (i.total||0), 0);
+    const totPaid     = allItems.reduce((s,i) => s + (i.paidAmount||0), 0);
+    const totBal      = allItems.reduce((s,i) => { const b = i.balance ?? ((i.total||0)-(i.paidAmount||0)); return s + (b<0?0:b); }, 0);
+
+    const cols = [
+      { lbl:'Invoice #',    w:62,  right:false },
+      { lbl:'Job #',        w:48,  right:false },
+      { lbl:'Due',          w:56,  right:false },
+      { lbl:'Site Address', w:145, right:false },
+      { lbl:'Total',        w:52,  right:true  },
+      { lbl:'Paid',         w:48,  right:true  },
+      { lbl:'Balance',      w:54,  right:true  },
+      { lbl:'Status',       w:50,  right:false },
+    ];
+    const ROW_H = 16, HDR_H = 15;
+
+    function addPage() {
+      const pg = merged.addPage([W, H]);
+      pg.drawRectangle({ x:0, y:H-76, width:W, height:76, color:RED });
+      pg.drawRectangle({ x:ML, y:H-70, width:46, height:48, color:WHITE, opacity:0.15 });
+      pg.drawText('GB', { x:ML+9, y:H-50, size:22, font:bld, color:WHITE });
+      pg.drawText('GB Electrical Engineering Ltd', { x:ML+54, y:H-33, size:11, font:bld, color:WHITE });
+      pg.drawText('7 Mill Lane, Chadwell Heath, Romford, Essex, RM6 6TT', { x:ML+54, y:H-47, size:7.5, font:reg, color:WHITE });
+      pg.drawText('07865753925  ·  Compliance@gbelectricals.co.uk', { x:ML+54, y:H-58, size:7.5, font:reg, color:WHITE });
+      const tw = bld.widthOfTextAtSize('STATEMENT OF ACCOUNT', 14);
+      pg.drawText('STATEMENT OF ACCOUNT', { x:W-MR-tw, y:H-35, size:14, font:bld, color:WHITE });
+      pg.drawText('Date: '+dateStr, { x:W-MR-90, y:H-52, size:8, font:reg, color:WHITE });
+      return pg;
+    }
+
+    function drawTblHdr(page, ty) {
+      page.drawRectangle({ x:ML, y:ty-HDR_H, width:CW, height:HDR_H, color:HDRBG });
+      let cx = ML+3;
+      cols.forEach(c => {
+        const tw = bld.widthOfTextAtSize(c.lbl, 7);
+        const tx = c.right ? cx+c.w-tw-3 : cx+2;
+        page.drawText(c.lbl, { x:tx, y:ty-HDR_H+4, size:7, font:bld, color:WHITE });
+        cx += c.w;
+      });
+      return ty - HDR_H;
+    }
+
+    let pg = addPage();
+    let y  = H - 76 - 12;
+
+    const pboxH = 44;
+    pg.drawRectangle({ x:ML, y:y-pboxH, width:CW, height:pboxH, color:LTGRAY });
+    pg.drawText('Prepared for:', { x:ML+10, y:y-13, size:8, font:reg, color:GRAY });
+    pg.drawText(clientLbl.substring(0,60), { x:ML+10, y:y-29, size:12, font:bld, color:BLACK });
+    const cntLbl = allItems.length+' invoice'+(allItems.length!==1?'s':'');
+    const cntW = reg.widthOfTextAtSize(cntLbl, 8);
+    pg.drawText(cntLbl, { x:ML+CW-cntW-8, y:y-13, size:8, font:reg, color:GRAY });
+    if (_invView && _invView !== 'all') {
+      pg.drawText('View: '+_invView, { x:ML+10, y:y-40, size:7.5, font:reg, color:GRAY });
+    }
+    y -= pboxH + 10;
+
+    const bw3 = (CW-10)/3;
+    const sumRows = [
+      { lbl:'Total Invoiced', val:fmtGBP(totInvoiced), color:BLACK },
+      { lbl:'Total Paid',     val:fmtGBP(totPaid),     color:rgb(0.09,0.56,0.26) },
+      { lbl:'Outstanding',    val:fmtGBP(totBal),       color:totBal>0?RED:rgb(0.09,0.56,0.26) },
+    ];
+    const SH = 42;
+    sumRows.forEach((s,i) => {
+      const bx = ML + i*(bw3+5);
+      pg.drawRectangle({ x:bx, y:y-SH, width:bw3, height:SH, color:LTGRAY });
+      pg.drawText(s.lbl, { x:bx+8, y:y-13, size:8, font:reg, color:GRAY });
+      pg.drawText(s.val, { x:bx+8, y:y-30, size:14, font:bld, color:s.color });
+    });
+    y -= SH + 12;
+
+    y = drawTblHdr(pg, y);
+    const pageBottom = MB + 20;
+    let alt = false;
+
+    for (let i = 0; i < allItems.length; i++) {
+      if (y - ROW_H < pageBottom) {
+        pg.drawText('continued on next page', { x:ML, y:MB, size:7, font:reg, color:GRAY });
+        pg = addPage();
+        y  = H - 76 - 20;
+        pg.drawText('STATEMENT — continued', { x:ML, y:y-8, size:8, font:bld, color:GRAY });
+        y -= 20;
+        y  = drawTblHdr(pg, y);
+        alt = false;
+      }
+      const inv = allItems[i];
+      if (alt) pg.drawRectangle({ x:ML, y:y-ROW_H, width:CW, height:ROW_H, color:ALTROW });
+      alt = !alt;
+
+      const bal    = inv.balance ?? ((inv.total||0)-(inv.paidAmount||0));
+      const balVal = bal < 0 ? 0 : bal;
+      const status = inv.effectiveStatus || (inv.settled ? 'paid' : 'current');
+      const sCl    = status==='paid' ? rgb(0.09,0.56,0.26) : status==='overdue' ? RED : GRAY;
+
+      const cells = [
+        { t: inv.invoiceNo||'—',              cl:BLACK,  b:true },
+        { t: inv.jobNo||'—',                  cl:GRAY },
+        { t: fmtDate(inv.dueAt),                   cl:GRAY },
+        { t: (inv.siteAddress||'—').substring(0,36), cl:BLACK },
+        { t: fmtGBP(inv.total),                    cl:BLACK },
+        { t: fmtGBP(inv.paidAmount),               cl:GRAY },
+        { t: fmtGBP(balVal),                       cl:balVal>0?RED:GRAY },
+        { t: status,                               cl:sCl,   b:status!=='current' },
+      ];
+      let cx = ML+3;
+      const ty2 = y - ROW_H + 4;
+      cells.forEach((cell,ci) => {
+        const col = cols[ci];
+        const f = cell.b ? bld : reg;
+        const tw = f.widthOfTextAtSize(cell.t, 7.5);
+        const tx = col.right ? cx+col.w-tw-3 : cx+2;
+        pg.drawText(cell.t, { x:tx, y:ty2, size:7.5, font:f, color:cell.cl||BLACK });
+        cx += col.w;
+      });
+      pg.drawLine({ start:{x:ML,y:y-ROW_H}, end:{x:ML+CW,y:y-ROW_H}, thickness:0.3, color:rgb(0.88,0.88,0.88) });
+      y -= ROW_H;
+    }
+
+    if (y - ROW_H - 2 < pageBottom) {
+      pg = addPage(); y = H - 76 - 30;
+    }
+    y -= 2;
+    pg.drawRectangle({ x:ML, y:y-ROW_H-2, width:CW, height:ROW_H+2, color:HDRBG });
+    const totCells = ['','','TOTALS','', fmtGBP(totInvoiced), fmtGBP(totPaid), fmtGBP(totBal), ''];
+    let cx2 = ML+3;
+    totCells.forEach((t,ci) => { if (t) { const col=cols[ci]; const f=bld; const tw=f.widthOfTextAtSize(t,7.5); const tx=col.right?cx2+col.w-tw-3:cx2+2; pg.drawText(t,{x:tx,y:y-ROW_H+3,size:7.5,font:f,color:WHITE}); } cx2+=cols[ci].w; });
+    y -= ROW_H + 2;
+    pg.drawText('Generated '+dateStr+' · GB Electrical Engineering Ltd · gbelectricals.co.uk', { x:ML, y:MB, size:7, font:reg, color:GRAY });
+
+    const withPdf = allItems.filter(i => i.pdfPath);
+    let done = 0;
+    for (const inv of withPdf) {
+      stmtBtn.textContent = 'PDFs '+(++done)+'/'+withPdf.length+'…';
+      try {
+        const res = await trpcQuery('invoices.pdf', { invoiceId: inv.id });
+        if (!res?.url) continue;
+        const r = await fetch('https://gb-proxy.gbmandeep.workers.dev'+res.url, { credentials:'include' });
+        if (!r.ok) continue;
+        const bytes = await r.arrayBuffer();
+        const src = await PDFDocument.load(bytes, { ignoreEncryption:true });
+        const pgs = await merged.copyPagesFrom(src, src.getPageIndices());
+        pgs.forEach(p => merged.addPage(p));
+      } catch(e) { console.warn('Skip PDF', inv.invoiceNo, e); }
+    }
+
+    stmtBtn.textContent = 'Saving…';
+    const pdfBytes = await merged.save();
+    const blob = new Blob([pdfBytes], { type:'application/pdf' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'statement-'+(clientLbl.replace(/[^a-z0-9]/gi,'-').toLowerCase().slice(0,28))+'-'+new Date().toISOString().slice(0,10)+'.pdf';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(a.href), 15000);
+
+  } catch(err) {
+    alert('Statement PDF failed: '+(err?.message||String(err)));
+  } finally {
+    stmtBtn.disabled = false;
+    stmtBtn.textContent = orig;
+  }
 }
 
 // ── RECORD PAYMENT MODAL ───────────────────────────────────────────────────────
