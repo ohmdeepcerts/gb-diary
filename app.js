@@ -7772,151 +7772,266 @@ async function _invDownloadStatement(stmtBtn) {
     const reg  = await merged.embedFont(StandardFonts.Helvetica);
     const bld  = await merged.embedFont(StandardFonts.HelveticaBold);
 
-    const W = 595.28, H = 841.89, ML = 40, MR = 40, MB = 36;
-    const CW = 515;
-    const RED    = rgb(0.882, 0.145, 0.106);
-    const BLACK  = rgb(0.09, 0.09, 0.09);
-    const GRAY   = rgb(0.45, 0.45, 0.45);
-    const WHITE  = rgb(1, 1, 1);
-    const LTGRAY = rgb(0.95, 0.95, 0.96);
-    const HDRBG  = rgb(0.22, 0.22, 0.26);
-    const ALTROW = rgb(0.97, 0.97, 0.98);
+    // Try to embed the company logo (webp → canvas PNG → pdf-lib PNG)
+    let logoImg = null, logoW = 0, logoH = 0;
+    try {
+      const lr = await fetch('https://gb-proxy.gbmandeep.workers.dev/assets/logo-6j8xFABk.webp', { credentials:'include' });
+      if (lr.ok) {
+        const lbytes = await lr.arrayBuffer();
+        const cv = document.createElement('canvas');
+        cv.width = 166; cv.height = 72;
+        const ctx = cv.getContext('2d');
+        const img = new Image();
+        const bu = URL.createObjectURL(new Blob([lbytes], { type:'image/webp' }));
+        await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = bu; });
+        ctx.drawImage(img, 0, 0, 166, 72);
+        URL.revokeObjectURL(bu);
+        const pu = cv.toDataURL('image/png').split(',')[1];
+        const pngBytes = Uint8Array.from(atob(pu), c => c.charCodeAt(0));
+        logoImg = await merged.embedPng(pngBytes);
+        logoW = 83; logoH = 36;
+      }
+    } catch(e) {}
 
-    const fmtDate  = s => s ? new Date(s).toLocaleDateString('en-GB') : '—';
-    const fmtGBP   = n => '£' + Number(n||0).toFixed(2);
-    const dateStr  = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+    // ── Layout constants ───────────────────────────────────────────────────────
+    const W = 595.28, H = 841.89, ML = 40, MR = 40, MB = 30;
+    const CW = W - ML - MR; // 515.28
+
+    const RED    = rgb(0.820, 0.000, 0.137);
+    const BLACK  = rgb(0.09,  0.09,  0.09);
+    const DKGRAY = rgb(0.30,  0.30,  0.30);
+    const GRAY   = rgb(0.50,  0.50,  0.50);
+    const LGRAY  = rgb(0.60,  0.60,  0.60);
+    const WHITE  = rgb(1,     1,     1);
+    const LTBG   = rgb(0.96,  0.96,  0.96);
+    const HDRBG  = rgb(0.20,  0.20,  0.20);
+    const BORDER = rgb(0.82,  0.82,  0.82);
+    const GREEN  = rgb(0.09,  0.56,  0.26);
+
+    const fmtDate = s => s ? new Date(s).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+    const fmtGBP  = n => '£' + Number(n||0).toFixed(2);
+    const dateStr = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
     const clientLbl = _invQuery || (allItems[0]?.contactName) || 'All Clients';
 
-    const totInvoiced = allItems.reduce((s,i) => s + (i.total||0), 0);
-    const totPaid     = allItems.reduce((s,i) => s + (i.paidAmount||0), 0);
-    const totBal      = allItems.reduce((s,i) => { const b = i.balance ?? ((i.total||0)-(i.paidAmount||0)); return s + (b<0?0:b); }, 0);
+    // Totals and ageing buckets
+    const tot = { invoiced:0, paid:0, bal:0, notDue:0, d30:0, d60:0, d90p:0 };
+    const now = new Date(); now.setHours(0,0,0,0);
+    allItems.forEach(inv => {
+      const b = Math.max(0, inv.balance ?? ((inv.total||0)-(inv.paidAmount||0)));
+      tot.invoiced += (inv.total||0);
+      tot.paid     += (inv.paidAmount||0);
+      tot.bal      += b;
+      if (b > 0) {
+        if (!inv.dueAt) { tot.notDue += b; return; }
+        const d = new Date(inv.dueAt); d.setHours(0,0,0,0);
+        const days = Math.floor((now - d) / 86400000);
+        if (days <= 0)       tot.notDue += b;
+        else if (days <= 30) tot.d30    += b;
+        else if (days <= 60) tot.d60    += b;
+        else                 tot.d90p   += b;
+      }
+    });
 
+    // Table columns matching main app: DATE | TYPE | REFERENCE | DETAIL | CHARGES | PAYMENTS | BALANCE
     const cols = [
-      { lbl:'Invoice #',    w:62,  right:false },
-      { lbl:'Job #',        w:48,  right:false },
-      { lbl:'Due',          w:56,  right:false },
-      { lbl:'Site Address', w:145, right:false },
-      { lbl:'Total',        w:52,  right:true  },
-      { lbl:'Paid',         w:48,  right:true  },
-      { lbl:'Balance',      w:54,  right:true  },
-      { lbl:'Status',       w:50,  right:false },
+      { lbl:'DATE',      w:62,  right:false },
+      { lbl:'TYPE',      w:44,  right:false },
+      { lbl:'REFERENCE', w:64,  right:false },
+      { lbl:'DETAIL',    w:177, right:false },
+      { lbl:'CHARGES',   w:57,  right:true  },
+      { lbl:'PAYMENTS',  w:57,  right:true  },
+      { lbl:'BALANCE',   w:54,  right:true  },
     ];
-    const ROW_H = 16, HDR_H = 15;
+    const ROW_H = 18, HDR_H = 16;
+    const pageBottom = MB + 60;
 
-    function addPage() {
-      const pg = merged.addPage([W, H]);
-      pg.drawRectangle({ x:0, y:H-76, width:W, height:76, color:RED });
-      pg.drawRectangle({ x:ML, y:H-70, width:46, height:48, color:WHITE, opacity:0.15 });
-      pg.drawText('GB', { x:ML+9, y:H-50, size:22, font:bld, color:WHITE });
-      pg.drawText('GB Electrical Engineering Ltd', { x:ML+54, y:H-33, size:11, font:bld, color:WHITE });
-      pg.drawText('7 Mill Lane, Chadwell Heath, Romford, Essex, RM6 6TT', { x:ML+54, y:H-47, size:7.5, font:reg, color:WHITE });
-      pg.drawText('07865753925  ·  Compliance@gbelectricals.co.uk', { x:ML+54, y:H-58, size:7.5, font:reg, color:WHITE });
-      const tw = bld.widthOfTextAtSize('STATEMENT OF ACCOUNT', 14);
-      pg.drawText('STATEMENT OF ACCOUNT', { x:W-MR-tw, y:H-35, size:14, font:bld, color:WHITE });
-      pg.drawText('Date: '+dateStr, { x:W-MR-90, y:H-52, size:8, font:reg, color:WHITE });
-      return pg;
+    // ── Draw page header ────────────────────────────────────────────────────────
+    function _drawPageHeader(pg) {
+      const headerTop = H - 15;
+      // Logo
+      if (logoImg) {
+        pg.drawImage(logoImg, { x: ML, y: headerTop - logoH, width: logoW, height: logoH });
+      } else {
+        pg.drawRectangle({ x:ML, y:headerTop-36, width:36, height:36, color:RED });
+        pg.drawText('GB', { x:ML+7, y:headerTop-24, size:16, font:bld, color:WHITE });
+      }
+      // Company text
+      const cx = ML + (logoImg ? logoW + 8 : 44);
+      pg.drawText('GB Electrical', { x:cx, y:headerTop-14, size:10, font:bld, color:BLACK });
+      pg.drawText('7 Mill Lane, Chadwell Heath, Romford, Essex, RM6 6TT', { x:cx, y:headerTop-26, size:7.5, font:reg, color:GRAY });
+      pg.drawText('07865753925  ·  Compliance@gbelectricals.co.uk', { x:cx, y:headerTop-37, size:7.5, font:reg, color:GRAY });
+      // "STATEMENT OF" / "ACCOUNT" right-aligned
+      const s1 = 'STATEMENT OF', s2 = 'ACCOUNT';
+      const s1w = bld.widthOfTextAtSize(s1, 18), s2w = bld.widthOfTextAtSize(s2, 18);
+      pg.drawText(s1, { x:W-MR-s1w, y:headerTop-16, size:18, font:bld, color:BLACK });
+      pg.drawText(s2, { x:W-MR-s2w, y:headerTop-36, size:18, font:bld, color:BLACK });
+      // Separator line
+      pg.drawLine({ start:{x:ML, y:headerTop-50}, end:{x:W-MR, y:headerTop-50}, thickness:0.5, color:BORDER });
     }
 
-    function drawTblHdr(page, ty) {
-      page.drawRectangle({ x:ML, y:ty-HDR_H, width:CW, height:HDR_H, color:HDRBG });
-      let cx = ML+3;
+    // ── Draw client info block (page 1 only) ───────────────────────────────────
+    function _drawClientInfo(pg) {
+      const iy0 = H - 15 - 50 - 10; // just below separator
+      let iy = iy0;
+      pg.drawText('Company No. 15476906', { x:ML, y:iy, size:7, font:reg, color:LGRAY });
+      iy -= 15;
+      pg.drawText('STATEMENT FOR', { x:ML, y:iy, size:7.5, font:bld, color:LGRAY });
+      iy -= 16;
+      pg.drawText(clientLbl.substring(0,50), { x:ML, y:iy, size:14, font:bld, color:BLACK });
+      iy -= 14;
+      const contactName = allItems[0]?.contactName || '';
+      if (contactName && contactName.toLowerCase() !== clientLbl.toLowerCase()) {
+        pg.drawText('FAO: ' + contactName.substring(0,45), { x:ML, y:iy, size:8, font:reg, color:GRAY });
+        iy -= 12;
+      }
+      // Right side: statement date + outstanding
+      const rx = W - MR - 130;
+      pg.drawText('STATEMENT DATE', { x:rx, y:iy0, size:7.5, font:bld, color:LGRAY });
+      pg.drawText(dateStr, { x:rx, y:iy0-14, size:9, font:reg, color:BLACK });
+      pg.drawText('TOTAL OUTSTANDING', { x:rx, y:iy0-32, size:7.5, font:bld, color:LGRAY });
+      const bv = fmtGBP(tot.bal);
+      pg.drawText(bv, { x:rx, y:iy0-46, size:12, font:bld, color:tot.bal>0?RED:GREEN });
+      return iy - 10;
+    }
+
+    // ── Draw table column header row ───────────────────────────────────────────
+    function _drawTblHdr(pg, ty) {
+      pg.drawRectangle({ x:ML, y:ty-HDR_H, width:CW, height:HDR_H, color:HDRBG });
+      let cx = ML + 4;
       cols.forEach(c => {
         const tw = bld.widthOfTextAtSize(c.lbl, 7);
-        const tx = c.right ? cx+c.w-tw-3 : cx+2;
-        page.drawText(c.lbl, { x:tx, y:ty-HDR_H+4, size:7, font:bld, color:WHITE });
+        const tx = c.right ? cx+c.w-tw-4 : cx;
+        pg.drawText(c.lbl, { x:tx, y:ty-HDR_H+5, size:7, font:bld, color:WHITE });
         cx += c.w;
       });
       return ty - HDR_H;
     }
 
-    let pg = addPage();
-    let y  = H - 76 - 12;
-
-    const pboxH = 44;
-    pg.drawRectangle({ x:ML, y:y-pboxH, width:CW, height:pboxH, color:LTGRAY });
-    pg.drawText('Prepared for:', { x:ML+10, y:y-13, size:8, font:reg, color:GRAY });
-    pg.drawText(clientLbl.substring(0,60), { x:ML+10, y:y-29, size:12, font:bld, color:BLACK });
-    const cntLbl = allItems.length+' invoice'+(allItems.length!==1?'s':'');
-    const cntW = reg.widthOfTextAtSize(cntLbl, 8);
-    pg.drawText(cntLbl, { x:ML+CW-cntW-8, y:y-13, size:8, font:reg, color:GRAY });
-    if (_invView && _invView !== 'all') {
-      pg.drawText('View: '+_invView, { x:ML+10, y:y-40, size:7.5, font:reg, color:GRAY });
+    // ── Draw footer ────────────────────────────────────────────────────────────
+    function _drawFooter(pg) {
+      pg.drawLine({ start:{x:ML, y:MB+18}, end:{x:W-MR, y:MB+18}, thickness:0.3, color:BORDER });
+      pg.drawText('GB Electrical', { x:ML, y:MB+6, size:7, font:reg, color:LGRAY });
+      const fc = 'GB Electrical — NICEIC Approved Contractor 15470505';
+      const fcw = reg.widthOfTextAtSize(fc, 7);
+      pg.drawText(fc, { x:(W-fcw)/2, y:MB+6, size:7, font:reg, color:LGRAY });
+      const fd = 'Generated '+dateStr;
+      const fdw = reg.widthOfTextAtSize(fd, 7);
+      pg.drawText(fd, { x:W-MR-fdw, y:MB+6, size:7, font:reg, color:LGRAY });
     }
-    y -= pboxH + 10;
 
-    const bw3 = (CW-10)/3;
-    const sumRows = [
-      { lbl:'Total Invoiced', val:fmtGBP(totInvoiced), color:BLACK },
-      { lbl:'Total Paid',     val:fmtGBP(totPaid),     color:rgb(0.09,0.56,0.26) },
-      { lbl:'Outstanding',    val:fmtGBP(totBal),       color:totBal>0?RED:rgb(0.09,0.56,0.26) },
-    ];
-    const SH = 42;
-    sumRows.forEach((s,i) => {
-      const bx = ML + i*(bw3+5);
-      pg.drawRectangle({ x:bx, y:y-SH, width:bw3, height:SH, color:LTGRAY });
-      pg.drawText(s.lbl, { x:bx+8, y:y-13, size:8, font:reg, color:GRAY });
-      pg.drawText(s.val, { x:bx+8, y:y-30, size:14, font:bld, color:s.color });
-    });
-    y -= SH + 12;
+    // ── Build statement pages ──────────────────────────────────────────────────
+    let pg = merged.addPage([W, H]);
+    _drawPageHeader(pg);
+    let y = _drawClientInfo(pg);
 
-    y = drawTblHdr(pg, y);
-    const pageBottom = MB + 20;
-    let alt = false;
+    // "ACCOUNT ACTIVITY" section label
+    pg.drawLine({ start:{x:ML, y:y+2}, end:{x:W-MR, y:y+2}, thickness:0.3, color:BORDER });
+    y -= 2;
+    pg.drawRectangle({ x:ML, y:y-HDR_H, width:CW, height:HDR_H, color:LTBG });
+    pg.drawText('ACCOUNT ACTIVITY', { x:ML+6, y:y-HDR_H+5, size:8, font:bld, color:GRAY });
+    y -= HDR_H + 2;
+
+    y = _drawTblHdr(pg, y);
+
+    let runBal = 0;
+    let rowAlt = false;
 
     for (let i = 0; i < allItems.length; i++) {
       if (y - ROW_H < pageBottom) {
-        pg.drawText('continued on next page', { x:ML, y:MB, size:7, font:reg, color:GRAY });
-        pg = addPage();
-        y  = H - 76 - 20;
-        pg.drawText('STATEMENT — continued', { x:ML, y:y-8, size:8, font:bld, color:GRAY });
-        y -= 20;
-        y  = drawTblHdr(pg, y);
-        alt = false;
+        _drawFooter(pg);
+        pg = merged.addPage([W, H]);
+        _drawPageHeader(pg);
+        y = H - 15 - 50 - 16;
+        pg.drawText('STATEMENT — continued', { x:ML, y:y, size:8, font:bld, color:LGRAY });
+        y -= 14;
+        y = _drawTblHdr(pg, y);
+        rowAlt = false;
       }
+
       const inv = allItems[i];
-      if (alt) pg.drawRectangle({ x:ML, y:y-ROW_H, width:CW, height:ROW_H, color:ALTROW });
-      alt = !alt;
+      const invBal = (inv.total||0) - (inv.paidAmount||0);
+      runBal += invBal;
+      const dispBal = runBal;
 
-      const bal    = inv.balance ?? ((inv.total||0)-(inv.paidAmount||0));
-      const balVal = bal < 0 ? 0 : bal;
-      const status = inv.effectiveStatus || (inv.settled ? 'paid' : 'current');
-      const sCl    = status==='paid' ? rgb(0.09,0.56,0.26) : status==='overdue' ? RED : GRAY;
+      if (rowAlt) pg.drawRectangle({ x:ML, y:y-ROW_H, width:CW, height:ROW_H, color:rgb(0.98,0.98,0.99) });
+      rowAlt = !rowAlt;
 
+      const detail = (inv.siteAddress || inv.jobNo || '—').substring(0, 42);
       const cells = [
-        { t: inv.invoiceNo||'—',              cl:BLACK,  b:true },
-        { t: inv.jobNo||'—',                  cl:GRAY },
-        { t: fmtDate(inv.dueAt),                   cl:GRAY },
-        { t: (inv.siteAddress||'—').substring(0,36), cl:BLACK },
-        { t: fmtGBP(inv.total),                    cl:BLACK },
-        { t: fmtGBP(inv.paidAmount),               cl:GRAY },
-        { t: fmtGBP(balVal),                       cl:balVal>0?RED:GRAY },
-        { t: status,                               cl:sCl,   b:status!=='current' },
+        { t: fmtDate(inv.dueAt),                              cl:BLACK },
+        { t: 'Invoice',                                       cl:GRAY  },
+        { t: inv.invoiceNo || '—',                            cl:BLACK, b:true },
+        { t: detail,                                          cl:DKGRAY },
+        { t: fmtGBP(inv.total),                               cl:BLACK },
+        { t: (inv.paidAmount||0) > 0 ? fmtGBP(inv.paidAmount) : '—', cl:GRAY },
+        { t: fmtGBP(dispBal),                                 cl:dispBal>0?RED:GREEN, b:true },
       ];
-      let cx = ML+3;
-      const ty2 = y - ROW_H + 4;
-      cells.forEach((cell,ci) => {
+
+      let cx = ML + 4;
+      const ty = y - ROW_H + 5;
+      cells.forEach((cell, ci) => {
         const col = cols[ci];
-        const f = cell.b ? bld : reg;
-        const tw = f.widthOfTextAtSize(cell.t, 7.5);
-        const tx = col.right ? cx+col.w-tw-3 : cx+2;
-        pg.drawText(cell.t, { x:tx, y:ty2, size:7.5, font:f, color:cell.cl||BLACK });
+        const f   = cell.b ? bld : reg;
+        const tw  = f.widthOfTextAtSize(cell.t, 7.5);
+        const tx  = col.right ? cx+col.w-tw-4 : cx;
+        pg.drawText(cell.t, { x:tx, y:ty, size:7.5, font:f, color:cell.cl||BLACK });
         cx += col.w;
       });
-      pg.drawLine({ start:{x:ML,y:y-ROW_H}, end:{x:ML+CW,y:y-ROW_H}, thickness:0.3, color:rgb(0.88,0.88,0.88) });
+      pg.drawLine({ start:{x:ML,y:y-ROW_H}, end:{x:ML+CW,y:y-ROW_H}, thickness:0.3, color:rgb(0.90,0.90,0.90) });
       y -= ROW_H;
     }
 
-    if (y - ROW_H - 2 < pageBottom) {
-      pg = addPage(); y = H - 76 - 30;
-    }
+    // Balance outstanding row
+    y -= 4;
+    pg.drawLine({ start:{x:ML, y:y+2}, end:{x:W-MR, y:y+2}, thickness:0.5, color:BORDER });
     y -= 2;
-    pg.drawRectangle({ x:ML, y:y-ROW_H-2, width:CW, height:ROW_H+2, color:HDRBG });
-    const totCells = ['','','TOTALS','', fmtGBP(totInvoiced), fmtGBP(totPaid), fmtGBP(totBal), ''];
-    let cx2 = ML+3;
-    totCells.forEach((t,ci) => { if (t) { const col=cols[ci]; const f=bld; const tw=f.widthOfTextAtSize(t,7.5); const tx=col.right?cx2+col.w-tw-3:cx2+2; pg.drawText(t,{x:tx,y:y-ROW_H+3,size:7.5,font:f,color:WHITE}); } cx2+=cols[ci].w; });
-    y -= ROW_H + 2;
-    pg.drawText('Generated '+dateStr+' · GB Electrical Engineering Ltd · gbelectricals.co.uk', { x:ML, y:MB, size:7, font:reg, color:GRAY });
+    pg.drawText('Balance outstanding', { x:ML+4, y:y-13, size:8.5, font:bld, color:BLACK });
+    const bvw = bld.widthOfTextAtSize(fmtGBP(tot.bal), 11);
+    pg.drawText(fmtGBP(tot.bal), { x:W-MR-bvw, y:y-14, size:11, font:bld, color:tot.bal>0?RED:GREEN });
+    y -= 26;
 
+    // Ageing summary section
+    if (y - 60 > pageBottom) {
+      y -= 10;
+      pg.drawRectangle({ x:ML, y:y-HDR_H, width:CW, height:HDR_H, color:LTBG });
+      pg.drawText('AGEING SUMMARY', { x:ML+6, y:y-HDR_H+5, size:8, font:bld, color:GRAY });
+      y -= HDR_H + 2;
+
+      const agCols = [
+        { lbl:'AGEING',      w:95  },
+        { lbl:'NOT YET DUE', w:84, right:true },
+        { lbl:'30 DAYS',     w:72, right:true },
+        { lbl:'60 DAYS',     w:72, right:true },
+        { lbl:'90+ DAYS',    w:72, right:true },
+        { lbl:'TOTAL',       w:120, right:true },
+      ];
+      pg.drawRectangle({ x:ML, y:y-HDR_H, width:CW, height:HDR_H, color:HDRBG });
+      let agcx = ML+4;
+      agCols.forEach(c => {
+        const tw = bld.widthOfTextAtSize(c.lbl, 7);
+        const tx = c.right ? agcx+c.w-tw-4 : agcx;
+        pg.drawText(c.lbl, { x:tx, y:y-HDR_H+5, size:7, font:bld, color:WHITE });
+        agcx += c.w;
+      });
+      y -= HDR_H;
+
+      const agVals = ['Outstanding', fmtGBP(tot.notDue), fmtGBP(tot.d30), fmtGBP(tot.d60), fmtGBP(tot.d90p), fmtGBP(tot.bal)];
+      agcx = ML+4;
+      agCols.forEach((c, ci) => {
+        const v = agVals[ci];
+        const f = ci===0 ? reg : bld;
+        const n = ci>0 ? parseFloat(v.replace('£','')) : 0;
+        const cl = ci===0 ? GRAY : (n>0 && ci>1) ? RED : (n>0?BLACK:GRAY);
+        const tw = f.widthOfTextAtSize(v, 8);
+        const tx = c.right ? agcx+c.w-tw-4 : agcx;
+        pg.drawText(v, { x:tx, y:y-14, size:8, font:f, color:cl });
+        agcx += c.w;
+      });
+    }
+
+    _drawFooter(pg);
+
+    // ── Append individual invoice PDFs ─────────────────────────────────────────
     const withPdf = allItems.filter(i => i.pdfPath);
     let done = 0;
     for (const inv of withPdf) {
