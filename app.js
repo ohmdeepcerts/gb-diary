@@ -7779,17 +7779,17 @@ async function _invDownloadStatement(stmtBtn) {
       if (lr.ok) {
         const lbytes = await lr.arrayBuffer();
         const cv = document.createElement('canvas');
-        cv.width = 166; cv.height = 72;
+        cv.width = 240; cv.height = 104;
         const ctx = cv.getContext('2d');
         const img = new Image();
         const bu = URL.createObjectURL(new Blob([lbytes], { type:'image/webp' }));
         await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = bu; });
-        ctx.drawImage(img, 0, 0, 166, 72);
+        ctx.drawImage(img, 0, 0, 240, 104);
         URL.revokeObjectURL(bu);
         const pu = cv.toDataURL('image/png').split(',')[1];
         const pngBytes = Uint8Array.from(atob(pu), c => c.charCodeAt(0));
         logoImg = await merged.embedPng(pngBytes);
-        logoW = 83; logoH = 36;
+        logoW = 120; logoH = 52;
       }
     } catch(e) {}
 
@@ -7807,91 +7807,93 @@ async function _invDownloadStatement(stmtBtn) {
     const HDRBG  = rgb(0.20,  0.20,  0.20);
     const BORDER = rgb(0.82,  0.82,  0.82);
     const GREEN  = rgb(0.09,  0.56,  0.26);
+    const REDBRD = rgb(0.820, 0.000, 0.137);
 
     const fmtDate = s => s ? new Date(s).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+    const fmtDateShort = s => s ? new Date(s).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '';
     const fmtGBP  = n => '£' + Number(n||0).toFixed(2);
     const dateStr = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
-    const clientLbl = _invQuery || (allItems[0]?.contactName) || 'All Clients';
 
-    // Totals and ageing buckets
-    const tot = { invoiced:0, paid:0, bal:0, notDue:0, d30:0, d60:0, d90p:0 };
+    // Use the actual contact name from invoice data, not the search query
+    const contactName = allItems[0]?.contactName || '';
+    const contactEmail = allItems[0]?.contactEmail || '';
+    const contactPhone = allItems[0]?.contactPhone || '';
+    const clientLbl = contactName || _invQuery || 'All Clients';
+
+    // Totals
+    const tot = { invoiced:0, paid:0, bal:0, overdue:0 };
     const now = new Date(); now.setHours(0,0,0,0);
     allItems.forEach(inv => {
       const b = Math.max(0, inv.balance ?? ((inv.total||0)-(inv.paidAmount||0)));
       tot.invoiced += (inv.total||0);
       tot.paid     += (inv.paidAmount||0);
       tot.bal      += b;
-      if (b > 0) {
-        if (!inv.dueAt) { tot.notDue += b; return; }
+      if (b > 0 && inv.dueAt) {
         const d = new Date(inv.dueAt); d.setHours(0,0,0,0);
-        const days = Math.floor((now - d) / 86400000);
-        if (days <= 0)       tot.notDue += b;
-        else if (days <= 30) tot.d30    += b;
-        else if (days <= 60) tot.d60    += b;
-        else                 tot.d90p   += b;
+        if (d < now) tot.overdue += b;
       }
     });
 
-    // Table columns matching main app: DATE | TYPE | REFERENCE | DETAIL | CHARGES | PAYMENTS | BALANCE
+    // Table columns: DATE | TYPE | REFERENCE | DETAIL | CHARGES | PAYMENTS | BALANCE
     const cols = [
-      { lbl:'DATE',      w:62,  right:false },
-      { lbl:'TYPE',      w:44,  right:false },
-      { lbl:'REFERENCE', w:64,  right:false },
-      { lbl:'DETAIL',    w:177, right:false },
+      { lbl:'DATE',      w:60,  right:false },
+      { lbl:'TYPE',      w:48,  right:false },
+      { lbl:'REFERENCE', w:65,  right:false },
+      { lbl:'DETAIL',    w:175, right:false },
       { lbl:'CHARGES',   w:57,  right:true  },
       { lbl:'PAYMENTS',  w:57,  right:true  },
-      { lbl:'BALANCE',   w:54,  right:true  },
+      { lbl:'BALANCE',   w:53,  right:true  },
     ];
-    const ROW_H = 18, HDR_H = 16;
+    const ROW_H = 24, HDR_H = 16;
     const pageBottom = MB + 60;
 
     // ── Draw page header ────────────────────────────────────────────────────────
     function _drawPageHeader(pg) {
       const headerTop = H - 15;
-      // Logo
       if (logoImg) {
         pg.drawImage(logoImg, { x: ML, y: headerTop - logoH, width: logoW, height: logoH });
       } else {
-        pg.drawRectangle({ x:ML, y:headerTop-36, width:36, height:36, color:RED });
-        pg.drawText('GB', { x:ML+7, y:headerTop-24, size:16, font:bld, color:WHITE });
+        pg.drawRectangle({ x:ML, y:headerTop-44, width:44, height:44, color:RED });
+        pg.drawText('GB', { x:ML+9, y:headerTop-28, size:18, font:bld, color:WHITE });
       }
-      // Company text
-      const cx = ML + (logoImg ? logoW + 8 : 44);
-      pg.drawText('GB Electrical', { x:cx, y:headerTop-14, size:10, font:bld, color:BLACK });
-      pg.drawText('7 Mill Lane, Chadwell Heath, Romford, Essex, RM6 6TT', { x:cx, y:headerTop-26, size:7.5, font:reg, color:GRAY });
-      pg.drawText('07865753925  ·  Compliance@gbelectricals.co.uk', { x:cx, y:headerTop-37, size:7.5, font:reg, color:GRAY });
-      // "STATEMENT OF" / "ACCOUNT" right-aligned
+      const cx = ML + (logoImg ? logoW + 10 : 54);
+      pg.drawText('GB Electrical', { x:cx, y:headerTop-12, size:11, font:bld, color:BLACK });
+      pg.drawText('7 Mill Lane, Chadwell Heath, Romford,', { x:cx, y:headerTop-24, size:7.5, font:reg, color:GRAY });
+      pg.drawText('Essex, RM6 6TT', { x:cx, y:headerTop-34, size:7.5, font:reg, color:GRAY });
+      pg.drawText('07878 192278', { x:cx, y:headerTop-44, size:7.5, font:reg, color:GRAY });
+      pg.drawText('Compliance@gbelectricals.co.uk', { x:cx, y:headerTop-54, size:7.5, font:reg, color:GRAY });
       const s1 = 'STATEMENT OF', s2 = 'ACCOUNT';
-      const s1w = bld.widthOfTextAtSize(s1, 18), s2w = bld.widthOfTextAtSize(s2, 18);
-      pg.drawText(s1, { x:W-MR-s1w, y:headerTop-16, size:18, font:bld, color:BLACK });
-      pg.drawText(s2, { x:W-MR-s2w, y:headerTop-36, size:18, font:bld, color:BLACK });
-      // Separator line
-      pg.drawLine({ start:{x:ML, y:headerTop-50}, end:{x:W-MR, y:headerTop-50}, thickness:0.5, color:BORDER });
+      const s1w = bld.widthOfTextAtSize(s1, 20), s2w = bld.widthOfTextAtSize(s2, 20);
+      pg.drawText(s1, { x:W-MR-s1w, y:headerTop-14, size:20, font:bld, color:BLACK });
+      pg.drawText(s2, { x:W-MR-s2w, y:headerTop-38, size:20, font:bld, color:BLACK });
+      pg.drawLine({ start:{x:ML, y:headerTop-66}, end:{x:W-MR, y:headerTop-66}, thickness:0.5, color:REDBRD });
     }
 
     // ── Draw client info block (page 1 only) ───────────────────────────────────
     function _drawClientInfo(pg) {
-      const iy0 = H - 15 - 50 - 10; // just below separator
+      const iy0 = H - 15 - 66 - 8;
       let iy = iy0;
-      pg.drawText('Company No. 15476906', { x:ML, y:iy, size:7, font:reg, color:LGRAY });
+      pg.drawText('Company No. 15476506', { x:ML, y:iy, size:7, font:reg, color:LGRAY });
       iy -= 15;
       pg.drawText('STATEMENT FOR', { x:ML, y:iy, size:7.5, font:bld, color:LGRAY });
-      iy -= 16;
-      pg.drawText(clientLbl.substring(0,50), { x:ML, y:iy, size:14, font:bld, color:BLACK });
-      iy -= 14;
-      const contactName = allItems[0]?.contactName || '';
-      if (contactName && contactName.toLowerCase() !== clientLbl.toLowerCase()) {
-        pg.drawText('FAO: ' + contactName.substring(0,45), { x:ML, y:iy, size:8, font:reg, color:GRAY });
+      iy -= 17;
+      pg.drawText(clientLbl.substring(0, 50), { x:ML, y:iy, size:14, font:bld, color:BLACK });
+      iy -= 15;
+      if (contactEmail) {
+        pg.drawText(contactEmail.substring(0, 50), { x:ML, y:iy, size:8, font:reg, color:GRAY });
         iy -= 12;
       }
-      // Right side: statement date + outstanding
-      const rx = W - MR - 130;
+      if (contactPhone) {
+        pg.drawText(contactPhone.substring(0, 30), { x:ML, y:iy, size:8, font:reg, color:GRAY });
+        iy -= 12;
+      }
+      // Right side: Statement Date + Opening Balance
+      const rx = W - MR - 140;
       pg.drawText('STATEMENT DATE', { x:rx, y:iy0, size:7.5, font:bld, color:LGRAY });
-      pg.drawText(dateStr, { x:rx, y:iy0-14, size:9, font:reg, color:BLACK });
-      pg.drawText('TOTAL OUTSTANDING', { x:rx, y:iy0-32, size:7.5, font:bld, color:LGRAY });
-      const bv = fmtGBP(tot.bal);
-      pg.drawText(bv, { x:rx, y:iy0-46, size:12, font:bld, color:tot.bal>0?RED:GREEN });
-      return iy - 10;
+      pg.drawText(dateStr, { x:rx, y:iy0-13, size:9, font:reg, color:BLACK });
+      pg.drawText('OPENING BALANCE', { x:rx, y:iy0-30, size:7.5, font:bld, color:LGRAY });
+      pg.drawText('£0.00', { x:rx, y:iy0-43, size:9, font:reg, color:BLACK });
+      return iy - 8;
     }
 
     // ── Draw table column header row ───────────────────────────────────────────
@@ -7941,7 +7943,7 @@ async function _invDownloadStatement(stmtBtn) {
         _drawFooter(pg);
         pg = merged.addPage([W, H]);
         _drawPageHeader(pg);
-        y = H - 15 - 50 - 16;
+        y = H - 15 - 66 - 16;
         pg.drawText('STATEMENT — continued', { x:ML, y:y, size:8, font:bld, color:LGRAY });
         y -= 14;
         y = _drawTblHdr(pg, y);
@@ -7956,25 +7958,32 @@ async function _invDownloadStatement(stmtBtn) {
       if (rowAlt) pg.drawRectangle({ x:ML, y:y-ROW_H, width:CW, height:ROW_H, color:rgb(0.98,0.98,0.99) });
       rowAlt = !rowAlt;
 
-      const detail = (inv.siteAddress || inv.jobNo || '—').substring(0, 42);
+      // DETAIL: "Invoice" on line 1, "Due [date]" on line 2 — matching main app
+      const detailLine1 = 'Invoice';
+      const detailLine2 = inv.dueAt ? 'Due ' + fmtDateShort(inv.dueAt) : '';
+
       const cells = [
-        { t: fmtDate(inv.dueAt),                              cl:BLACK },
-        { t: 'Invoice',                                       cl:GRAY  },
-        { t: inv.invoiceNo || '—',                            cl:BLACK, b:true },
-        { t: detail,                                          cl:DKGRAY },
-        { t: fmtGBP(inv.total),                               cl:BLACK },
+        { t: fmtDate(inv.issuedAt || inv.dueAt),              cl:BLACK },
+        { t: 'Invoice',                                        cl:DKGRAY },
+        { t: inv.invoiceNo || '—',                             cl:BLACK, b:true },
+        { t: detailLine1,                                      cl:DKGRAY, detail2: detailLine2 },
+        { t: fmtGBP(inv.total),                                cl:BLACK },
         { t: (inv.paidAmount||0) > 0 ? fmtGBP(inv.paidAmount) : '—', cl:GRAY },
-        { t: fmtGBP(dispBal),                                 cl:dispBal>0?RED:GREEN, b:true },
+        { t: fmtGBP(dispBal),                                  cl:dispBal>0?RED:GREEN, b:true },
       ];
 
       let cx = ML + 4;
-      const ty = y - ROW_H + 5;
+      const ty1 = y - ROW_H + 14; // upper text line
+      const ty2 = y - ROW_H + 5;  // lower text line
       cells.forEach((cell, ci) => {
         const col = cols[ci];
         const f   = cell.b ? bld : reg;
         const tw  = f.widthOfTextAtSize(cell.t, 7.5);
         const tx  = col.right ? cx+col.w-tw-4 : cx;
-        pg.drawText(cell.t, { x:tx, y:ty, size:7.5, font:f, color:cell.cl||BLACK });
+        pg.drawText(cell.t, { x:tx, y:ty1, size:7.5, font:f, color:cell.cl||BLACK });
+        if (cell.detail2) {
+          pg.drawText(cell.detail2, { x:cx, y:ty2, size:6.5, font:reg, color:LGRAY });
+        }
         cx += col.w;
       });
       pg.drawLine({ start:{x:ML,y:y-ROW_H}, end:{x:ML+CW,y:y-ROW_H}, thickness:0.3, color:rgb(0.90,0.90,0.90) });
@@ -7988,48 +7997,34 @@ async function _invDownloadStatement(stmtBtn) {
     pg.drawText('Balance outstanding', { x:ML+4, y:y-13, size:8.5, font:bld, color:BLACK });
     const bvw = bld.widthOfTextAtSize(fmtGBP(tot.bal), 11);
     pg.drawText(fmtGBP(tot.bal), { x:W-MR-bvw, y:y-14, size:11, font:bld, color:tot.bal>0?RED:GREEN });
-    y -= 26;
-
-    // Ageing summary section
-    if (y - 60 > pageBottom) {
-      y -= 10;
-      pg.drawRectangle({ x:ML, y:y-HDR_H, width:CW, height:HDR_H, color:LTBG });
-      pg.drawText('AGEING SUMMARY', { x:ML+6, y:y-HDR_H+5, size:8, font:bld, color:GRAY });
-      y -= HDR_H + 2;
-
-      const agCols = [
-        { lbl:'AGEING',      w:95  },
-        { lbl:'NOT YET DUE', w:84, right:true },
-        { lbl:'30 DAYS',     w:72, right:true },
-        { lbl:'60 DAYS',     w:72, right:true },
-        { lbl:'90+ DAYS',    w:72, right:true },
-        { lbl:'TOTAL',       w:120, right:true },
-      ];
-      pg.drawRectangle({ x:ML, y:y-HDR_H, width:CW, height:HDR_H, color:HDRBG });
-      let agcx = ML+4;
-      agCols.forEach(c => {
-        const tw = bld.widthOfTextAtSize(c.lbl, 7);
-        const tx = c.right ? agcx+c.w-tw-4 : agcx;
-        pg.drawText(c.lbl, { x:tx, y:y-HDR_H+5, size:7, font:bld, color:WHITE });
-        agcx += c.w;
-      });
-      y -= HDR_H;
-
-      const agVals = ['Outstanding', fmtGBP(tot.notDue), fmtGBP(tot.d30), fmtGBP(tot.d60), fmtGBP(tot.d90p), fmtGBP(tot.bal)];
-      agcx = ML+4;
-      agCols.forEach((c, ci) => {
-        const v = agVals[ci];
-        const f = ci===0 ? reg : bld;
-        const n = ci>0 ? parseFloat(v.replace('£','')) : 0;
-        const cl = ci===0 ? GRAY : (n>0 && ci>1) ? RED : (n>0?BLACK:GRAY);
-        const tw = f.widthOfTextAtSize(v, 8);
-        const tx = c.right ? agcx+c.w-tw-4 : agcx;
-        pg.drawText(v, { x:tx, y:y-14, size:8, font:f, color:cl });
-        agcx += c.w;
-      });
-    }
 
     _drawFooter(pg);
+
+    // ── HOW TO PAY + BALANCE OUTSTANDING summary page (matches main app page 2) ─
+    const sp = merged.addPage([W, H]);
+    const spMid = W / 2 - 10;
+    const spTop = H - 80;
+    // Left box: HOW TO PAY
+    sp.drawRectangle({ x:ML, y:spTop-110, width:spMid-ML-10, height:110, color:rgb(0.97,0.97,0.97), borderColor:BORDER, borderWidth:0.5 });
+    sp.drawText('HOW TO PAY', { x:ML+12, y:spTop-18, size:8, font:bld, color:BLACK });
+    sp.drawLine({ start:{x:ML, y:spTop-26}, end:{x:spMid-20, y:spTop-26}, thickness:0.3, color:RED });
+    sp.drawText('HSBC', { x:ML+12, y:spTop-40, size:8, font:bld, color:BLACK });
+    sp.drawText('GB ELECTRICAL ENGINEERING LTD', { x:ML+12, y:spTop-54, size:7.5, font:reg, color:BLACK });
+    sp.drawText('Sort code: 40-09-06', { x:ML+12, y:spTop-68, size:7.5, font:reg, color:DKGRAY });
+    sp.drawText('Account: 52068605', { x:ML+12, y:spTop-82, size:7.5, font:reg, color:DKGRAY });
+    // Right box: BALANCE OUTSTANDING
+    const rbx = spMid + 10, rbw = W - MR - rbx;
+    sp.drawRectangle({ x:rbx, y:spTop-110, width:rbw, height:110, color:WHITE, borderColor:REDBRD, borderWidth:1 });
+    sp.drawText('BALANCE OUTSTANDING', { x:rbx+10, y:spTop-18, size:7.5, font:bld, color:LGRAY });
+    const balStr = fmtGBP(tot.bal);
+    const balW = bld.widthOfTextAtSize(balStr, 26);
+    sp.drawText(balStr, { x:rbx + rbw/2 - balW/2, y:spTop-54, size:26, font:bld, color:BLACK });
+    if (tot.overdue > 0) {
+      const ovStr = 'Of which overdue ' + fmtGBP(tot.overdue);
+      const ovW = reg.widthOfTextAtSize(ovStr, 8);
+      sp.drawText(ovStr, { x:rbx + rbw/2 - ovW/2, y:spTop-72, size:8, font:reg, color:RED });
+    }
+    _drawFooter(sp);
 
     // ── Append individual invoice PDFs ─────────────────────────────────────────
     const withPdf = allItems.filter(i => i.pdfPath);
