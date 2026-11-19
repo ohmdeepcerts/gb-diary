@@ -9357,6 +9357,7 @@ async function openCerts() {
   const dateFromInp   = document.getElementById('certs-date-from');
   const dateToInp     = document.getElementById('certs-date-to');
   const sortInp       = document.getElementById('certs-sort');
+  const tillTodayBtn  = document.getElementById('certs-till-today');
   const clearBtn      = document.getElementById('certs-clear-filters');
   if (searchInp && !searchInp._cevt) {
     searchInp._cevt = true;
@@ -9382,17 +9383,37 @@ async function openCerts() {
     sortInp._cevt = true;
     sortInp.addEventListener('change', () => { _certsSort = sortInp.value; _renderCerts(); });
   }
+  if (tillTodayBtn && !tillTodayBtn._cevt) {
+    tillTodayBtn._cevt = true;
+    tillTodayBtn.addEventListener('click', () => {
+      const today = new Date().toISOString().slice(0, 10);
+      _certsDateTo = today;
+      if (dateToInp) dateToInp.value = today;
+      tillTodayBtn.style.background = 'var(--accent)';
+      tillTodayBtn.style.color = '#fff';
+      tillTodayBtn.style.borderColor = 'var(--accent)';
+      _renderCerts();
+    });
+  }
+  // Keep Till today button highlighted when active
+  if (tillTodayBtn) {
+    const isActive = _certsDateTo === new Date().toISOString().slice(0, 10);
+    tillTodayBtn.style.background   = isActive ? 'var(--accent)' : 'var(--bg2)';
+    tillTodayBtn.style.color        = isActive ? '#fff' : 'var(--text3)';
+    tillTodayBtn.style.borderColor  = isActive ? 'var(--accent)' : 'var(--border)';
+  }
   if (clearBtn && !clearBtn._cevt) {
     clearBtn._cevt = true;
     clearBtn.addEventListener('click', () => {
       _certsSearch = ''; _certsTypeFilter = ''; _certsClientFilter = '';
       _certsDateFrom = ''; _certsDateTo = ''; _certsSort = 'newest';
-      if (searchInp)   searchInp.value   = '';
-      if (typeInp)     typeInp.value     = '';
-      if (clientInp)   clientInp.value   = '';
-      if (dateFromInp) dateFromInp.value = '';
-      if (dateToInp)   dateToInp.value   = '';
-      if (sortInp)     sortInp.value     = 'newest';
+      if (searchInp)    searchInp.value   = '';
+      if (typeInp)      typeInp.value     = '';
+      if (clientInp)    clientInp.value   = '';
+      if (dateFromInp)  dateFromInp.value = '';
+      if (dateToInp)    dateToInp.value   = '';
+      if (sortInp)      sortInp.value     = 'newest';
+      if (tillTodayBtn) { tillTodayBtn.style.background = 'var(--bg2)'; tillTodayBtn.style.color = 'var(--text3)'; tillTodayBtn.style.borderColor = 'var(--border)'; }
       _renderCerts();
     });
   }
