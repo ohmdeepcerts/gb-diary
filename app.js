@@ -9480,6 +9480,7 @@ async function _loadCerts(force) {
     _certsData = all;
     if (stxt) stxt.textContent = all.length + ' certificates loaded';
     _updateCertTabCounts();
+    _populateCertClientTypes();
     _renderCerts();
     _arAutoRelease(all);
   } catch(e) {
@@ -9679,6 +9680,26 @@ function _filterCerts() {
   }
 
   return list;
+}
+
+function _populateCertClientTypes() {
+  const sel = document.getElementById('certs-client-filter');
+  if (!sel || !_certsData) return;
+  const types = new Set();
+  _certsData.forEach(function(c) {
+    const t = (c.contact && (c.contact.type || c.contact.contact_type)) || (c.job && c.job.contact_type) || '';
+    if (t) types.add(t.trim());
+  });
+  if (!types.size) return;
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">All client types</option>';
+  [...types].sort().forEach(function(t) {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = t;
+    sel.appendChild(opt);
+  });
+  if (prev) sel.value = prev; // restore selection if still valid
 }
 
 function _updateCertTabCounts() {
