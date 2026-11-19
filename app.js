@@ -9389,18 +9389,18 @@ async function openCerts() {
       const today = new Date().toISOString().slice(0, 10);
       _certsDateTo = today;
       if (dateToInp) dateToInp.value = today;
-      tillTodayBtn.style.background = 'var(--accent)';
+      tillTodayBtn.style.background = '#d10023';
       tillTodayBtn.style.color = '#fff';
-      tillTodayBtn.style.borderColor = 'var(--accent)';
+      tillTodayBtn.style.borderColor = '#d10023';
       _renderCerts();
     });
   }
   // Keep Till today button highlighted when active
   if (tillTodayBtn) {
     const isActive = _certsDateTo === new Date().toISOString().slice(0, 10);
-    tillTodayBtn.style.background   = isActive ? 'var(--accent)' : 'var(--bg2)';
+    tillTodayBtn.style.background   = isActive ? '#d10023' : 'var(--bg2)';
     tillTodayBtn.style.color        = isActive ? '#fff' : 'var(--text3)';
-    tillTodayBtn.style.borderColor  = isActive ? 'var(--accent)' : 'var(--border)';
+    tillTodayBtn.style.borderColor  = isActive ? '#d10023' : 'var(--border)';
   }
   if (clearBtn && !clearBtn._cevt) {
     clearBtn._cevt = true;
