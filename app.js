@@ -9703,24 +9703,29 @@ function _filterCerts() {
   return list;
 }
 
+const _CERT_CLIENT_TYPE_FALLBACK = ['Agency','Builder','Commercial','Developer','Landlord','Letting Agent','Owner','Tenant','Other'];
+
 function _populateCertClientTypes() {
   const sel = document.getElementById('certs-client-filter');
   if (!sel || !_certsData) return;
+  // Try to read types directly from the loaded cert/contact data
   const types = new Set();
   _certsData.forEach(function(c) {
-    const t = (c.contact && (c.contact.type || c.contact.contact_type)) || (c.job && c.job.contact_type) || '';
+    const t = (c.contact && (c.contact.type || c.contact.contact_type || c.contact.contact_type_name)) ||
+              (c.job && (c.job.contact_type || c.job.contactType)) || '';
     if (t) types.add(t.trim());
   });
-  if (!types.size) return;
+  // Fall back to the known system types if the API doesn't return them on cert objects
+  const list = types.size ? [...types].sort() : _CERT_CLIENT_TYPE_FALLBACK;
   const prev = sel.value;
   sel.innerHTML = '<option value="">All client types</option>';
-  [...types].sort().forEach(function(t) {
+  list.forEach(function(t) {
     const opt = document.createElement('option');
     opt.value = t;
     opt.textContent = t;
     sel.appendChild(opt);
   });
-  if (prev) sel.value = prev; // restore selection if still valid
+  if (prev) sel.value = prev;
 }
 
 function _updateCertTabCounts() {
