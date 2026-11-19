@@ -9313,6 +9313,7 @@ let _certsTab          = 'all';
 let _certsSearch       = '';
 let _certsTypeFilter   = '';
 let _certsClientFilter = '';
+let _certsContactIds   = null; // Set of contact IDs for active client type filter
 let _certsDateFrom     = '';
 let _certsDateTo       = '';
 let _certsSort         = 'newest';
@@ -9369,10 +9370,10 @@ async function openCerts() {
   }
   if (clientInp && !clientInp._cevt) {
     clientInp._cevt = true;
-    clientInp.addEventListener('change', () => {
+    clientInp.addEventListener('change', async () => {
       _certsClientFilter = clientInp.value;
-      _certsData = null; // force re-fetch from API with new contactType param
-      _loadCerts(true);
+      await _loadCertsContactFilter(clientInp.value);
+      _renderCerts();
     });
   }
   if (dateFromInp && !dateFromInp._cevt) {
@@ -9409,8 +9410,8 @@ async function openCerts() {
   if (clearBtn && !clearBtn._cevt) {
     clearBtn._cevt = true;
     clearBtn.addEventListener('click', () => {
-      const hadClientFilter = !!_certsClientFilter;
       _certsSearch = ''; _certsTypeFilter = ''; _certsClientFilter = '';
+      _certsContactIds = null;
       _certsDateFrom = ''; _certsDateTo = ''; _certsSort = 'newest';
       if (searchInp)    searchInp.value   = '';
       if (typeInp)      typeInp.value     = '';
@@ -9419,7 +9420,7 @@ async function openCerts() {
       if (dateToInp)    dateToInp.value   = '';
       if (sortInp)      sortInp.value     = 'newest';
       if (tillTodayBtn) { tillTodayBtn.style.background = 'var(--bg2)'; tillTodayBtn.style.color = 'var(--text3)'; tillTodayBtn.style.borderColor = 'var(--border)'; }
-      if (hadClientFilter) { _certsData = null; _loadCerts(true); } else { _renderCerts(); }
+      _renderCerts();
     });
   }
   const relAllBtn = document.getElementById('certs-release-all-btn');
@@ -9495,7 +9496,6 @@ async function _loadCerts(force) {
 
   try {
     const apiParams = { pageSize: 50 };
-    if (_certsClientFilter) apiParams.contactType = _certsClientFilter;
     const all = [];
     let page = 1;
     while (true) {
@@ -9631,6 +9631,20 @@ function _certIsExpiring(c) {
   return c.expiry_bucket === 'expiring_soon' || c.expiry_bucket === 'expired';
 }
 
+async function _loadCertsContactFilter(type) {
+  if (!type) { _certsContactIds = null; return; }
+  const ids = new Set();
+  let page = 1;
+  while (true) {
+    const r = await trpcQuery('directory.contacts.list', { pageSize: 50, page, type: type }).catch(function(){ return null; });
+    const items = (r && r.items) ? r.items : [];
+    items.forEach(function(c){ ids.add(c.id); });
+    if (!r || !r.total || ids.size >= r.total || items.length < 50) break;
+    page++;
+  }
+  _certsContactIds = ids;
+}
+
 function _filterCerts() {
   if (!_certsData) return [];
   let list = _certsData;
@@ -9643,7 +9657,12 @@ function _filterCerts() {
   // Cert type
   if (_certsTypeFilter) list = list.filter(function(c){ return c.cert_type_id === _certsTypeFilter; });
 
-  // Issue date range (contactType is handled server-side by _loadCerts)
+  // Client type (contact IDs fetched from directory.contacts.list)
+  if (_certsClientFilter && _certsContactIds) {
+    list = list.filter(function(c){ return c.contact && _certsContactIds.has(c.contact.id); });
+  }
+
+  // Issue date range (client-side)
   if (_certsDateFrom) {
     const df = new Date(_certsDateFrom);
     list = list.filter(function(c){ return c.issue_date && new Date(c.issue_date) >= df; });
