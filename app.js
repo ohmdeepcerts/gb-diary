@@ -9369,7 +9369,11 @@ async function openCerts() {
   }
   if (clientInp && !clientInp._cevt) {
     clientInp._cevt = true;
-    clientInp.addEventListener('change', () => { _certsClientFilter = clientInp.value; _renderCerts(); });
+    clientInp.addEventListener('change', () => {
+      _certsClientFilter = clientInp.value;
+      _certsData = null; // force re-fetch from API with new contactType param
+      _loadCerts(true);
+    });
   }
   if (dateFromInp && !dateFromInp._cevt) {
     dateFromInp._cevt = true;
@@ -9405,6 +9409,7 @@ async function openCerts() {
   if (clearBtn && !clearBtn._cevt) {
     clearBtn._cevt = true;
     clearBtn.addEventListener('click', () => {
+      const hadClientFilter = !!_certsClientFilter;
       _certsSearch = ''; _certsTypeFilter = ''; _certsClientFilter = '';
       _certsDateFrom = ''; _certsDateTo = ''; _certsSort = 'newest';
       if (searchInp)    searchInp.value   = '';
@@ -9414,7 +9419,7 @@ async function openCerts() {
       if (dateToInp)    dateToInp.value   = '';
       if (sortInp)      sortInp.value     = 'newest';
       if (tillTodayBtn) { tillTodayBtn.style.background = 'var(--bg2)'; tillTodayBtn.style.color = 'var(--text3)'; tillTodayBtn.style.borderColor = 'var(--border)'; }
-      _renderCerts();
+      if (hadClientFilter) { _certsData = null; _loadCerts(true); } else { _renderCerts(); }
     });
   }
   const relAllBtn = document.getElementById('certs-release-all-btn');
@@ -9489,10 +9494,12 @@ async function _loadCerts(force) {
   if (stxt) stxt.textContent = 'Loading…';
 
   try {
+    const apiParams = { pageSize: 50 };
+    if (_certsClientFilter) apiParams.contactType = _certsClientFilter;
     const all = [];
     let page = 1;
     while (true) {
-      const r = await trpcQuery('certs.list', { pageSize: 50, page });
+      const r = await trpcQuery('certs.list', { ...apiParams, page });
       const items = r && r.certs ? r.certs : [];
       all.push.apply(all, items);
       if (!r || !r.total || all.length >= r.total || items.length < 50) break;
@@ -9636,21 +9643,7 @@ function _filterCerts() {
   // Cert type
   if (_certsTypeFilter) list = list.filter(function(c){ return c.cert_type_id === _certsTypeFilter; });
 
-  // Client type (matches Landlord, Tenant, Agency, etc. — case-insensitive contains)
-  if (_certsClientFilter) {
-    const cf = _certsClientFilter.toLowerCase();
-    list = list.filter(function(c) {
-      const ct = (
-        (c.contact && c.contact.type) ||
-        (c.contact && c.contact.contact_type) ||
-        (c.job && c.job.contact_type) ||
-        ''
-      ).toLowerCase();
-      return ct.includes(cf);
-    });
-  }
-
-  // Issue date range
+  // Issue date range (contactType is handled server-side by _loadCerts)
   if (_certsDateFrom) {
     const df = new Date(_certsDateFrom);
     list = list.filter(function(c){ return c.issue_date && new Date(c.issue_date) >= df; });
