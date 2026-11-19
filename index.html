@@ -1179,9 +1179,10 @@
     <button class="btn-icon" id="certs-logout-btn" title="Sign out">⎋</button>
   </div>
   <div id="certs-top" style="flex-shrink:0;padding:10px 14px 0;border-bottom:1px solid var(--border)">
-    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding-bottom:10px">
+    <!-- Row 1: tabs + search + type filter + release -->
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding-bottom:8px">
       <div id="certs-tabs" style="display:flex;gap:4px;flex-wrap:wrap"></div>
-      <input type="text" id="certs-search" placeholder="Search address, client, cert #…" style="padding:5px 10px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);width:240px;margin-left:6px">
+      <input type="text" id="certs-search" placeholder="Search address, client, cert #…" style="padding:5px 10px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);width:230px;margin-left:6px">
       <select id="certs-type-filter" style="height:30px;padding:0 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text)">
         <option value="">All types</option>
         <option value="pat">PAT Testing</option>
@@ -1193,6 +1194,36 @@
       </select>
       <button id="certs-release-all-btn" style="display:none;padding:4px 11px;font-size:11px;border-radius:5px;border:1px solid #16a34a;background:transparent;color:#16a34a;cursor:pointer;white-space:nowrap">✅ Release all</button>
       <span id="certs-count" style="margin-left:auto;font-size:12px;color:var(--text3)"></span>
+    </div>
+    <!-- Row 2: client type + date range + sort + clear -->
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding-bottom:8px">
+      <select id="certs-client-filter" style="height:30px;padding:0 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text)">
+        <option value="">All client types</option>
+        <option value="landlord">Landlord</option>
+        <option value="tenant">Tenant</option>
+        <option value="owner">Owner</option>
+        <option value="letting agent">Letting Agent</option>
+        <option value="agency">Agency</option>
+        <option value="agent">Agent</option>
+        <option value="developer">Developer</option>
+        <option value="builder">Builder</option>
+        <option value="commercial">Commercial</option>
+        <option value="other">Other</option>
+      </select>
+      <label style="font-size:11px;color:var(--text3);white-space:nowrap">Issue date from</label>
+      <input type="date" id="certs-date-from" style="height:30px;padding:0 6px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text)">
+      <label style="font-size:11px;color:var(--text3);white-space:nowrap">to</label>
+      <input type="date" id="certs-date-to" style="height:30px;padding:0 6px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text)">
+      <select id="certs-sort" style="height:30px;padding:0 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text)">
+        <option value="newest">↓ Newest first</option>
+        <option value="oldest">↑ Oldest first</option>
+        <option value="expiry_asc">⚠ Expiry (soonest)</option>
+        <option value="expiry_desc">⚠ Expiry (latest)</option>
+        <option value="client_az">Client A–Z</option>
+        <option value="client_za">Client Z–A</option>
+        <option value="type_az">Cert type A–Z</option>
+      </select>
+      <button id="certs-clear-filters" style="height:30px;padding:0 10px;font-size:11px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text3);cursor:pointer;white-space:nowrap">✕ Clear filters</button>
     </div>
   </div>
   <div id="certs-body" class="body" style="flex:1;overflow:auto;padding:0 0 20px"></div>
@@ -1236,7 +1267,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-<script src="app.js?v=20261117b"></script>
+<script src="app.js?v=20261119a"></script>
 <span id="email-sync-pill"></span>
 </body>
 </html>

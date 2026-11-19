@@ -9307,11 +9307,15 @@ function _updateDirCount() {
 // ════════════════════════════════════════════════════════════
 //  CERTIFICATES VIEW
 // ════════════════════════════════════════════════════════════
-let _certsData       = null;
-let _waitingCertJobs = null;
-let _certsTab        = 'all';
-let _certsSearch     = '';
-let _certsTypeFilter = '';
+let _certsData         = null;
+let _waitingCertJobs   = null;
+let _certsTab          = 'all';
+let _certsSearch       = '';
+let _certsTypeFilter   = '';
+let _certsClientFilter = '';
+let _certsDateFrom     = '';
+let _certsDateTo       = '';
+let _certsSort         = 'newest';
 
 const CERT_TABS = [
   { key: 'all',      label: 'All' },
@@ -9347,8 +9351,13 @@ async function openCerts() {
   } else {
     _renderCerts();
   }
-  const searchInp = document.getElementById('certs-search');
-  const typeInp   = document.getElementById('certs-type-filter');
+  const searchInp     = document.getElementById('certs-search');
+  const typeInp       = document.getElementById('certs-type-filter');
+  const clientInp     = document.getElementById('certs-client-filter');
+  const dateFromInp   = document.getElementById('certs-date-from');
+  const dateToInp     = document.getElementById('certs-date-to');
+  const sortInp       = document.getElementById('certs-sort');
+  const clearBtn      = document.getElementById('certs-clear-filters');
   if (searchInp && !searchInp._cevt) {
     searchInp._cevt = true;
     searchInp.addEventListener('input', () => { _certsSearch = searchInp.value.trim().toLowerCase(); _renderCerts(); });
@@ -9356,6 +9365,36 @@ async function openCerts() {
   if (typeInp && !typeInp._cevt) {
     typeInp._cevt = true;
     typeInp.addEventListener('change', () => { _certsTypeFilter = typeInp.value; _renderCerts(); });
+  }
+  if (clientInp && !clientInp._cevt) {
+    clientInp._cevt = true;
+    clientInp.addEventListener('change', () => { _certsClientFilter = clientInp.value; _renderCerts(); });
+  }
+  if (dateFromInp && !dateFromInp._cevt) {
+    dateFromInp._cevt = true;
+    dateFromInp.addEventListener('change', () => { _certsDateFrom = dateFromInp.value; _renderCerts(); });
+  }
+  if (dateToInp && !dateToInp._cevt) {
+    dateToInp._cevt = true;
+    dateToInp.addEventListener('change', () => { _certsDateTo = dateToInp.value; _renderCerts(); });
+  }
+  if (sortInp && !sortInp._cevt) {
+    sortInp._cevt = true;
+    sortInp.addEventListener('change', () => { _certsSort = sortInp.value; _renderCerts(); });
+  }
+  if (clearBtn && !clearBtn._cevt) {
+    clearBtn._cevt = true;
+    clearBtn.addEventListener('click', () => {
+      _certsSearch = ''; _certsTypeFilter = ''; _certsClientFilter = '';
+      _certsDateFrom = ''; _certsDateTo = ''; _certsSort = 'newest';
+      if (searchInp)   searchInp.value   = '';
+      if (typeInp)     typeInp.value     = '';
+      if (clientInp)   clientInp.value   = '';
+      if (dateFromInp) dateFromInp.value = '';
+      if (dateToInp)   dateToInp.value   = '';
+      if (sortInp)     sortInp.value     = 'newest';
+      _renderCerts();
+    });
   }
   const relAllBtn = document.getElementById('certs-release-all-btn');
   if (relAllBtn && !relAllBtn._wired) {
@@ -9566,20 +9605,79 @@ function _certIsExpiring(c) {
 function _filterCerts() {
   if (!_certsData) return [];
   let list = _certsData;
+
+  // Status tab
   if (_certsTab === 'done')     list = list.filter(function(c){ return c.status === 'issued' && !_certIsExpiring(c) && !_certHasIssue(c); });
   if (_certsTab === 'expiring') list = list.filter(function(c){ return _certIsExpiring(c); });
   if (_certsTab === 'missing')  list = list.filter(function(c){ return _certHasIssue(c); });
+
+  // Cert type
   if (_certsTypeFilter) list = list.filter(function(c){ return c.cert_type_id === _certsTypeFilter; });
+
+  // Client type (matches Landlord, Tenant, Agency, etc. — case-insensitive contains)
+  if (_certsClientFilter) {
+    const cf = _certsClientFilter.toLowerCase();
+    list = list.filter(function(c) {
+      const ct = (
+        (c.contact && c.contact.type) ||
+        (c.contact && c.contact.contact_type) ||
+        (c.job && c.job.contact_type) ||
+        ''
+      ).toLowerCase();
+      return ct.includes(cf);
+    });
+  }
+
+  // Issue date range
+  if (_certsDateFrom) {
+    const df = new Date(_certsDateFrom);
+    list = list.filter(function(c){ return c.issue_date && new Date(c.issue_date) >= df; });
+  }
+  if (_certsDateTo) {
+    const dt = new Date(_certsDateTo + 'T23:59:59');
+    list = list.filter(function(c){ return c.issue_date && new Date(c.issue_date) <= dt; });
+  }
+
+  // Text search
   if (_certsSearch) {
     const q = _certsSearch;
     list = list.filter(function(c) {
-      const addr = ((c.property && c.property.address ? c.property.address : '') + ' ' + (c.property && c.property.postcode ? c.property.postcode : '')).toLowerCase();
+      const addr   = ((c.property && c.property.address ? c.property.address : '') + ' ' + (c.property && c.property.postcode ? c.property.postcode : '')).toLowerCase();
       const client = (c.contact && c.contact.name ? c.contact.name : '').toLowerCase();
-      const cno = (c.cert_no || '').toLowerCase();
-      const job = (c.job && c.job.job_no ? c.job.job_no : '').toLowerCase();
+      const cno    = (c.cert_no || '').toLowerCase();
+      const job    = (c.job && c.job.job_no ? c.job.job_no : '').toLowerCase();
       return addr.indexOf(q) !== -1 || client.indexOf(q) !== -1 || cno.indexOf(q) !== -1 || job.indexOf(q) !== -1;
     });
   }
+
+  // Sort
+  list = list.slice(); // copy before sort
+  if (_certsSort === 'newest') {
+    list.sort(function(a, b){ return (b.issue_date || '').localeCompare(a.issue_date || ''); });
+  } else if (_certsSort === 'oldest') {
+    list.sort(function(a, b){ return (a.issue_date || '').localeCompare(b.issue_date || ''); });
+  } else if (_certsSort === 'expiry_asc') {
+    list.sort(function(a, b){
+      if (a.no_expiry && b.no_expiry) return 0;
+      if (a.no_expiry) return 1;
+      if (b.no_expiry) return -1;
+      return (a.expiry_date || '').localeCompare(b.expiry_date || '');
+    });
+  } else if (_certsSort === 'expiry_desc') {
+    list.sort(function(a, b){
+      if (a.no_expiry && b.no_expiry) return 0;
+      if (a.no_expiry) return -1;
+      if (b.no_expiry) return 1;
+      return (b.expiry_date || '').localeCompare(a.expiry_date || '');
+    });
+  } else if (_certsSort === 'client_az') {
+    list.sort(function(a, b){ return (a.contact && a.contact.name ? a.contact.name : '').localeCompare(b.contact && b.contact.name ? b.contact.name : ''); });
+  } else if (_certsSort === 'client_za') {
+    list.sort(function(a, b){ return (b.contact && b.contact.name ? b.contact.name : '').localeCompare(a.contact && a.contact.name ? a.contact.name : ''); });
+  } else if (_certsSort === 'type_az') {
+    list.sort(function(a, b){ return (a.cert_type_name || a.cert_type_id || '').localeCompare(b.cert_type_name || b.cert_type_id || ''); });
+  }
+
   return list;
 }
 
@@ -9755,20 +9853,39 @@ function _renderCerts() {
   }
 
   const TH = 'padding:8px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);border-bottom:1px solid var(--border);white-space:nowrap;background:var(--bg3)';
+  const THS = TH + ';cursor:pointer;user-select:none'; // sortable header
   const tbl = document.createElement('table');
   tbl.style.cssText = 'width:100%;border-collapse:collapse;min-width:1000px';
 
-  tbl.innerHTML = '<thead><tr>' +
+  function _thSort(label, sortAsc, sortDesc) {
+    const cur = _certsSort;
+    const arrow = cur === sortAsc ? ' ↑' : cur === sortDesc ? ' ↓' : '';
+    return '<th style="' + THS + '" data-sort-asc="' + sortAsc + '" data-sort-desc="' + sortDesc + '">' + label + arrow + '</th>';
+  }
+
+  const thead = document.createElement('thead');
+  const htr = document.createElement('tr');
+  htr.innerHTML =
     '<th style="' + TH + '">Cert #</th>' +
-    '<th style="' + TH + '">Type</th>' +
-    '<th style="' + TH + 'white-space:normal">Address</th>' +
-    '<th style="' + TH + 'white-space:normal">Client</th>' +
+    _thSort('Type', 'type_az', 'type_az') +
+    '<th style="' + TH + ';white-space:normal">Address</th>' +
+    _thSort('Client', 'client_az', 'client_za') +
     '<th style="' + TH + '">Job</th>' +
-    '<th style="' + TH + '">Issue Date</th>' +
-    '<th style="' + TH + '">Expiry</th>' +
-    '<th style="' + TH + 'white-space:normal">Status</th>' +
-    '<th style="' + TH + '">Actions</th>' +
-    '</tr></thead>';
+    _thSort('Issue Date', 'oldest', 'newest') +
+    _thSort('Expiry', 'expiry_asc', 'expiry_desc') +
+    '<th style="' + TH + ';white-space:normal">Status</th>' +
+    '<th style="' + TH + '">Actions</th>';
+  htr.addEventListener('click', function(e) {
+    const th = e.target.closest('th[data-sort-asc]');
+    if (!th) return;
+    const asc = th.dataset.sortAsc, desc = th.dataset.sortDesc;
+    _certsSort = (_certsSort === asc && asc !== desc) ? desc : asc;
+    const sortEl = document.getElementById('certs-sort');
+    if (sortEl) sortEl.value = _certsSort;
+    _renderCerts();
+  });
+  thead.appendChild(htr);
+  tbl.appendChild(thead);
 
   const tbody = document.createElement('tbody');
 
@@ -9782,6 +9899,8 @@ function _renderCerts() {
 
     const addr = [(c.property && c.property.address), (c.property && c.property.postcode)].filter(Boolean).join(', ') || '—';
     const clientName = (c.contact && c.contact.name) ? c.contact.name : '—';
+    const clientType = (c.contact && (c.contact.type || c.contact.contact_type)) || (c.job && c.job.contact_type) || '';
+    const clientTypeBadge = clientType ? ' <span style="font-size:9px;background:rgba(0,0,0,.07);border-radius:3px;padding:1px 5px;color:var(--text3);white-space:nowrap">' + esc(clientType) + '</span>' : '';
     const jobNo = (c.job && c.job.job_no) ? c.job.job_no : '—';
     const expStyle = _expiryStyle(c);
     const expiryTxt = c.no_expiry ? 'No Expiry' : _fmtCertDate(c.expiry_date);
@@ -9791,7 +9910,7 @@ function _renderCerts() {
       '<td style="padding:8px 12px;font-size:12px;font-family:monospace;font-weight:600;color:var(--text);white-space:nowrap;' + BD + '">' + esc(c.cert_no || '—') + '</td>' +
       '<td style="padding:8px 12px;font-size:11px;color:var(--text2);white-space:nowrap;' + BD + '">' + esc(c.cert_type_name || c.cert_type_id || '—') + '</td>' +
       '<td style="padding:8px 12px;font-size:12px;color:var(--text);' + BD + ';max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(addr) + '">' + esc(addr) + '</td>' +
-      '<td style="padding:8px 12px;font-size:12px;color:var(--text);' + BD + ';max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(clientName) + '">' + esc(clientName) + '</td>' +
+      '<td style="padding:8px 12px;font-size:12px;color:var(--text);' + BD + ';max-width:180px" title="' + esc(clientName) + '">' + esc(clientName) + clientTypeBadge + '</td>' +
       '<td style="padding:8px 12px;font-size:11px;font-family:monospace;color:var(--text3);white-space:nowrap;' + BD + '">' + esc(jobNo) + '</td>' +
       '<td style="padding:8px 12px;font-size:12px;color:var(--text2);white-space:nowrap;' + BD + '">' + _fmtCertDate(c.issue_date) + '</td>' +
       '<td style="padding:8px 12px;font-size:12px;white-space:nowrap;' + BD + ';' + expStyle + '">' + esc(expiryTxt) + '</td>' +
