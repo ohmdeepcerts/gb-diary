@@ -9508,7 +9508,6 @@ async function _loadCerts(force) {
     _certsData = all;
     if (stxt) stxt.textContent = all.length + ' certificates loaded';
     _updateCertTabCounts();
-    _populateCertClientTypes();
     _renderCerts();
     _arAutoRelease(all);
   } catch(e) {
@@ -9636,7 +9635,7 @@ async function _loadCertsContactFilter(type) {
   const ids = new Set();
   let page = 1;
   while (true) {
-    const r = await trpcQuery('directory.contacts.list', { pageSize: 50, page, type: type }).catch(function(){ return null; });
+    const r = await trpcQuery('directory.contacts.list', { pageSize: 50, page, type: type.toLowerCase() }).catch(function(){ return null; });
     const items = (r && r.items) ? r.items : [];
     items.forEach(function(c){ ids.add(c.id); });
     if (!r || !r.total || ids.size >= r.total || items.length < 50) break;
@@ -9715,30 +9714,6 @@ function _filterCerts() {
   return list;
 }
 
-const _CERT_CLIENT_TYPE_FALLBACK = ['Agency','Builder','Commercial','Developer','Landlord','Letting Agent','Owner','Tenant','Other'];
-
-function _populateCertClientTypes() {
-  const sel = document.getElementById('certs-client-filter');
-  if (!sel || !_certsData) return;
-  // Try to read types directly from the loaded cert/contact data
-  const types = new Set();
-  _certsData.forEach(function(c) {
-    const t = (c.contact && (c.contact.type || c.contact.contact_type || c.contact.contact_type_name)) ||
-              (c.job && (c.job.contact_type || c.job.contactType)) || '';
-    if (t) types.add(t.trim());
-  });
-  // Fall back to the known system types if the API doesn't return them on cert objects
-  const list = types.size ? [...types].sort() : _CERT_CLIENT_TYPE_FALLBACK;
-  const prev = sel.value;
-  sel.innerHTML = '<option value="">All client types</option>';
-  list.forEach(function(t) {
-    const opt = document.createElement('option');
-    opt.value = t;
-    opt.textContent = t;
-    sel.appendChild(opt);
-  });
-  if (prev) sel.value = prev;
-}
 
 function _updateCertTabCounts() {
   const counts = {};
